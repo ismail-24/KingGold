@@ -44,15 +44,10 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Restore fixed debug keystore from Secret
-        env:
-          FIXED_KEYSTORE_BASE64: ${{ secrets.FIXED_KEYSTORE_BASE64 }}
+      - name: Generate debug keystore automatically
         run: |
-          if [ -n "$FIXED_KEYSTORE_BASE64" ]; then
-            echo "$FIXED_KEYSTORE_BASE64" | base64 --decode > debug.keystore
-          else
-            echo "Error: FIXED_KEYSTORE_BASE64 is not set!"
-            exit 1
+          if [ ! -f debug.keystore ]; then
+            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           fi
 
       - name: Create google-services.json from Secret
