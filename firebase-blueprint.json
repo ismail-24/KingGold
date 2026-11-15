@@ -1,0 +1,79 @@
+{
+  "entities": {
+    "OrderItemRecord": {
+      "title": "OrderItemRecord",
+      "description": "Line item inside a verified gold pickup order",
+      "type": "object",
+      "properties": {
+        "productId": { "type": "string", "description": "Catalog product ID" },
+        "shopId": { "type": "string", "description": "Partner shop ID" },
+        "name": { "type": "string", "description": "Arabic display title of the gold piece" },
+        "category": { "type": "string", "description": "Product category label" },
+        "karat": { "type": "integer", "description": "Gold purity karat (18, 21, 24)" },
+        "weightGrams": { "type": "number", "description": "Weight per piece in grams" },
+        "stamped": { "type": "boolean", "description": "Official hallmark stamp verification" },
+        "quantity": { "type": "integer", "description": "Number of pieces ordered" }
+      },
+      "required": ["productId", "shopId", "name", "category", "karat", "weightGrams", "stamped", "quantity"]
+    },
+    "GoldOrderRecord": {
+      "title": "GoldOrderRecord",
+      "description": "Escrow-backed gold order owned by an authenticated buyer",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Firebase Auth UID of the buyer" },
+        "shopId": { "type": "string", "description": "Partner shop ID" },
+        "shopName": { "type": "string", "description": "Partner shop display name" },
+        "items": { "type": "array", "description": "Bounded list of ordered gold items (max 50)" },
+        "goldValue": { "type": "number", "description": "Locked gold bullion value in EGP" },
+        "makingFee": { "type": "number", "description": "Shop making fee in EGP" },
+        "serviceFee": { "type": "number", "description": "Platform escrow fee in EGP" },
+        "pickupWindow": { "type": "string", "description": "Scheduled pickup time slot" },
+        "status": {
+          "type": "string",
+          "enum": ["PAID", "PREPARING", "READY_FOR_PICKUP", "COMPLETED", "DISPUTED"],
+          "description": "Current escrow order status"
+        },
+        "ratingGiven": { "type": "integer", "description": "Optional buyer rating from 1 to 5 after completion" },
+        "disputeReason": { "type": "string", "description": "Optional buyer dispute explanation" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp on creation (clients submit FieldValue.serverTimestamp())" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp on update (clients submit FieldValue.serverTimestamp())" }
+      },
+      "required": ["userId", "shopId", "shopName", "items", "goldValue", "makingFee", "serviceFee", "pickupWindow", "status", "createdAt", "updatedAt"]
+    },
+    "UserPreferences": {
+      "title": "UserPreferences",
+      "description": "Buyer KYC status, payment preference, and gold price alert configuration",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Firebase Auth UID of the account owner" },
+        "kycFrontDone": { "type": "boolean", "description": "Whether national ID front step is completed" },
+        "kycBackDone": { "type": "boolean", "description": "Whether national ID back step is completed" },
+        "kycSelfieDone": { "type": "boolean", "description": "Whether selfie verification step is completed" },
+        "kycStatus": {
+          "type": "string",
+          "enum": ["NOT_STARTED", "PENDING_REVIEW", "VERIFIED"],
+          "description": "KYC verification status"
+        },
+        "selectedPaymentMethodId": { "type": "string", "description": "Default payment method identifier" },
+        "priceAlertEnabled": { "type": "boolean", "description": "Whether target gold price alert is active" },
+        "priceAlertAbove": { "type": "boolean", "description": "Alert condition: true for above target, false for below" },
+        "priceAlertTarget": { "type": "string", "description": "Target 21K price per gram in EGP" },
+        "favoriteShopIds": { "type": "array", "description": "Bounded list of user's favorite verified shop IDs (max 100)" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp on creation (clients submit FieldValue.serverTimestamp())" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp on update (clients submit FieldValue.serverTimestamp())" }
+      },
+      "required": ["userId", "kycFrontDone", "kycBackDone", "kycSelfieDone", "kycStatus", "selectedPaymentMethodId", "priceAlertEnabled", "priceAlertAbove", "priceAlertTarget", "favoriteShopIds", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/orders/{orderId}": {
+      "schema": { "$ref": "#/entities/GoldOrderRecord" },
+      "description": "Escrow-backed gold pickup orders scoped to the authenticated buyer"
+    },
+    "/users/{userId}/preferences/{prefId}": {
+      "schema": { "$ref": "#/entities/UserPreferences" },
+      "description": "Buyer KYC verification progress, payment preference, and gold price alerts"
+    }
+  }
+}

@@ -62,12 +62,16 @@ fun HomeShell(
     onSearchChange: (String) -> Unit,
     onApplyFilters: (karat: Int?, verifiedOnly: Boolean, sort: ShopSortOption) -> Unit,
     onOpenPriceInsight: () -> Unit,
+    onOpenAiAdvisor: (String?) -> Unit,
     onRefreshGlobalGoldPrices: () -> Unit,
     onOpenCart: () -> Unit,
     onOpenShop: (Shop) -> Unit,
+    onToggleFavoriteShop: (String) -> Unit,
+    onToggleFavoritesOnlyFilter: (Boolean) -> Unit,
     onOpenOrder: (GoldOrder) -> Unit,
     onOpenKyc: () -> Unit,
     onSelectPaymentMethod: (String) -> Unit,
+    onDismissSyncError: () -> Unit,
     onLogout: () -> Unit,
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -121,12 +125,16 @@ fun HomeShell(
                         onSearchChange = onSearchChange,
                         onApplyFilters = onApplyFilters,
                         onOpenPriceInsight = onOpenPriceInsight,
+                        onOpenAiAdvisor = onOpenAiAdvisor,
                         onRefreshGlobalGoldPrices = onRefreshGlobalGoldPrices,
                         onOpenCart = onOpenCart,
                         onOpenShop = onOpenShop,
+                        onToggleFavoriteShop = onToggleFavoriteShop,
+                        onToggleFavoritesOnlyFilter = onToggleFavoritesOnlyFilter,
                         onOpenOrder = onOpenOrder,
                         onOpenKyc = onOpenKyc,
                         onSelectPaymentMethod = onSelectPaymentMethod,
+                        onDismissSyncError = onDismissSyncError,
                         onLogout = onLogout,
                     )
                 }
@@ -184,12 +192,16 @@ fun HomeShell(
                         onSearchChange = onSearchChange,
                         onApplyFilters = onApplyFilters,
                         onOpenPriceInsight = onOpenPriceInsight,
+                        onOpenAiAdvisor = onOpenAiAdvisor,
                         onRefreshGlobalGoldPrices = onRefreshGlobalGoldPrices,
                         onOpenCart = onOpenCart,
                         onOpenShop = onOpenShop,
+                        onToggleFavoriteShop = onToggleFavoriteShop,
+                        onToggleFavoritesOnlyFilter = onToggleFavoritesOnlyFilter,
                         onOpenOrder = onOpenOrder,
                         onOpenKyc = onOpenKyc,
                         onSelectPaymentMethod = onSelectPaymentMethod,
+                        onDismissSyncError = onDismissSyncError,
                         onLogout = onLogout,
                     )
                 }
@@ -205,12 +217,16 @@ private fun HomeTabContent(
     onSearchChange: (String) -> Unit,
     onApplyFilters: (karat: Int?, verifiedOnly: Boolean, sort: ShopSortOption) -> Unit,
     onOpenPriceInsight: () -> Unit,
+    onOpenAiAdvisor: (String?) -> Unit,
     onRefreshGlobalGoldPrices: () -> Unit,
     onOpenCart: () -> Unit,
     onOpenShop: (Shop) -> Unit,
+    onToggleFavoriteShop: (String) -> Unit,
+    onToggleFavoritesOnlyFilter: (Boolean) -> Unit,
     onOpenOrder: (GoldOrder) -> Unit,
     onOpenKyc: () -> Unit,
     onSelectPaymentMethod: (String) -> Unit,
+    onDismissSyncError: () -> Unit,
     onLogout: () -> Unit,
 ) {
     when (selectedTab) {
@@ -219,15 +235,21 @@ private fun HomeTabContent(
             onSearchChange = onSearchChange,
             onApplyFilters = onApplyFilters,
             onOpenPriceInsight = onOpenPriceInsight,
+            onOpenAiAdvisor = onOpenAiAdvisor,
             onRefreshGlobalGoldPrices = onRefreshGlobalGoldPrices,
             onOpenCart = onOpenCart,
             onOpenShop = onOpenShop,
+            onToggleFavoriteShop = onToggleFavoriteShop,
+            onToggleFavoritesOnlyFilter = onToggleFavoritesOnlyFilter,
+            onDismissSyncError = onDismissSyncError,
         )
         HomeTab.ORDERS -> OrdersScreen(
             uiState = uiState,
             onOrderClick = onOpenOrder,
         )
-        HomeTab.SUPPORT -> SupportScreen()
+        HomeTab.SUPPORT -> SupportScreen(
+            onOpenAiAdvisor = { onOpenAiAdvisor(null) },
+        )
         HomeTab.ACCOUNT -> AccountScreen(
             uiState = uiState,
             onOpenKyc = onOpenKyc,

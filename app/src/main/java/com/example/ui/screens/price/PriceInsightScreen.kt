@@ -15,12 +15,15 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -70,6 +73,7 @@ import kotlinx.coroutines.launch
 fun PriceInsightScreen(
     uiState: KingGoldUiState,
     onSaveAlert: (enabled: Boolean, above: Boolean, target: String) -> Unit,
+    onOpenAiAdvisor: (String?) -> Unit = {},
     onBack: () -> Unit,
 ) {
     var alertEnabled by remember(uiState.priceAlertEnabled) { mutableStateOf(uiState.priceAlertEnabled) }
@@ -257,6 +261,34 @@ fun PriceInsightScreen(
                                 )
                             }
                         }
+                    }
+                }
+
+                item {
+                    OutlinedButton(
+                        onClick = {
+                            onOpenAiAdvisor("حلل أسعار الذهب اليوم (عيار 21 و24) وهل الوقت مناسب للشراء؟")
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("price_open_ai_advisor_button"),
+                        shape = RoundedCornerShape(12.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.AutoAwesome,
+                            contentDescription = null,
+                            tint = AppColors.Brass,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "اسأل مستشار Gemini عن اتجاه السعر الحالي",
+                            style = AppText.body.copy(
+                                color = AppColors.Ink,
+                                fontWeight = FontWeight.Bold,
+                            ),
+                        )
                     }
                 }
 

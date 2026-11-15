@@ -89,4 +89,32 @@ class KingGoldViewModelTest {
         assertTrue(vm.uiState.value.filteredShops.isNotEmpty())
         assertEquals("s1", vm.uiState.value.filteredShops.first().id)
     }
+
+    @Test
+    fun favoriteShopToggle_and_favoritesFilter_updateFilteredShops() {
+        val vm = KingGoldViewModel()
+        assertTrue(vm.uiState.value.favoriteShopIds.isEmpty())
+
+        vm.toggleFavoriteShop("s2")
+        assertTrue(vm.uiState.value.favoriteShopIds.contains("s2"))
+
+        vm.toggleFavoritesOnlyFilter(true)
+        assertEquals(1, vm.uiState.value.filteredShops.size)
+        assertEquals("s2", vm.uiState.value.filteredShops.first().id)
+
+        vm.toggleFavoriteShop("s2")
+        assertTrue(vm.uiState.value.favoriteShopIds.isEmpty())
+        assertTrue(vm.uiState.value.filteredShops.isEmpty())
+    }
+
+    @Test
+    fun history24K7Days_returnsSevenPointsAnchoredToCurrent24KPrice() {
+        val vm = KingGoldViewModel()
+        val history = vm.uiState.value.history24K7Days
+
+        assertEquals(7, history.size)
+        assertEquals("اليوم", history.last().dayLabel)
+        assertEquals(vm.uiState.value.gramPrice(24), history.last().pricePerGram, 0.5)
+        assertTrue(history.all { it.pricePerGram > 0.0 })
+    }
 }

@@ -1,10 +1,13 @@
 package com.example.ui.state
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.GlobalGoldFeedResult
 import com.example.data.GlobalGoldPriceService
 import com.example.data.KingGoldRepository
+import com.example.data.remote.FirestoreKingGoldRepository
+import com.example.data.remote.UserPreferencesRecord
 import com.example.model.CartItem
 import com.example.model.GoldOrder
 import com.example.model.KaratPrice
@@ -15,11 +18,14 @@ import com.example.model.Product
 import com.example.model.Shop
 import com.example.model.ShopSortOption
 import com.example.ui.components.GoldFeedStatus
+import com.google.firebase.firestore.FirebaseFirestoreException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -27,20 +33,21 @@ import java.util.Date
 import java.util.Locale
 
 data class KingGoldUiState(
-    val userName: String = "إسماعيل",
+    val userName: String = "مستخدم King Gold",
+    val userEmail: String = "",
     val phoneNumber: String = "1012345642",
     val otpCode: String = "",
     val prices: List<KaratPrice> = KingGoldRepository.prices,
     val goldFeedStatus: GoldFeedStatus = GoldFeedStatus.Loading,
     val shops: List<Shop> = KingGoldRepository.shops,
     val searchQuery: String = "",
-    val selectedKaratFilter: Int? = null, // null = all
+    val selectedKaratFilter: Int? = null,
     val verifiedOnlyFilter: Boolean = true,
     val sortOption: ShopSortOption = ShopSortOption.NEAREST,
     val cart: List<CartItem> = emptyList(),
     val cartShop: Shop? = null,
     val selectedPickupSlotIndex: Int = 0,
-    val priceLockSecondsRemaining: Int = 582, // 09:42
+    val priceLockSecondsRemaining: Int = 582,
     val selectedPaymentMethodId: String = "card",
     val orders: List<GoldOrder> = KingGoldRepository.initialOrders,
     val kycFrontDone: Boolean = true,
@@ -50,12 +57,16 @@ data class KingGoldUiState(
     val priceAlertEnabled: Boolean = true,
     val priceAlertAbove: Boolean = true,
     val priceAlertTarget: String = "5500",
+    val favoriteShopIds: Set<String> = emptySet(),
+    val favoritesOnlyFilter: Boolean = false,
+    val firestoreSyncError: String? = null,
 ) {
     val filteredShops: List<Shop>
         get() {
             val q = searchQuery.trim().lowercase()
             return shops.filter { shop ->
                 val matchesVerified = !verifiedOnlyFilter || shop.verified
+                val matchesFavorite = !favoritesOnlyFilter || favoriteShopIds.contains(shop.id)
                 val shopProducts = KingGoldRepository.productsFor(shop.id)
                 val matchesKarat = selectedKaratFilter == null ||
                     shopProducts.any { it.karat == selectedKaratFilter }
@@ -64,7 +75,7 @@ data class KingGoldUiState(
                     shop.area.lowercase().contains(q) ||
                     shop.address.lowercase().contains(q) ||
                     shopProducts.any { it.name.lowercase().contains(q) }
-                matchesVerified && matchesKarat && matchesQuery
+                matchesVerified && matchesFavorite && matchesKarat && matchesQuery
             }.let { list ->
                 when (sortOption) {
                     ShopSortOption.NEAREST -> list.sortedBy { it.distanceKm }
@@ -118,27 +129,119 @@ data class KingGoldUiState(
     val selectedPaymentMethod: PaymentMethod
         get() = KingGoldRepository.paymentMethods.firstOrNull { it.id == selectedPaymentMethodId }
             ?: KingGoldRepository.paymentMethods.first()
+
+    val history24K7Days: List<com.example.model.GoldPriceHistoryPoint>
+        get() = KingGoldRepository.priceHistory24KForCurrentPrice(gramPrice(24))
 }
 
-class KingGoldViewModel : ViewModel() {
+class KingGoldViewModel(
+    private val firestoreRepository: FirestoreKingGoldRepository? = null,
+    private val currentUserId: String? = null,
+    userDisplayName: String? = null,
+    userEmail: String? = null,
+) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(KingGoldUiState())
+    private val _uiState = MutableStateFlow(
+        KingGoldUiState(
+            userName = userDisplayName?.takeIf { it.isNotBlank() } ?: "مستخدم King Gold",
+            userEmail = userEmail.orEmpty(),
+        ),
+    )
     val uiState: StateFlow<KingGoldUiState> = _uiState.asStateFlow()
 
     private var priceLockTimerJob: Job? = null
 
-    fun updatePhoneNumber(phone: String) {
-        val cleaned = phone.filter { it.isDigit() || it == ' ' }.take(13)
-        _uiState.update { it.copy(phoneNumber = cleaned) }
+    init {
+        if (firestoreRepository != null && currentUserId != null) {
+            startFirestoreSync(firestoreRepository, currentUserId)
+        }
     }
 
-    fun updateOtpCode(code: String) {
-        val digits = code.filter { it.isDigit() }.take(4)
-        _uiState.update { it.copy(otpCode = digits) }
+    private fun startFirestoreSync(repo: FirestoreKingGoldRepository, uid: String) {
+        viewModelScope.launch {
+            repo.ensureInitialUserData(uid)
+        }
+        viewModelScope.launch {
+            repo.observeOrders(uid)
+                .catch { error ->
+                    val firestoreError = generateSequence(error) { it.cause }
+                        .filterIsInstance<FirebaseFirestoreException>()
+                        .firstOrNull()
+                    if (firestoreError == null && error is CancellationException) throw error
+                    val root = firestoreError ?: error
+                    Log.w(TAG, "Error observing orders", root)
+                    _uiState.update {
+                        it.copy(firestoreSyncError = root.localizedMessage ?: "تعذّر مزامنة الطلبات")
+                    }
+                }
+                .collect { records ->
+                    if (records.isNotEmpty()) {
+                        val mapped = records.map { it.toGoldOrder(_uiState.value.shops) }
+                        _uiState.update { it.copy(orders = mapped, firestoreSyncError = null) }
+                    }
+                }
+        }
+        viewModelScope.launch {
+            repo.observePreferences(uid)
+                .catch { error ->
+                    val firestoreError = generateSequence(error) { it.cause }
+                        .filterIsInstance<FirebaseFirestoreException>()
+                        .firstOrNull()
+                    if (firestoreError == null && error is CancellationException) throw error
+                    val root = firestoreError ?: error
+                    Log.w(TAG, "Error observing preferences", root)
+                    _uiState.update {
+                        it.copy(firestoreSyncError = root.localizedMessage ?: "تعذّر مزامنة الإعدادات")
+                    }
+                }
+                .collect { prefs ->
+                    if (prefs != null) {
+                        _uiState.update { state ->
+                            state.copy(
+                                kycFrontDone = prefs.kycFrontDone,
+                                kycBackDone = prefs.kycBackDone,
+                                kycSelfieDone = prefs.kycSelfieDone,
+                                kycStatus = prefs.parsedKycStatus(),
+                                selectedPaymentMethodId = prefs.selectedPaymentMethodId,
+                                priceAlertEnabled = prefs.priceAlertEnabled,
+                                priceAlertAbove = prefs.priceAlertAbove,
+                                priceAlertTarget = prefs.priceAlertTarget,
+                                favoriteShopIds = prefs.favoriteShopIds.toSet(),
+                                firestoreSyncError = null,
+                            )
+                        }
+                    }
+                }
+        }
     }
 
-    fun fillDemoOtp() {
-        _uiState.update { it.copy(otpCode = "4821") }
+    private fun syncPreferencesToFirestore(state: KingGoldUiState) {
+        val repo = firestoreRepository ?: return
+        val uid = currentUserId ?: return
+        viewModelScope.launch {
+            repo.savePreferences(
+                UserPreferencesRecord(
+                    userId = uid,
+                    kycFrontDone = state.kycFrontDone,
+                    kycBackDone = state.kycBackDone,
+                    kycSelfieDone = state.kycSelfieDone,
+                    kycStatus = state.kycStatus.name,
+                    selectedPaymentMethodId = state.selectedPaymentMethodId,
+                    priceAlertEnabled = state.priceAlertEnabled,
+                    priceAlertAbove = state.priceAlertAbove,
+                    priceAlertTarget = state.priceAlertTarget,
+                    favoriteShopIds = state.favoriteShopIds.toList(),
+                ),
+            ).onFailure { err ->
+                _uiState.update {
+                    it.copy(firestoreSyncError = err.localizedMessage ?: "تعذّر حفظ الإعدادات")
+                }
+            }
+        }
+    }
+
+    fun clearSyncError() {
+        _uiState.update { it.copy(firestoreSyncError = null) }
     }
 
     fun updateSearchQuery(query: String) {
@@ -157,6 +260,22 @@ class KingGoldViewModel : ViewModel() {
                 sortOption = sortOption,
             )
         }
+    }
+
+    fun toggleFavoritesOnlyFilter(favoritesOnly: Boolean) {
+        _uiState.update { it.copy(favoritesOnlyFilter = favoritesOnly) }
+    }
+
+    fun toggleFavoriteShop(shopId: String) {
+        _uiState.update { state ->
+            val updatedFavorites = if (state.favoriteShopIds.contains(shopId)) {
+                state.favoriteShopIds - shopId
+            } else {
+                state.favoriteShopIds + shopId
+            }
+            state.copy(favoriteShopIds = updatedFavorites)
+        }
+        syncPreferencesToFirestore(_uiState.value)
     }
 
     fun addToCart(shop: Shop, product: Product) {
@@ -256,6 +375,7 @@ class KingGoldViewModel : ViewModel() {
 
     fun selectPaymentMethod(methodId: String) {
         _uiState.update { it.copy(selectedPaymentMethodId = methodId) }
+        syncPreferencesToFirestore(_uiState.value)
     }
 
     fun placeOrder(): GoldOrder? {
@@ -263,8 +383,9 @@ class KingGoldViewModel : ViewModel() {
         val shop = state.cartShop ?: return null
         if (state.cart.isEmpty()) return null
 
+        val suffix = (System.currentTimeMillis() % 100_000L).toInt()
         val newOrder = GoldOrder(
-            id = "KG-${20480 + state.orders.size + 1}",
+            id = "KG-${20480 + state.orders.size + 1}-$suffix",
             shop = shop,
             items = state.cart.toList(),
             goldValue = state.cartGoldValue,
@@ -281,6 +402,15 @@ class KingGoldViewModel : ViewModel() {
                 cartShop = null,
             )
         }
+        firestoreRepository?.let { repo ->
+            viewModelScope.launch {
+                repo.createOrder(newOrder).onFailure { err ->
+                    _uiState.update {
+                        it.copy(firestoreSyncError = err.localizedMessage ?: "تعذّر حفظ الطلب في السحابة")
+                    }
+                }
+            }
+        }
         return newOrder
     }
 
@@ -291,6 +421,15 @@ class KingGoldViewModel : ViewModel() {
                     if (order.id == orderId) order.copy(status = OrderStatus.COMPLETED) else order
                 },
             )
+        }
+        firestoreRepository?.let { repo ->
+            viewModelScope.launch {
+                repo.completePickup(orderId).onFailure { err ->
+                    _uiState.update {
+                        it.copy(firestoreSyncError = err.localizedMessage ?: "تعذّر تحديث حالة الاستلام")
+                    }
+                }
+            }
         }
     }
 
@@ -318,6 +457,15 @@ class KingGoldViewModel : ViewModel() {
             }
             state.copy(orders = updatedOrders, shops = updatedShops)
         }
+        firestoreRepository?.let { repo ->
+            viewModelScope.launch {
+                repo.submitRating(orderId, stars).onFailure { err ->
+                    _uiState.update {
+                        it.copy(firestoreSyncError = err.localizedMessage ?: "تعذّر حفظ التقييم")
+                    }
+                }
+            }
+        }
     }
 
     fun submitIssueReport(orderId: String, reason: String) {
@@ -332,6 +480,15 @@ class KingGoldViewModel : ViewModel() {
                 },
             )
         }
+        firestoreRepository?.let { repo ->
+            viewModelScope.launch {
+                repo.submitIssueReport(orderId, reason).onFailure { err ->
+                    _uiState.update {
+                        it.copy(firestoreSyncError = err.localizedMessage ?: "تعذّر إرسال البلاغ")
+                    }
+                }
+            }
+        }
     }
 
     fun toggleKycStep(step: Int) {
@@ -343,6 +500,7 @@ class KingGoldViewModel : ViewModel() {
                 else -> state
             }
         }
+        syncPreferencesToFirestore(_uiState.value)
     }
 
     fun submitKyc() {
@@ -354,6 +512,7 @@ class KingGoldViewModel : ViewModel() {
                 kycStatus = KycStatus.VERIFIED,
             )
         }
+        syncPreferencesToFirestore(_uiState.value)
     }
 
     fun updatePriceAlert(enabled: Boolean, above: Boolean, target: String) {
@@ -364,6 +523,7 @@ class KingGoldViewModel : ViewModel() {
                 priceAlertTarget = target,
             )
         }
+        syncPreferencesToFirestore(_uiState.value)
     }
 
     fun findOrder(orderId: String): GoldOrder? =
@@ -405,5 +565,9 @@ class KingGoldViewModel : ViewModel() {
                 }
             }
         }
+    }
+
+    private companion object {
+        const val TAG = "KingGoldVM"
     }
 }

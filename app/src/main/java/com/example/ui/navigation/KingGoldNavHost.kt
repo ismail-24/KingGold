@@ -7,17 +7,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.data.KingGoldRepository
-import com.example.ui.screens.SplashScreen
+import com.example.ui.screens.ai.AiAdvisorScreen
 import com.example.ui.screens.auth.KycScreen
-import com.example.ui.screens.auth.LoginScreen
-import com.example.ui.screens.auth.OtpScreen
 import com.example.ui.screens.cart.CartScreen
 import com.example.ui.screens.checkout.CheckoutScreen
 import com.example.ui.screens.checkout.SuccessScreen
@@ -34,12 +31,10 @@ import com.example.ui.screens.shop.ShopDetailScreen
 import com.example.ui.state.KingGoldViewModel
 
 object Routes {
-    const val SPLASH = "splash"
-    const val LOGIN = "login"
-    const val OTP = "otp"
     const val HOME = "home"
     const val KYC = "kyc"
     const val PRICE_INSIGHT = "price_insight"
+    const val AI_ADVISOR = "ai_advisor?prompt={prompt}"
     const val CART = "cart"
     const val CHECKOUT = "checkout"
     const val SHOP_DETAIL = "shop_detail/{shopId}"
@@ -50,6 +45,9 @@ object Routes {
     const val VERIFY_PICKUP = "verify_pickup/{orderId}"
     const val RATING = "rating/{orderId}"
     const val REPORT_ISSUE = "report_issue/{orderId}"
+
+    fun aiAdvisor(prompt: String? = null): String =
+        if (prompt.isNullOrBlank()) "ai_advisor" else "ai_advisor?prompt=${Uri.encode(prompt)}"
 
     fun shopDetail(shopId: String) = "shop_detail/$shopId"
     fun productList(shopId: String, category: String? = null): String {
@@ -66,7 +64,8 @@ object Routes {
 
 @Composable
 fun KingGoldNavHost(
-    viewModel: KingGoldViewModel = viewModel(),
+    viewModel: KingGoldViewModel,
+    onSignOut: () -> Unit,
 ) {
     val navController = rememberNavController()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -74,42 +73,8 @@ fun KingGoldNavHost(
 
     NavHost(
         navController = navController,
-        startDestination = Routes.SPLASH,
+        startDestination = Routes.HOME,
     ) {
-        composable(Routes.SPLASH) {
-            SplashScreen(
-                onFinished = {
-                    navController.navigate(Routes.LOGIN) {
-                        popUpTo(Routes.SPLASH) { inclusive = true }
-                    }
-                },
-            )
-        }
-
-        composable(Routes.LOGIN) {
-            LoginScreen(
-                phoneNumber = uiState.phoneNumber,
-                onPhoneChange = viewModel::updatePhoneNumber,
-                onContinue = { navController.navigate(Routes.OTP) },
-            )
-        }
-
-        composable(Routes.OTP) {
-            OtpScreen(
-                phoneNumber = uiState.phoneNumber,
-                otpCode = uiState.otpCode,
-                onOtpChange = viewModel::updateOtpCode,
-                onFillDemoOtp = viewModel::fillDemoOtp,
-                onBack = { navController.popBackStack() },
-                onVerifySuccess = {
-                    selectedHomeTab = HomeTab.DISCOVER
-                    navController.navigate(Routes.HOME) {
-                        popUpTo(Routes.LOGIN) { inclusive = true }
-                    }
-                },
-            )
-        }
-
         composable(Routes.HOME) {
             HomeShell(
                 selectedTab = selectedHomeTab,
@@ -118,17 +83,35 @@ fun KingGoldNavHost(
                 onSearchChange = viewModel::updateSearchQuery,
                 onApplyFilters = viewModel::updateFilters,
                 onOpenPriceInsight = { navController.navigate(Routes.PRICE_INSIGHT) },
+                onOpenAiAdvisor = { prompt -> navController.navigate(Routes.aiAdvisor(prompt)) },
                 onRefreshGlobalGoldPrices = viewModel::refreshGlobalGoldPrices,
                 onOpenCart = { navController.navigate(Routes.CART) },
                 onOpenShop = { shop -> navController.navigate(Routes.shopDetail(shop.id)) },
+                onToggleFavoriteShop = viewModel::toggleFavoriteShop,
+                onToggleFavoritesOnlyFilter = viewModel::toggleFavoritesOnlyFilter,
                 onOpenOrder = { order -> navController.navigate(Routes.orderDetail(order.id)) },
                 onOpenKyc = { navController.navigate(Routes.KYC) },
                 onSelectPaymentMethod = viewModel::selectPaymentMethod,
-                onLogout = {
-                    navController.navigate(Routes.LOGIN) {
-                        popUpTo(Routes.HOME) { inclusive = true }
-                    }
+                onDismissSyncError = viewModel::clearSyncError,
+                onLogout = onSignOut,
+            )
+        }
+
+        composable(
+            route = Routes.AI_ADVISOR,
+            arguments = listOf(
+                navArgument("prompt") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
                 },
+            ),
+        ) { backStackEntry ->
+            val initialPrompt = backStackEntry.arguments?.getString("prompt")
+            AiAdvisorScreen(
+                uiState = uiState,
+                initialPrompt = initialPrompt,
+                onBack = { navController.popBackStack() },
             )
         }
 
@@ -147,6 +130,7 @@ fun KingGoldNavHost(
             PriceInsightScreen(
                 uiState = uiState,
                 onSaveAlert = viewModel::updatePriceAlert,
+                onOpenAiAdvisor = { prompt -> navController.navigate(Routes.aiAdvisor(prompt)) },
                 onBack = { navController.popBackStack() },
             )
         }
@@ -160,6 +144,8 @@ fun KingGoldNavHost(
             ShopDetailScreen(
                 shop = shop,
                 prices = uiState.prices,
+                isFavorite = uiState.favoriteShopIds.contains(shop.id),
+                onToggleFavorite = { viewModel.toggleFavoriteShop(shop.id) },
                 onBack = { navController.popBackStack() },
                 onBrowseProducts = { category ->
                     navController.navigate(Routes.productList(shop.id, category))
@@ -218,6 +204,10 @@ fun KingGoldNavHost(
                 onAddToCartAndGo = {
                     viewModel.addToCart(shop, product)
                     navController.navigate(Routes.CART)
+                },
+                onAskAiAboutProduct = {
+                    val prompt = "هل قطعة ${product.name} (${product.weightGrams} جم عيار ${product.karat}) من محل ${shop.name} بمصنعية ${shop.makingFeePerGram.toInt()} ج.م/جم مناسبة للشراء الآن؟"
+                    navController.navigate(Routes.aiAdvisor(prompt))
                 },
             )
         }

@@ -21,6 +21,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.NearMe
 import androidx.compose.material.icons.outlined.Schedule
@@ -66,6 +71,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.Shop
 import com.example.model.ShopSortOption
+import com.example.ui.components.Gold24KHistoryChartCard
 import com.example.ui.components.RealTimeGlobalGoldPriceBanner
 import com.example.ui.components.SealBadge
 import com.example.ui.components.ShopGoldMedallion
@@ -81,9 +87,13 @@ fun DiscoverScreen(
     onSearchChange: (String) -> Unit,
     onApplyFilters: (karat: Int?, verifiedOnly: Boolean, sort: ShopSortOption) -> Unit,
     onOpenPriceInsight: () -> Unit,
+    onOpenAiAdvisor: (String?) -> Unit,
     onRefreshGlobalGoldPrices: () -> Unit,
     onOpenCart: () -> Unit,
     onOpenShop: (Shop) -> Unit,
+    onToggleFavoriteShop: (String) -> Unit,
+    onToggleFavoritesOnlyFilter: (Boolean) -> Unit,
+    onDismissSyncError: () -> Unit,
 ) {
     var showFilterSheet by remember { mutableStateOf(false) }
 
@@ -184,6 +194,96 @@ fun DiscoverScreen(
             }
 
             item {
+                Gold24KHistoryChartCard(
+                    historyPoints = uiState.history24K7Days,
+                    onOpenFullInsight = onOpenPriceInsight,
+                )
+            }
+
+            if (uiState.firestoreSyncError != null) {
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(AppColors.Alert.copy(alpha = 0.08f))
+                            .border(1.dp, AppColors.Alert.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = uiState.firestoreSyncError.orEmpty(),
+                            modifier = Modifier.weight(1f),
+                            style = AppText.body.copy(color = AppColors.Alert, fontSize = 12.sp),
+                        )
+                        IconButton(onClick = onDismissSyncError) {
+                            Icon(
+                                imageVector = Icons.Outlined.Close,
+                                contentDescription = "إغلاق التنبيه",
+                                tint = AppColors.Alert,
+                            )
+                        }
+                    }
+                }
+            }
+
+            item {
+                Card(
+                    onClick = { onOpenAiAdvisor(null) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("open_ai_advisor_card"),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, AppColors.Brass.copy(alpha = 0.45f)),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(AppColors.Ink),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.AutoAwesome,
+                                contentDescription = "مستشار الملك الذكي",
+                                tint = AppColors.BrassLight,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "مستشار الملك الذكي · Gemini",
+                                style = AppText.body.copy(
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 14.sp,
+                                ),
+                            )
+                            Text(
+                                text = "اسأل عن أفضل عيار للشراء أو احسب التكلفة بالمصنعية",
+                                style = AppText.body.copy(
+                                    color = AppColors.Muted,
+                                    fontSize = 11.5.sp,
+                                ),
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                            contentDescription = null,
+                            tint = AppColors.Brass,
+                        )
+                    }
+                }
+            }
+
+            item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -239,29 +339,76 @@ fun DiscoverScreen(
 
             item {
                 val count = uiState.filteredShops.size
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("verified_shops_section_header"),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = "محلات شريكة قريبة منك · $count محل موثّق",
-                        style = AppText.display.copy(fontSize = 16.sp),
-                    )
-                    Box(
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(AppColors.ParchmentDeep)
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                            .fillMaxWidth()
+                            .testTag("verified_shops_section_header"),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            text = uiState.sortOption.label,
-                            style = AppText.body.copy(
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = AppColors.Seal,
+                            text = "محلات شريكة قريبة منك · $count محل موثّق",
+                            style = AppText.display.copy(fontSize = 16.sp),
+                        )
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(AppColors.ParchmentDeep)
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                        ) {
+                            Text(
+                                text = uiState.sortOption.label,
+                                style = AppText.body.copy(
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = AppColors.Seal,
+                                ),
+                            )
+                        }
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = !uiState.favoritesOnlyFilter,
+                            onClick = { onToggleFavoritesOnlyFilter(false) },
+                            modifier = Modifier.testTag("all_shops_filter_chip"),
+                            label = {
+                                Text(
+                                    text = "كل المحلات (${uiState.shops.size})",
+                                    style = AppText.body.copy(fontSize = 12.sp, fontWeight = FontWeight.Bold),
+                                )
+                            },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = AppColors.Ink,
+                                selectedLabelColor = AppColors.BrassLight,
+                                containerColor = Color.White,
+                                labelColor = AppColors.Ink,
+                            ),
+                        )
+                        FilterChip(
+                            selected = uiState.favoritesOnlyFilter,
+                            onClick = { onToggleFavoritesOnlyFilter(!uiState.favoritesOnlyFilter) },
+                            modifier = Modifier.testTag("favorites_filter_chip"),
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = if (uiState.favoritesOnlyFilter) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                                    contentDescription = null,
+                                    tint = if (uiState.favoritesOnlyFilter) AppColors.BrassLight else AppColors.Brass,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            },
+                            label = {
+                                Text(
+                                    text = "المفضلة (${uiState.favoriteShopIds.size})",
+                                    style = AppText.body.copy(fontSize = 12.sp, fontWeight = FontWeight.Bold),
+                                )
+                            },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = AppColors.Ink,
+                                selectedLabelColor = AppColors.BrassLight,
+                                containerColor = Color.White,
+                                labelColor = AppColors.Ink,
                             ),
                         )
                     }
@@ -280,12 +427,20 @@ fun DiscoverScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Text(
-                            text = "لا توجد محلات مطابقة لبحثك",
+                            text = if (uiState.favoritesOnlyFilter) {
+                                "لا توجد محلات في المفضلة بعد"
+                            } else {
+                                "لا توجد محلات مطابقة لبحثك"
+                            },
                             style = AppText.body.copy(fontWeight = FontWeight.Bold),
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "جرّب مسح البحث أو تغيير العيار من الفلاتر.",
+                            text = if (uiState.favoritesOnlyFilter) {
+                                "اضغط على أيقونة القلب في أي محل لحفظه هنا والوصول إليه بسرعة."
+                            } else {
+                                "جرّب مسح البحث أو تغيير العيار من الفلاتر."
+                            },
                             style = AppText.body.copy(color = AppColors.Muted, fontSize = 12.5.sp),
                         )
                     }
@@ -294,6 +449,8 @@ fun DiscoverScreen(
                 items(uiState.filteredShops, key = { it.id }) { shop ->
                     ShopTile(
                         shop = shop,
+                        isFavorite = uiState.favoriteShopIds.contains(shop.id),
+                        onToggleFavorite = { onToggleFavoriteShop(shop.id) },
                         onClick = { onOpenShop(shop) },
                     )
                 }
@@ -435,6 +592,8 @@ fun DiscoverScreen(
 @Composable
 private fun ShopTile(
     shop: Shop,
+    isFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
     onClick: () -> Unit,
 ) {
     val shape = RoundedCornerShape(16.dp)
@@ -446,7 +605,10 @@ private fun ShopTile(
         shape = shape,
         colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, AppColors.Line),
+        border = androidx.compose.foundation.BorderStroke(
+            width = 1.dp,
+            color = if (isFavorite) AppColors.Brass.copy(alpha = 0.55f) else AppColors.Line,
+        ),
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(
@@ -515,6 +677,18 @@ private fun ShopTile(
                             )
                         }
                     }
+                }
+                IconButton(
+                    onClick = onToggleFavorite,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag("favorite_shop_button_${shop.id}"),
+                ) {
+                    Icon(
+                        imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                        contentDescription = if (isFavorite) "إزالة من المفضلة" else "إضافة إلى المفضلة",
+                        tint = if (isFavorite) AppColors.Brass else AppColors.Muted,
+                    )
                 }
             }
 

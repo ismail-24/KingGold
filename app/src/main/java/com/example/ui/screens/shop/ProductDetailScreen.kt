@@ -19,12 +19,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -57,6 +59,7 @@ fun ProductDetailScreen(
     gramPrice: Double = KingGoldRepository.gramPrice(product.karat),
     onBack: () -> Unit,
     onAddToCartAndGo: () -> Unit,
+    onAskAiAboutProduct: () -> Unit = {},
 ) {
     val goldValue = gramPrice * product.weightGrams
     val makingFee = shop.makingFeePerGram * product.weightGrams
@@ -204,6 +207,32 @@ fun ProductDetailScreen(
                         CheckLine("القطعة بعد وزنها قدامك على ميزان المحل")
                         CheckLine("دمغة العيار ظاهرة على القطعة")
                         CheckLine("فاتورة باسمك بتفاصيل الوزن والعيار والمصنعية")
+                    }
+                }
+
+                item {
+                    OutlinedButton(
+                        onClick = onAskAiAboutProduct,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("product_open_ai_advisor_button"),
+                        shape = RoundedCornerShape(12.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.AutoAwesome,
+                            contentDescription = null,
+                            tint = AppColors.Brass,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "اسأل مستشار Gemini عن هذه القطعة",
+                            style = AppText.body.copy(
+                                color = AppColors.Ink,
+                                fontWeight = FontWeight.Bold,
+                            ),
+                        )
                     }
                 }
             }

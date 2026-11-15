@@ -1,6 +1,8 @@
 package com.example.ui.screens.auth
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,63 +13,74 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AccountCircle
+import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Verified
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.credentials.CredentialManager
+import com.example.ui.auth.GoogleAuthHelper
 import com.example.ui.components.SealBadge
 import com.example.ui.theme.AppColors
 import com.example.ui.theme.AppText
 
 @Composable
 fun LoginScreen(
-    phoneNumber: String,
-    onPhoneChange: (String) -> Unit,
-    onContinue: () -> Unit,
+    onAuthSuccess: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    val credentialManager = remember(context) { CredentialManager.create(context) }
+
+    var isLoading by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
     var showPolicyDialog by remember { mutableStateOf<String?>(null) }
-    val digitsOnly = phoneNumber.filter { it.isDigit() }
-    val isPhoneValid = digitsOnly.length >= 9
+
+    LaunchedEffect(Unit) {
+        val signedInSilently = GoogleAuthHelper.attemptAutoSignIn(context)
+        if (signedInSilently) {
+            onAuthSuccess()
+        }
+    }
 
     Scaffold(
         containerColor = AppColors.Parchment,
@@ -77,7 +90,6 @@ fun LoginScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .imePadding()
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -132,86 +144,102 @@ fun LoginScreen(
                     .navigationBarsPadding(),
             ) {
                 Text(
-                    text = "أهلاً بيك",
+                    text = "أهلاً بيك في ملك الذهب",
                     style = AppText.display.copy(fontSize = 22.sp),
                 )
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "اكتب رقم موبايلك وهنبعتلك رمز تحقق.",
+                    text = "سجّل الدخول بحساب Google لحفظ طلباتك في السحابة وتأمين محفظة الضمان.",
                     style = AppText.body.copy(color = AppColors.Muted),
                 )
-                Spacer(modifier = Modifier.height(18.dp))
+                Spacer(modifier = Modifier.height(22.dp))
 
-                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                    OutlinedTextField(
-                        value = phoneNumber,
-                        onValueChange = onPhoneChange,
+                if (errorMessage != null) {
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .testTag("phone_input"),
-                        prefix = {
-                            Text(
-                                text = "+20  ",
-                                style = AppText.body.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    color = AppColors.Ink,
-                                ),
-                            )
-                        },
-                        placeholder = {
-                            Text(
-                                text = "10X XXXX XXXX",
-                                style = AppText.body.copy(color = AppColors.Muted),
-                            )
-                        },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = Color.White,
-                            unfocusedContainerColor = Color.White,
-                            focusedBorderColor = AppColors.Brass,
-                            unfocusedBorderColor = AppColors.Line,
-                        ),
-                    )
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(AppColors.Alert.copy(alpha = 0.08f))
+                            .border(1.dp, AppColors.Alert.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.ErrorOutline,
+                            contentDescription = "خطأ في تسجيل الدخول",
+                            tint = AppColors.Alert,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = errorMessage.orEmpty(),
+                            style = AppText.body.copy(color = AppColors.Alert, fontSize = 12.5.sp),
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
                 }
-
-                if (!isPhoneValid && phoneNumber.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "أدخل رقم موبايل مصري صحيح (9 أرقام على الأقل)",
-                        style = AppText.body.copy(color = AppColors.Alert, fontSize = 12.sp),
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(32.dp))
 
                 Button(
-                    onClick = onContinue,
-                    enabled = isPhoneValid,
+                    onClick = {
+                        errorMessage = null
+                        isLoading = true
+                        GoogleAuthHelper.signInWithGoogle(
+                            context = context,
+                            credentialManager = credentialManager,
+                            scope = coroutineScope,
+                            onAuthSuccess = {
+                                isLoading = false
+                                onAuthSuccess()
+                            },
+                            onAuthCancelled = {
+                                isLoading = false
+                            },
+                            onAuthError = { msg ->
+                                isLoading = false
+                                errorMessage = msg
+                            },
+                        )
+                    },
+                    enabled = !isLoading,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(54.dp)
-                        .testTag("login_continue_button"),
+                        .testTag("google_sign_in_button"),
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = AppColors.Brass,
-                        contentColor = Color.White,
+                        containerColor = AppColors.Ink,
+                        contentColor = AppColors.BrassLight,
                         disabledContainerColor = AppColors.Line,
                         disabledContentColor = AppColors.Muted,
                     ),
+                    border = BorderStroke(1.dp, AppColors.Brass.copy(alpha = 0.5f)),
                 ) {
-                    Text(
-                        text = "متابعة",
-                        style = AppText.body.copy(
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp,
-                        ),
-                    )
+                    if (isLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(22.dp),
+                            color = AppColors.BrassLight,
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Outlined.AccountCircle,
+                            contentDescription = null,
+                            tint = AppColors.BrassLight,
+                            modifier = Modifier.size(22.dp),
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = "تسجيل الدخول بحساب Google",
+                            style = AppText.body.copy(
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.5.sp,
+                            ),
+                        )
+                    }
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
                 val policyText = buildAnnotatedString {
                     append("بالمتابعة أنت بتوافق على ")

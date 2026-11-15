@@ -21,9 +21,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.SupportAgent
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -36,6 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -44,7 +49,9 @@ import com.example.ui.theme.AppColors
 import com.example.ui.theme.AppText
 
 @Composable
-fun SupportScreen() {
+fun SupportScreen(
+    onOpenAiAdvisor: () -> Unit = {},
+) {
     var expandedIndex by remember { mutableStateOf<Int?>(0) }
 
     Box(
@@ -87,6 +94,47 @@ fun SupportScreen() {
                         Text(
                             text = "فريق الدعم متاح يومياً من 9 ص لـ 11 م",
                             style = AppText.body.copy(color = Color.White, fontWeight = FontWeight.SemiBold),
+                        )
+                    }
+                }
+            }
+
+            item {
+                Card(
+                    onClick = onOpenAiAdvisor,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("support_open_ai_advisor_button"),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, AppColors.Brass.copy(alpha = 0.45f)),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.AutoAwesome,
+                            contentDescription = "مستشار الملك الذكي",
+                            tint = AppColors.Brass,
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "اسأل مستشار الملك الذكي (Gemini)",
+                                style = AppText.body.copy(fontWeight = FontWeight.Bold),
+                            )
+                            Text(
+                                text = "إجابات فورية حول الضمان، الدمغة، والأسعار",
+                                style = AppText.body.copy(color = AppColors.Muted, fontSize = 11.5.sp),
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                            contentDescription = null,
+                            tint = AppColors.Brass,
                         )
                     }
                 }

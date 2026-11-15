@@ -14,6 +14,11 @@ data class KaratPrice(
     val changePercent: Double,
 )
 
+data class GoldPriceHistoryPoint(
+    val dayLabel: String,
+    val pricePerGram: Double,
+)
+
 data class Shop(
     val id: String,
     val name: String,

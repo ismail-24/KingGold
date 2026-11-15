@@ -24,6 +24,26 @@ object KingGoldRepository {
         "15 أكت", "16", "17", "18", "19", "20", "21 أكت",
     )
 
+    private val relative24K7DayTrend: List<Pair<String, Double>> = listOf(
+        "قبل 6 أيام" to 0.975,
+        "قبل 5 أيام" to 0.981,
+        "قبل 4 أيام" to 0.977,
+        "قبل 3 أيام" to 0.986,
+        "قبل يومين" to 0.985,
+        "أمس" to 0.993,
+        "اليوم" to 1.000,
+    )
+
+    fun priceHistory24KForCurrentPrice(current24KPrice: Double): List<com.example.model.GoldPriceHistoryPoint> {
+        val anchor = if (current24KPrice > 0.0) current24KPrice else 6200.0
+        return relative24K7DayTrend.map { (label, factor) ->
+            com.example.model.GoldPriceHistoryPoint(
+                dayLabel = label,
+                pricePerGram = kotlin.math.round(anchor * factor),
+            )
+        }
+    }
+
     val shops: List<Shop> = listOf(
         Shop(
             id = "s1",

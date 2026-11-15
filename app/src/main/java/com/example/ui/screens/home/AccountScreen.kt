@@ -66,10 +66,12 @@ fun AccountScreen(
     var showPaymentMethodsSheet by remember { mutableStateOf(false) }
     var showLogoutDialog by remember { mutableStateOf(false) }
 
-    val maskedPhone = if (uiState.phoneNumber.length >= 4) {
-        "+20 10X XXX XX${uiState.phoneNumber.takeLast(2)}"
-    } else {
-        "+20 10X XXX XX42"
+    val accountSubtitle = uiState.userEmail.ifBlank {
+        if (uiState.phoneNumber.length >= 4) {
+            "+20 10X XXX XX${uiState.phoneNumber.takeLast(2)}"
+        } else {
+            "حساب Google موثّق"
+        }
     }
 
     Box(
@@ -112,7 +114,7 @@ fun AccountScreen(
                             style = AppText.body.copy(fontWeight = FontWeight.ExtraBold, fontSize = 16.sp),
                         )
                         Text(
-                            text = maskedPhone,
+                            text = accountSubtitle,
                             style = AppText.body.copy(color = AppColors.Muted, fontSize = 12.sp),
                         )
                     }

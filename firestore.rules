@@ -1,0 +1,169 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net: Default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Shared Hardened Primitives
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidOrderStatus(status) {
+      return status in ['PAID', 'PREPARING', 'READY_FOR_PICKUP', 'COMPLETED', 'DISPUTED'];
+    }
+
+    function isValidKycStatus(status) {
+      return status in ['NOT_STARTED', 'PENDING_REVIEW', 'VERIFIED'];
+    }
+
+    function isValidOrderRecord(data, userId) {
+      return data.keys().hasAll([
+               'userId', 'shopId', 'shopName', 'items',
+               'goldValue', 'makingFee', 'serviceFee',
+               'pickupWindow', 'status', 'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'userId', 'shopId', 'shopName', 'items',
+               'goldValue', 'makingFee', 'serviceFee',
+               'pickupWindow', 'status', 'ratingGiven', 'disputeReason',
+               'createdAt', 'updatedAt'
+             ]) &&
+             data.userId is string && data.userId == userId && data.userId.size() <= 128 &&
+             data.shopId is string && data.shopId.size() >= 1 && data.shopId.size() <= 64 &&
+             data.shopName is string && data.shopName.size() >= 1 && data.shopName.size() <= 120 &&
+             data.items is list && data.items.size() <= 50 &&
+             (data.items.size() == 0 || data.items[0] is map) &&
+             data.goldValue is number && data.goldValue >= 0 &&
+             data.makingFee is number && data.makingFee >= 0 &&
+             data.serviceFee is number && data.serviceFee >= 0 &&
+             data.pickupWindow is string && data.pickupWindow.size() >= 1 && data.pickupWindow.size() <= 100 &&
+             data.status is string && isValidOrderStatus(data.status) &&
+             (!('ratingGiven' in data) || (data.ratingGiven is int && data.ratingGiven >= 1 && data.ratingGiven <= 5)) &&
+             (!('disputeReason' in data) || (data.disputeReason is string && data.disputeReason.size() >= 1 && data.disputeReason.size() <= 500)) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidUserPreferences(data, userId) {
+      return data.keys().hasAll([
+               'userId', 'kycFrontDone', 'kycBackDone', 'kycSelfieDone',
+               'kycStatus', 'selectedPaymentMethodId',
+               'priceAlertEnabled', 'priceAlertAbove', 'priceAlertTarget',
+               'favoriteShopIds', 'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'userId', 'kycFrontDone', 'kycBackDone', 'kycSelfieDone',
+               'kycStatus', 'selectedPaymentMethodId',
+               'priceAlertEnabled', 'priceAlertAbove', 'priceAlertTarget',
+               'favoriteShopIds', 'createdAt', 'updatedAt'
+             ]) &&
+             data.userId is string && data.userId == userId && data.userId.size() <= 128 &&
+             data.kycFrontDone is bool &&
+             data.kycBackDone is bool &&
+             data.kycSelfieDone is bool &&
+             data.kycStatus is string && isValidKycStatus(data.kycStatus) &&
+             data.selectedPaymentMethodId is string && data.selectedPaymentMethodId.size() >= 1 && data.selectedPaymentMethodId.size() <= 40 &&
+             data.priceAlertEnabled is bool &&
+             data.priceAlertAbove is bool &&
+             data.priceAlertTarget is string && data.priceAlertTarget.size() <= 12 &&
+             data.favoriteShopIds is list && data.favoriteShopIds.size() <= 100 &&
+             (data.favoriteShopIds.size() == 0 || data.favoriteShopIds[0] is string) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    match /users/{userId}/orders/{orderId} {
+      allow get: if isOwner(userId) && isValidId(orderId);
+      allow list: if isOwner(userId);
+
+      allow create: if isOwner(userId) &&
+                       isValidId(orderId) &&
+                       isValidOrderRecord(incoming(), userId) &&
+                       incoming().status in ['PAID', 'PREPARING', 'READY_FOR_PICKUP', 'COMPLETED'] &&
+                       !('disputeReason' in incoming());
+
+      allow update: if isOwner(userId) &&
+                       isValidId(orderId) &&
+                       isValidOrderRecord(incoming(), userId) &&
+                       incoming().userId == existing().userId &&
+                       incoming().shopId == existing().shopId &&
+                       incoming().shopName == existing().shopName &&
+                       incoming().items == existing().items &&
+                       incoming().goldValue == existing().goldValue &&
+                       incoming().makingFee == existing().makingFee &&
+                       incoming().serviceFee == existing().serviceFee &&
+                       incoming().pickupWindow == existing().pickupWindow &&
+                       incoming().createdAt == existing().createdAt &&
+                       existing().status != 'DISPUTED' && (
+                         // Action 1: Complete pickup verification
+                         (
+                           existing().status != 'COMPLETED' &&
+                           incoming().status == 'COMPLETED' &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+                         ) ||
+                         // Action 2: Submit one-time order rating after completion
+                         (
+                           existing().status == 'COMPLETED' &&
+                           !('ratingGiven' in existing()) &&
+                           incoming().status == 'COMPLETED' &&
+                           'ratingGiven' in incoming() &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['ratingGiven', 'updatedAt'])
+                         ) ||
+                         // Action 3: File an escrow dispute before completion
+                         (
+                           existing().status != 'COMPLETED' &&
+                           incoming().status == 'DISPUTED' &&
+                           'disputeReason' in incoming() &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['status', 'disputeReason', 'updatedAt'])
+                         )
+                       );
+
+      allow delete: if false;
+    }
+
+    match /users/{userId}/preferences/{prefId} {
+      allow get: if isOwner(userId) && isValidId(prefId) && prefId == 'settings';
+      allow list: if isOwner(userId);
+
+      allow create: if isOwner(userId) &&
+                       isValidId(prefId) &&
+                       prefId == 'settings' &&
+                       isValidUserPreferences(incoming(), userId);
+
+      allow update: if isOwner(userId) &&
+                       isValidId(prefId) &&
+                       prefId == 'settings' &&
+                       isValidUserPreferences(incoming(), userId) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'kycFrontDone', 'kycBackDone', 'kycSelfieDone',
+                         'kycStatus', 'selectedPaymentMethodId',
+                         'priceAlertEnabled', 'priceAlertAbove', 'priceAlertTarget',
+                         'favoriteShopIds', 'updatedAt'
+                       ]);
+
+      allow delete: if false;
+    }
+  }
+}

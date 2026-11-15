@@ -26,7 +26,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.outlined.CreditCard
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.Phone
 import androidx.compose.material.icons.outlined.Schedule
@@ -78,6 +80,8 @@ import kotlinx.coroutines.launch
 fun ShopDetailScreen(
     shop: Shop,
     prices: List<KaratPrice>,
+    isFavorite: Boolean = false,
+    onToggleFavorite: () -> Unit = {},
     onBack: () -> Unit,
     onBrowseProducts: (initialCategory: String?) -> Unit,
     onOpenProduct: (Product) -> Unit,
@@ -156,6 +160,7 @@ fun ShopDetailScreen(
                         IconButton(
                             onClick = onBack,
                             modifier = Modifier
+                                .align(Alignment.TopStart)
                                 .statusBarsPadding()
                                 .padding(12.dp)
                                 .size(48.dp)
@@ -166,6 +171,32 @@ fun ShopDetailScreen(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = "رجوع",
                                 tint = AppColors.Ink,
+                            )
+                        }
+                        IconButton(
+                            onClick = {
+                                val nextFav = !isFavorite
+                                onToggleFavorite()
+                                scope.launch {
+                                    snackbarHostState.showSnackbar(
+                                        if (nextFav) "تمت إضافة ${shop.name} إلى المفضلة"
+                                        else "تمت إزالة ${shop.name} من المفضلة",
+                                    )
+                                }
+                            },
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .statusBarsPadding()
+                                .padding(12.dp)
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .background(AppColors.Parchment.copy(alpha = 0.9f))
+                                .testTag("shop_detail_favorite_button"),
+                        ) {
+                            Icon(
+                                imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                                contentDescription = if (isFavorite) "إزالة من المفضلة" else "إضافة إلى المفضلة",
+                                tint = if (isFavorite) AppColors.Brass else AppColors.Ink,
                             )
                         }
                     }
