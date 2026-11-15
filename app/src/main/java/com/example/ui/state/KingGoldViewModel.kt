@@ -17,6 +17,7 @@ import com.example.model.PaymentMethod
 import com.example.model.Product
 import com.example.model.Shop
 import com.example.model.ShopSortOption
+import com.example.notifications.GoldPriceNotificationHelper
 import com.example.ui.components.GoldFeedStatus
 import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CancellationException
@@ -55,8 +56,10 @@ data class KingGoldUiState(
     val kycSelfieDone: Boolean = false,
     val kycStatus: KycStatus = KycStatus.NOT_STARTED,
     val priceAlertEnabled: Boolean = true,
-    val priceAlertAbove: Boolean = true,
-    val priceAlertTarget: String = "5500",
+    val priceAlertAbove: Boolean = false,
+    val priceAlertKarat: Int = 24,
+    val priceAlertTarget: String = "6000",
+    val fcmToken: String? = null,
     val favoriteShopIds: Set<String> = emptySet(),
     val favoritesOnlyFilter: Boolean = false,
     val firestoreSyncError: String? = null,
@@ -132,6 +135,15 @@ data class KingGoldUiState(
 
     val history24K7Days: List<com.example.model.GoldPriceHistoryPoint>
         get() = KingGoldRepository.priceHistory24KForCurrentPrice(gramPrice(24))
+
+    val is24KAlertTriggered: Boolean
+        get() = GoldPriceNotificationHelper.shouldTrigger24KDropAlert(
+            alertEnabled = priceAlertEnabled,
+            alertAbove = priceAlertAbove,
+            alertKarat = priceAlertKarat,
+            thresholdText = priceAlertTarget,
+            current24KPrice = gramPrice(24),
+        ) != null
 }
 
 class KingGoldViewModel(
@@ -139,6 +151,7 @@ class KingGoldViewModel(
     private val currentUserId: String? = null,
     userDisplayName: String? = null,
     userEmail: String? = null,
+    private val on24KPriceDroppedBelowThreshold: ((current24K: Double, threshold: Double) -> Unit)? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
@@ -150,6 +163,7 @@ class KingGoldViewModel(
     val uiState: StateFlow<KingGoldUiState> = _uiState.asStateFlow()
 
     private var priceLockTimerJob: Job? = null
+    private var lastNotifiedDropSignature: Pair<Double, Double>? = null
 
     init {
         if (firestoreRepository != null && currentUserId != null) {
@@ -205,11 +219,16 @@ class KingGoldViewModel(
                                 selectedPaymentMethodId = prefs.selectedPaymentMethodId,
                                 priceAlertEnabled = prefs.priceAlertEnabled,
                                 priceAlertAbove = prefs.priceAlertAbove,
+                                priceAlertKarat = prefs.priceAlertKarat.toInt().let {
+                                    if (it in listOf(18, 21, 24)) it else 24
+                                },
                                 priceAlertTarget = prefs.priceAlertTarget,
+                                fcmToken = prefs.fcmToken,
                                 favoriteShopIds = prefs.favoriteShopIds.toSet(),
                                 firestoreSyncError = null,
                             )
                         }
+                        evaluateAndNotify24KPriceDrop()
                     }
                 }
         }
@@ -229,7 +248,9 @@ class KingGoldViewModel(
                     selectedPaymentMethodId = state.selectedPaymentMethodId,
                     priceAlertEnabled = state.priceAlertEnabled,
                     priceAlertAbove = state.priceAlertAbove,
+                    priceAlertKarat = state.priceAlertKarat.toLong(),
                     priceAlertTarget = state.priceAlertTarget,
+                    fcmToken = state.fcmToken,
                     favoriteShopIds = state.favoriteShopIds.toList(),
                 ),
             ).onFailure { err ->
@@ -515,15 +536,46 @@ class KingGoldViewModel(
         syncPreferencesToFirestore(_uiState.value)
     }
 
-    fun updatePriceAlert(enabled: Boolean, above: Boolean, target: String) {
+    fun updatePriceAlert(
+        enabled: Boolean,
+        above: Boolean,
+        karat: Int,
+        target: String,
+    ) {
         _uiState.update {
             it.copy(
                 priceAlertEnabled = enabled,
                 priceAlertAbove = above,
+                priceAlertKarat = karat,
                 priceAlertTarget = target,
             )
         }
+        lastNotifiedDropSignature = null
         syncPreferencesToFirestore(_uiState.value)
+        evaluateAndNotify24KPriceDrop()
+    }
+
+    fun updateFcmTokenState(token: String) {
+        if (token.isBlank() || token == _uiState.value.fcmToken) return
+        _uiState.update { it.copy(fcmToken = token) }
+    }
+
+    private fun evaluateAndNotify24KPriceDrop() {
+        val state = _uiState.value
+        val current24K = state.gramPrice(24)
+        val threshold = GoldPriceNotificationHelper.shouldTrigger24KDropAlert(
+            alertEnabled = state.priceAlertEnabled,
+            alertAbove = state.priceAlertAbove,
+            alertKarat = state.priceAlertKarat,
+            thresholdText = state.priceAlertTarget,
+            current24KPrice = current24K,
+        ) ?: return
+
+        val signature = current24K to threshold
+        if (lastNotifiedDropSignature != signature) {
+            lastNotifiedDropSignature = signature
+            on24KPriceDroppedBelowThreshold?.invoke(current24K, threshold)
+        }
     }
 
     fun findOrder(orderId: String): GoldOrder? =
@@ -555,6 +607,7 @@ class KingGoldViewModel(
                             ),
                         )
                     }
+                    evaluateAndNotify24KPriceDrop()
                 }
                 is GlobalGoldFeedResult.Error -> {
                     _uiState.update {

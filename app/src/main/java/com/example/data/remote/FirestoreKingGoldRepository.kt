@@ -265,6 +265,30 @@ class FirestoreKingGoldRepository(
         }
     }
 
+    suspend fun updateFcmToken(token: String): Result<Unit> {
+        val trimmed = token.trim()
+        if (trimmed.isEmpty()) return Result.success(Unit)
+        val uid = requireUserId()
+        val docRef = preferencesDoc(uid)
+        return try {
+            val snap = docRef.get().await()
+            if (snap.exists()) {
+                val current = snap.toObject(UserPreferencesRecord::class.java)
+                    ?: UserPreferencesRecord(userId = uid)
+                val updated = current.copy(userId = uid, fcmToken = trimmed)
+                docRef.update(updated.toUpdateMap()).await()
+            } else {
+                docRef.set(UserPreferencesRecord(userId = uid, fcmToken = trimmed).toCreateMap()).await()
+            }
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, docRef.path)
+            Result.failure(e)
+        }
+    }
+
     companion object {
         const val PREFS_DOC_ID = "settings"
     }

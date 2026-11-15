@@ -28,6 +28,7 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.NearMe
+import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Shield
@@ -198,6 +199,76 @@ fun DiscoverScreen(
                     historyPoints = uiState.history24K7Days,
                     onOpenFullInsight = onOpenPriceInsight,
                 )
+            }
+
+            item {
+                val triggered = uiState.is24KAlertTriggered
+                val alertBg = when {
+                    triggered -> AppColors.Alert.copy(alpha = 0.09f)
+                    uiState.priceAlertEnabled -> Color.White
+                    else -> AppColors.ParchmentDeep
+                }
+                val alertBorder = when {
+                    triggered -> AppColors.Alert.copy(alpha = 0.45f)
+                    uiState.priceAlertEnabled -> AppColors.Brass.copy(alpha = 0.45f)
+                    else -> AppColors.Line
+                }
+                val alertTitle = when {
+                    triggered -> "تنبيه عاجل: انخفض عيار 24 عن ${uiState.priceAlertTarget} ج.م!"
+                    uiState.priceAlertEnabled -> "تنبيه FCM: عند ${if (uiState.priceAlertAbove) "صعود" else "هبوط"} عيار ${uiState.priceAlertKarat} (${uiState.priceAlertTarget} ج.م)"
+                    else -> "تفعيل تنبيه انخفاض عيار 24 عبر FCM"
+                }
+                val alertSub = when {
+                    triggered -> "السعر الحالي ${uiState.gramPrice(24).toInt()} ج.م/جم — اضغط للمتابعة"
+                    uiState.priceAlertEnabled -> "يصلك إشعار فوري عند تحقق الشرط · اضغط للتعديل"
+                    else -> "حدد الحد المطلوب ليصلك إشعار فوري عند الهبوط"
+                }
+                Card(
+                    onClick = onOpenPriceInsight,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("home_24k_fcm_alert_banner"),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = alertBg),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, alertBorder),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.NotificationsActive,
+                            contentDescription = "تنبيه سعر عيار 24",
+                            tint = if (triggered) AppColors.Alert else AppColors.Brass,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = alertTitle,
+                                style = AppText.body.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.5.sp,
+                                    color = if (triggered) AppColors.Alert else AppColors.Ink,
+                                ),
+                            )
+                            Text(
+                                text = alertSub,
+                                style = AppText.body.copy(
+                                    color = AppColors.Muted,
+                                    fontSize = 11.sp,
+                                ),
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                            contentDescription = null,
+                            tint = if (triggered) AppColors.Alert else AppColors.Brass,
+                        )
+                    }
+                }
             }
 
             if (uiState.firestoreSyncError != null) {

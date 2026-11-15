@@ -54,8 +54,9 @@ function validPrefsPayload(userId, overrides = {}) {
     kycStatus: "NOT_STARTED",
     selectedPaymentMethodId: "card",
     priceAlertEnabled: true,
-    priceAlertAbove: true,
-    priceAlertTarget: "5500",
+    priceAlertAbove: false,
+    priceAlertKarat: 24,
+    priceAlertTarget: "6000",
     favoriteShopIds: ["s1"],
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -248,7 +249,10 @@ test("User preferences CRUD enforces 'settings' doc ID and immutable createdAt",
       kycBackDone: true,
       kycSelfieDone: true,
       kycStatus: "VERIFIED",
-      priceAlertTarget: "5600",
+      priceAlertAbove: false,
+      priceAlertKarat: 24,
+      priceAlertTarget: "5950",
+      fcmToken: "fcm_sample_token_123",
       favoriteShopIds: ["s1", "s2"],
       updatedAt: serverTimestamp(),
     })
@@ -256,6 +260,18 @@ test("User preferences CRUD enforces 'settings' doc ID and immutable createdAt",
   await assertSucceeds(
     prefsRef.update({
       favoriteShopIds: [],
+      updatedAt: serverTimestamp(),
+    })
+  );
+  await assertFails(
+    prefsRef.update({
+      priceAlertKarat: 99,
+      updatedAt: serverTimestamp(),
+    })
+  );
+  await assertFails(
+    prefsRef.update({
+      fcmToken: 12345,
       updatedAt: serverTimestamp(),
     })
   );

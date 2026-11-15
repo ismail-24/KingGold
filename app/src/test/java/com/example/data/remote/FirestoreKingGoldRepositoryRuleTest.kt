@@ -107,7 +107,8 @@ class FirestoreKingGoldRepositoryRuleTest : FirestoreEmulatorTestBase() {
                     selectedPaymentMethodId = "instapay",
                     priceAlertEnabled = true,
                     priceAlertAbove = false,
-                    priceAlertTarget = "5350",
+                    priceAlertKarat = 24L,
+                    priceAlertTarget = "6000",
                     favoriteShopIds = listOf("s1", "s3"),
                 ),
             )
@@ -118,11 +119,22 @@ class FirestoreKingGoldRepositoryRuleTest : FirestoreEmulatorTestBase() {
             repository.observePreferences(uid).first { it?.kycStatus == KycStatus.VERIFIED.name }
         }
         assertEquals("instapay", prefs?.selectedPaymentMethodId)
-        assertEquals("5350", prefs?.priceAlertTarget)
+        assertEquals(24L, prefs?.priceAlertKarat)
+        assertEquals(false, prefs?.priceAlertAbove)
+        assertEquals("6000", prefs?.priceAlertTarget)
         assertEquals(listOf("s1", "s3"), prefs?.favoriteShopIds)
 
+        val updateTokenResult = withTimeout(DEFAULT_TIMEOUT_MS) {
+            repository.updateFcmToken("fcm_test_device_token_abc123")
+        }
+        assertTrue(updateTokenResult.isSuccess)
+        val tokenPrefs = withTimeout(FLOW_TIMEOUT_MS) {
+            repository.observePreferences(uid).first { it?.fcmToken == "fcm_test_device_token_abc123" }
+        }
+        assertEquals("fcm_test_device_token_abc123", tokenPrefs?.fcmToken)
+
         val updateFavsResult = withTimeout(DEFAULT_TIMEOUT_MS) {
-            repository.savePreferences(prefs!!.copy(favoriteShopIds = listOf("s2")))
+            repository.savePreferences(tokenPrefs!!.copy(favoriteShopIds = listOf("s2")))
         }
         assertTrue(updateFavsResult.isSuccess)
         val updatedPrefs = withTimeout(FLOW_TIMEOUT_MS) {

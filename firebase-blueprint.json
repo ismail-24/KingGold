@@ -58,12 +58,14 @@
         "selectedPaymentMethodId": { "type": "string", "description": "Default payment method identifier" },
         "priceAlertEnabled": { "type": "boolean", "description": "Whether target gold price alert is active" },
         "priceAlertAbove": { "type": "boolean", "description": "Alert condition: true for above target, false for below" },
-        "priceAlertTarget": { "type": "string", "description": "Target 21K price per gram in EGP" },
+        "priceAlertKarat": { "type": "integer", "description": "Monitored gold purity karat for alerts (18, 21, 24)" },
+        "priceAlertTarget": { "type": "string", "description": "Target price per gram in EGP" },
+        "fcmToken": { "type": "string", "description": "Optional Firebase Cloud Messaging device registration token for push alerts" },
         "favoriteShopIds": { "type": "array", "description": "Bounded list of user's favorite verified shop IDs (max 100)" },
         "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp on creation (clients submit FieldValue.serverTimestamp())" },
         "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp on update (clients submit FieldValue.serverTimestamp())" }
       },
-      "required": ["userId", "kycFrontDone", "kycBackDone", "kycSelfieDone", "kycStatus", "selectedPaymentMethodId", "priceAlertEnabled", "priceAlertAbove", "priceAlertTarget", "favoriteShopIds", "createdAt", "updatedAt"]
+      "required": ["userId", "kycFrontDone", "kycBackDone", "kycSelfieDone", "kycStatus", "selectedPaymentMethodId", "priceAlertEnabled", "priceAlertAbove", "priceAlertKarat", "priceAlertTarget", "favoriteShopIds", "createdAt", "updatedAt"]
     }
   },
   "firestore": {

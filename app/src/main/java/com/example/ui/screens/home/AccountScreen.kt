@@ -163,11 +163,12 @@ fun AccountScreen(
             item {
                 AccountMenuTile(
                     icon = Icons.Outlined.NotificationsNone,
-                    title = "تنبيهات الأسعار",
+                    title = "تنبيهات الأسعار (FCM)",
                     subtitle = if (uiState.priceAlertEnabled) {
-                        "مفعّل عند ${uiState.priceAlertTarget} ج.م"
+                        val dir = if (uiState.priceAlertAbove) "أعلى من" else "أقل من"
+                        "عيار ${uiState.priceAlertKarat} · $dir ${uiState.priceAlertTarget} ج.م"
                     } else {
-                        "نبّهني عند وصول سعر معيّن"
+                        "نبّهني عند هبوط عيار 24 عن حد معيّن"
                     },
                     onClick = onOpenPriceAlerts,
                     modifier = Modifier.testTag("account_alerts_tile"),

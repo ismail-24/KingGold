@@ -156,8 +156,10 @@ data class UserPreferencesRecord(
     val kycStatus: String = KycStatus.NOT_STARTED.name,
     val selectedPaymentMethodId: String = "card",
     val priceAlertEnabled: Boolean = true,
-    val priceAlertAbove: Boolean = true,
-    val priceAlertTarget: String = "5500",
+    val priceAlertAbove: Boolean = false,
+    val priceAlertKarat: Long = 24L,
+    val priceAlertTarget: String = "6000",
+    val fcmToken: String? = null,
     val favoriteShopIds: List<String> = emptyList(),
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null,
@@ -165,31 +167,43 @@ data class UserPreferencesRecord(
     fun parsedKycStatus(): KycStatus =
         runCatching { KycStatus.valueOf(kycStatus) }.getOrDefault(KycStatus.NOT_STARTED)
 
-    fun toCreateMap(): Map<String, Any> = mapOf(
-        "userId" to userId,
-        "kycFrontDone" to kycFrontDone,
-        "kycBackDone" to kycBackDone,
-        "kycSelfieDone" to kycSelfieDone,
-        "kycStatus" to kycStatus,
-        "selectedPaymentMethodId" to selectedPaymentMethodId,
-        "priceAlertEnabled" to priceAlertEnabled,
-        "priceAlertAbove" to priceAlertAbove,
-        "priceAlertTarget" to priceAlertTarget,
-        "favoriteShopIds" to favoriteShopIds,
-        "createdAt" to FieldValue.serverTimestamp(),
-        "updatedAt" to FieldValue.serverTimestamp(),
-    )
+    fun toCreateMap(): Map<String, Any> {
+        val raw = mutableMapOf<String, Any?>(
+            "userId" to userId,
+            "kycFrontDone" to kycFrontDone,
+            "kycBackDone" to kycBackDone,
+            "kycSelfieDone" to kycSelfieDone,
+            "kycStatus" to kycStatus,
+            "selectedPaymentMethodId" to selectedPaymentMethodId,
+            "priceAlertEnabled" to priceAlertEnabled,
+            "priceAlertAbove" to priceAlertAbove,
+            "priceAlertKarat" to priceAlertKarat,
+            "priceAlertTarget" to priceAlertTarget,
+            "fcmToken" to fcmToken?.takeIf { it.isNotBlank() },
+            "favoriteShopIds" to favoriteShopIds,
+            "createdAt" to FieldValue.serverTimestamp(),
+            "updatedAt" to FieldValue.serverTimestamp(),
+        )
+        @Suppress("UNCHECKED_CAST")
+        return raw.filterValues { it != null } as Map<String, Any>
+    }
 
-    fun toUpdateMap(): Map<String, Any> = mapOf(
-        "kycFrontDone" to kycFrontDone,
-        "kycBackDone" to kycBackDone,
-        "kycSelfieDone" to kycSelfieDone,
-        "kycStatus" to kycStatus,
-        "selectedPaymentMethodId" to selectedPaymentMethodId,
-        "priceAlertEnabled" to priceAlertEnabled,
-        "priceAlertAbove" to priceAlertAbove,
-        "priceAlertTarget" to priceAlertTarget,
-        "favoriteShopIds" to favoriteShopIds,
-        "updatedAt" to FieldValue.serverTimestamp(),
-    )
+    fun toUpdateMap(): Map<String, Any> {
+        val raw = mutableMapOf<String, Any?>(
+            "kycFrontDone" to kycFrontDone,
+            "kycBackDone" to kycBackDone,
+            "kycSelfieDone" to kycSelfieDone,
+            "kycStatus" to kycStatus,
+            "selectedPaymentMethodId" to selectedPaymentMethodId,
+            "priceAlertEnabled" to priceAlertEnabled,
+            "priceAlertAbove" to priceAlertAbove,
+            "priceAlertKarat" to priceAlertKarat,
+            "priceAlertTarget" to priceAlertTarget,
+            "fcmToken" to fcmToken?.takeIf { it.isNotBlank() },
+            "favoriteShopIds" to favoriteShopIds,
+            "updatedAt" to FieldValue.serverTimestamp(),
+        )
+        @Suppress("UNCHECKED_CAST")
+        return raw.filterValues { it != null } as Map<String, Any>
+    }
 }

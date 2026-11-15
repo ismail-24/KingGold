@@ -68,14 +68,14 @@ service cloud.firestore {
       return data.keys().hasAll([
                'userId', 'kycFrontDone', 'kycBackDone', 'kycSelfieDone',
                'kycStatus', 'selectedPaymentMethodId',
-               'priceAlertEnabled', 'priceAlertAbove', 'priceAlertTarget',
+               'priceAlertEnabled', 'priceAlertAbove', 'priceAlertKarat', 'priceAlertTarget',
                'favoriteShopIds', 'createdAt', 'updatedAt'
              ]) &&
              data.keys().hasOnly([
                'userId', 'kycFrontDone', 'kycBackDone', 'kycSelfieDone',
                'kycStatus', 'selectedPaymentMethodId',
-               'priceAlertEnabled', 'priceAlertAbove', 'priceAlertTarget',
-               'favoriteShopIds', 'createdAt', 'updatedAt'
+               'priceAlertEnabled', 'priceAlertAbove', 'priceAlertKarat', 'priceAlertTarget',
+               'fcmToken', 'favoriteShopIds', 'createdAt', 'updatedAt'
              ]) &&
              data.userId is string && data.userId == userId && data.userId.size() <= 128 &&
              data.kycFrontDone is bool &&
@@ -85,7 +85,9 @@ service cloud.firestore {
              data.selectedPaymentMethodId is string && data.selectedPaymentMethodId.size() >= 1 && data.selectedPaymentMethodId.size() <= 40 &&
              data.priceAlertEnabled is bool &&
              data.priceAlertAbove is bool &&
+             data.priceAlertKarat is int && data.priceAlertKarat in [18, 21, 24] &&
              data.priceAlertTarget is string && data.priceAlertTarget.size() <= 12 &&
+             (!('fcmToken' in data) || (data.fcmToken is string && data.fcmToken.size() <= 512)) &&
              data.favoriteShopIds is list && data.favoriteShopIds.size() <= 100 &&
              (data.favoriteShopIds.size() == 0 || data.favoriteShopIds[0] is string) &&
              data.createdAt is timestamp && data.createdAt <= request.time &&
@@ -159,8 +161,8 @@ service cloud.firestore {
                        incoming().diff(existing()).affectedKeys().hasOnly([
                          'kycFrontDone', 'kycBackDone', 'kycSelfieDone',
                          'kycStatus', 'selectedPaymentMethodId',
-                         'priceAlertEnabled', 'priceAlertAbove', 'priceAlertTarget',
-                         'favoriteShopIds', 'updatedAt'
+                         'priceAlertEnabled', 'priceAlertAbove', 'priceAlertKarat', 'priceAlertTarget',
+                         'fcmToken', 'favoriteShopIds', 'updatedAt'
                        ]);
 
       allow delete: if false;

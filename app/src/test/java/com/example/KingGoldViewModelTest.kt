@@ -117,4 +117,28 @@ class KingGoldViewModelTest {
         assertEquals(vm.uiState.value.gramPrice(24), history.last().pricePerGram, 0.5)
         assertTrue(history.all { it.pricePerGram > 0.0 })
     }
+
+    @Test
+    fun priceDropAlert_triggersCallbackOnlyWhen24KIsBelowThreshold() {
+        val triggeredDrops = mutableListOf<Pair<Double, Double>>()
+        val vm = KingGoldViewModel(
+            on24KPriceDroppedBelowThreshold = { current24K, threshold ->
+                triggeredDrops.add(current24K to threshold)
+            },
+        )
+
+        // Default 24K is 6200.0; threshold 6000 is above? No, 6200 >= 6000 so should NOT trigger.
+        vm.updatePriceAlert(enabled = true, above = false, karat = 24, target = "6000")
+        assertTrue(triggeredDrops.isEmpty())
+
+        // Setting threshold to 6500 when 24K is 6200 means 24K is below 6500 -> triggers once.
+        vm.updatePriceAlert(enabled = true, above = false, karat = 24, target = "6500")
+        assertEquals(1, triggeredDrops.size)
+        assertEquals(6200.0, triggeredDrops.first().first, 0.01)
+        assertEquals(6500.0, triggeredDrops.first().second, 0.01)
+
+        // Above-mode alert should not trigger a drop-below notification.
+        vm.updatePriceAlert(enabled = true, above = true, karat = 24, target = "6500")
+        assertEquals(1, triggeredDrops.size)
+    }
 }

@@ -2,10 +2,12 @@ package com.example.ui.navigation
 
 import android.net.Uri
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -13,6 +15,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.data.KingGoldRepository
+import com.example.notifications.FcmRegistrationManager
 import com.example.ui.screens.ai.AiAdvisorScreen
 import com.example.ui.screens.auth.KycScreen
 import com.example.ui.screens.cart.CartScreen
@@ -67,9 +70,24 @@ fun KingGoldNavHost(
     viewModel: KingGoldViewModel,
     onSignOut: () -> Unit,
 ) {
+    val context = LocalContext.current
     val navController = rememberNavController()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var selectedHomeTab by remember { mutableStateOf(HomeTab.DISCOVER) }
+
+    LaunchedEffect(
+        uiState.priceAlertEnabled,
+        uiState.priceAlertKarat,
+        uiState.priceAlertAbove,
+    ) {
+        FcmRegistrationManager.syncFcmAlertSubscription(
+            context = context,
+            enabled = uiState.priceAlertEnabled,
+            alertKarat = uiState.priceAlertKarat,
+            alertAbove = uiState.priceAlertAbove,
+            onTokenSynced = viewModel::updateFcmTokenState,
+        )
+    }
 
     NavHost(
         navController = navController,

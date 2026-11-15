@@ -21,6 +21,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.data.remote.FirestoreKingGoldRepository
 import com.example.firebase.configureAppCheck
+import com.example.notifications.GoldPriceNotificationHelper
 import com.example.ui.auth.GoogleAuthHelper
 import com.example.ui.auth.authStateFlow
 import com.example.ui.navigation.KingGoldNavHost
@@ -38,6 +39,7 @@ class MainActivity : ComponentActivity() {
 
         // STEP 1: Configure App Check with launch intent before any UI, ViewModels, or Firebase operations.
         configureAppCheck(this, intent)
+        GoldPriceNotificationHelper.ensureNotificationChannel(this)
 
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.auto(
@@ -95,6 +97,13 @@ private fun AppContent() {
                             currentUserId = user.uid,
                             userDisplayName = user.displayName,
                             userEmail = user.email,
+                            on24KPriceDroppedBelowThreshold = { current24K, threshold ->
+                                GoldPriceNotificationHelper.show24KPriceDropAlert(
+                                    context = app,
+                                    currentPriceEgp = current24K,
+                                    thresholdEgp = threshold,
+                                )
+                            },
                         )
                     }
                 },

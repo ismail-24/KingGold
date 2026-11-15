@@ -1,5 +1,9 @@
 package com.example.ui.screens.price
 
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -24,9 +28,13 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.NotificationsActive
+import androidx.compose.material.icons.outlined.NotificationsOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
@@ -42,6 +50,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -55,6 +64,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -62,7 +72,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.KingGoldRepository
+import com.example.notifications.GoldPriceNotificationHelper
 import com.example.ui.components.LivePriceTicker
+import com.example.ui.components.formatCurrency
 import com.example.ui.state.KingGoldUiState
 import com.example.ui.theme.AppColors
 import com.example.ui.theme.AppText
@@ -72,16 +84,44 @@ import kotlinx.coroutines.launch
 @Composable
 fun PriceInsightScreen(
     uiState: KingGoldUiState,
-    onSaveAlert: (enabled: Boolean, above: Boolean, target: String) -> Unit,
+    onSaveAlert: (enabled: Boolean, above: Boolean, karat: Int, target: String) -> Unit,
     onOpenAiAdvisor: (String?) -> Unit = {},
     onBack: () -> Unit,
 ) {
+    val context = LocalContext.current
     var alertEnabled by remember(uiState.priceAlertEnabled) { mutableStateOf(uiState.priceAlertEnabled) }
     var alertAbove by remember(uiState.priceAlertAbove) { mutableStateOf(uiState.priceAlertAbove) }
+    var alertKarat by remember(uiState.priceAlertKarat) { mutableIntStateOf(uiState.priceAlertKarat) }
     var targetText by remember(uiState.priceAlertTarget) { mutableStateOf(uiState.priceAlertTarget) }
+    var hasNotificationPermission by remember {
+        mutableStateOf(GoldPriceNotificationHelper.hasNotificationPermission(context))
+    }
 
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        hasNotificationPermission = granted
+        scope.launch {
+            snackbarHostState.showSnackbar(
+                if (granted) {
+                    "تم تفعيل إذن الإشعارات بنجاح"
+                } else {
+                    "تم رفض إذن الإشعارات — يمكنك تفعيله من إعدادات التطبيق"
+                },
+            )
+        }
+    }
+
+    fun requestNotificationPermissionIfNeeded(): Boolean {
+        if (hasNotificationPermission) return true
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        return false
+    }
 
     Scaffold(
         containerColor = AppColors.Parchment,
@@ -176,13 +216,15 @@ fun PriceInsightScreen(
 
                 item {
                     val shape = RoundedCornerShape(16.dp)
+                    val currentKaratPrice = uiState.gramPrice(alertKarat)
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(shape)
                             .background(Color.White)
                             .border(1.dp, AppColors.Line, shape)
-                            .padding(16.dp),
+                            .padding(16.dp)
+                            .testTag("fcm_price_alert_card"),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         Row(
@@ -190,21 +232,110 @@ fun PriceInsightScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text(
-                                text = "نبّهني عند وصول السعر",
-                                style = AppText.body.copy(fontWeight = FontWeight.Bold),
-                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "إشعارات هبوط السعر (FCM)",
+                                    style = AppText.display.copy(fontSize = 15.5.sp),
+                                )
+                                Text(
+                                    text = "السعر الحالي لعيار $alertKarat: ${formatCurrency(currentKaratPrice, decimals = 0)} ج.م/جم",
+                                    style = AppText.body.copy(color = AppColors.Muted, fontSize = 11.5.sp),
+                                )
+                            }
                             Switch(
                                 checked = alertEnabled,
-                                onCheckedChange = {
-                                    alertEnabled = it
-                                    onSaveAlert(it, alertAbove, targetText)
+                                onCheckedChange = { enabled ->
+                                    alertEnabled = enabled
+                                    if (enabled) {
+                                        requestNotificationPermissionIfNeeded()
+                                    }
+                                    onSaveAlert(enabled, alertAbove, alertKarat, targetText)
                                 },
+                                modifier = Modifier.testTag("fcm_alert_enable_switch"),
                                 colors = SwitchDefaults.colors(checkedTrackColor = AppColors.Brass),
                             )
                         }
 
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(
+                                    if (hasNotificationPermission) AppColors.TrustSoft else AppColors.Alert.copy(alpha = 0.08f),
+                                )
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                imageVector = if (hasNotificationPermission) {
+                                    Icons.Outlined.NotificationsActive
+                                } else {
+                                    Icons.Outlined.NotificationsOff
+                                },
+                                contentDescription = null,
+                                tint = if (hasNotificationPermission) AppColors.Trust else AppColors.Alert,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = when {
+                                    !hasNotificationPermission -> "يتطلب السماح بإذن الإشعارات لاستلام تنبيهات FCM"
+                                    uiState.fcmToken != null -> "FCM متصل · الإشعارات مفعّلة لهذا الجهاز"
+                                    else -> "الإشعارات مفعّلة · قناة تنبيهات عيار 24 جاهزة"
+                                },
+                                modifier = Modifier.weight(1f),
+                                style = AppText.body.copy(
+                                    color = if (hasNotificationPermission) AppColors.Trust else AppColors.Alert,
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                ),
+                            )
+                            if (!hasNotificationPermission) {
+                                OutlinedButton(
+                                    onClick = { requestNotificationPermissionIfNeeded() },
+                                    modifier = Modifier.testTag("grant_notification_permission_button"),
+                                ) {
+                                    Text(
+                                        text = "السماح",
+                                        style = AppText.body.copy(
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = AppColors.Alert,
+                                        ),
+                                    )
+                                }
+                            }
+                        }
+
                         if (alertEnabled) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                listOf(24, 21, 18).forEach { karatOption ->
+                                    FilterChip(
+                                        selected = alertKarat == karatOption,
+                                        onClick = { alertKarat = karatOption },
+                                        modifier = Modifier.testTag("alert_karat_chip_$karatOption"),
+                                        label = {
+                                            Text(
+                                                text = "عيار $karatOption",
+                                                style = AppText.body.copy(
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                ),
+                                            )
+                                        },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = AppColors.Ink,
+                                            selectedLabelColor = AppColors.BrassLight,
+                                            containerColor = AppColors.ParchmentDeep,
+                                            labelColor = AppColors.Ink,
+                                        ),
+                                    )
+                                }
+                            }
+
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -212,22 +343,34 @@ fun PriceInsightScreen(
                             ) {
                                 OutlinedButton(
                                     onClick = { alertAbove = !alertAbove },
-                                    modifier = Modifier.weight(1f),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(52.dp)
+                                        .testTag("alert_condition_toggle_button"),
                                     shape = RoundedCornerShape(12.dp),
                                 ) {
                                     Text(
-                                        text = if (alertAbove) "أعلى من" else "أقل من",
+                                        text = if (alertAbove) "أعلى من" else "أقل من (هبوط)",
                                         style = AppText.body.copy(
                                             color = AppColors.Ink,
                                             fontWeight = FontWeight.Bold,
+                                            fontSize = 12.5.sp,
                                         ),
                                     )
                                 }
                                 OutlinedTextField(
                                     value = targetText,
                                     onValueChange = { targetText = it.filter { ch -> ch.isDigit() }.take(6) },
-                                    modifier = Modifier.weight(1f),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("alert_threshold_input"),
                                     singleLine = true,
+                                    suffix = {
+                                        Text(
+                                            text = "ج.م",
+                                            style = AppText.body.copy(color = AppColors.Muted, fontSize = 11.5.sp),
+                                        )
+                                    },
                                     textStyle = AppText.body.copy(textAlign = TextAlign.Center, fontWeight = FontWeight.Bold),
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                     shape = RoundedCornerShape(12.dp),
@@ -240,9 +383,12 @@ fun PriceInsightScreen(
 
                             Button(
                                 onClick = {
-                                    onSaveAlert(alertEnabled, alertAbove, targetText)
+                                    requestNotificationPermissionIfNeeded()
+                                    onSaveAlert(alertEnabled, alertAbove, alertKarat, targetText)
                                     scope.launch {
-                                        snackbarHostState.showSnackbar("تم حفظ منبّه السعر بنجاح")
+                                        snackbarHostState.showSnackbar(
+                                            "تم حفظ تنبيه عيار $alertKarat (${if (alertAbove) "أعلى من" else "أقل من"} $targetText ج.م) في السحابة",
+                                        )
                                     }
                                 },
                                 modifier = Modifier
@@ -256,8 +402,49 @@ fun PriceInsightScreen(
                                 ),
                             ) {
                                 Text(
-                                    text = "حفظ التنبيه",
+                                    text = "حفظ تنبيه السعر",
                                     style = AppText.body.copy(color = Color.White, fontWeight = FontWeight.Bold),
+                                )
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    val threshold = targetText.toDoubleOrNull() ?: currentKaratPrice
+                                    if (!hasNotificationPermission) {
+                                        requestNotificationPermissionIfNeeded()
+                                    } else {
+                                        val posted = GoldPriceNotificationHelper.show24KPriceDropAlert(
+                                            context = context,
+                                            currentPriceEgp = uiState.gramPrice(24),
+                                            thresholdEgp = threshold,
+                                        )
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar(
+                                                if (posted) {
+                                                    "تم إرسال إشعار تجريبي لهبوط عيار 24"
+                                                } else {
+                                                    "تعذر عرض الإشعار — تأكد من تفعيل إذن الإشعارات"
+                                                },
+                                            )
+                                        }
+                                    }
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp)
+                                    .testTag("test_fcm_alert_button"),
+                                shape = RoundedCornerShape(12.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.NotificationsActive,
+                                    contentDescription = null,
+                                    tint = AppColors.Brass,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "اختبار إشعار هبوط عيار 24 الآن",
+                                    style = AppText.body.copy(color = AppColors.Ink, fontWeight = FontWeight.Bold),
                                 )
                             }
                         }
