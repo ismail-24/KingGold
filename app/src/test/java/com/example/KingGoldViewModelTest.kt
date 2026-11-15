@@ -1,0 +1,92 @@
+package com.example
+
+import com.example.data.KingGoldRepository
+import com.example.model.OrderStatus
+import com.example.model.ShopSortOption
+import com.example.ui.state.KingGoldViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class KingGoldViewModelTest {
+
+    private val testDispatcher = StandardTestDispatcher()
+
+    @Before
+    fun setUp() {
+        Dispatchers.setMain(testDispatcher)
+    }
+
+    @After
+    fun tearDown() {
+        Dispatchers.resetMain()
+    }
+
+    @Test
+    fun cartCalculations_and_orderPlacement_updateEscrowProperly() {
+        val vm = KingGoldViewModel()
+        val shop = KingGoldRepository.shops.first()
+        val product = KingGoldRepository.productsFor(shop.id).first() // 8g 21k gold coin
+
+        val initialEscrow = vm.uiState.value.escrowHeld
+        vm.addToCart(shop, product)
+
+        val stateWithItem = vm.uiState.value
+        assertEquals(1, stateWithItem.cartItemCount)
+        val expectedGold = 5425.0 * 8.0
+        val expectedMaking = shop.makingFeePerGram * 8.0
+        val expectedService = (expectedGold + expectedMaking) * 0.01
+        assertEquals(expectedGold, stateWithItem.cartGoldValue, 0.01)
+        assertEquals(expectedMaking, stateWithItem.cartMakingFee, 0.01)
+        assertEquals(expectedService, stateWithItem.cartServiceFee, 0.01)
+
+        val order = vm.placeOrder()
+        assertNotNull(order)
+        assertEquals(0, vm.uiState.value.cartItemCount)
+        assertEquals(OrderStatus.READY_FOR_PICKUP, order!!.status)
+        assertEquals(initialEscrow + order.total, vm.uiState.value.escrowHeld, 0.01)
+
+        vm.completePickup(order.id)
+        assertEquals(initialEscrow, vm.uiState.value.escrowHeld, 0.01)
+        assertEquals(OrderStatus.COMPLETED, vm.findOrder(order.id)?.status)
+    }
+
+    @Test
+    fun addingProductFromDifferentShop_replacesExistingCart() {
+        val vm = KingGoldViewModel()
+        val shop1 = KingGoldRepository.shops[0]
+        val shop2 = KingGoldRepository.shops[1]
+        val p1 = KingGoldRepository.productsFor(shop1.id)[0]
+        val p2 = KingGoldRepository.productsFor(shop2.id)[1]
+
+        vm.addToCart(shop1, p1)
+        assertEquals(shop1.id, vm.uiState.value.cartShop?.id)
+
+        vm.addToCart(shop2, p2)
+        assertEquals(shop2.id, vm.uiState.value.cartShop?.id)
+        assertEquals(1, vm.uiState.value.cart.size)
+        assertEquals(p2.id, vm.uiState.value.cart.first().product.id)
+    }
+
+    @Test
+    fun searchAndSorting_filtersShopsCorrectly() {
+        val vm = KingGoldViewModel()
+        vm.updateSearchQuery("النور")
+        assertEquals(1, vm.uiState.value.filteredShops.size)
+        assertEquals("s1", vm.uiState.value.filteredShops.first().id)
+
+        vm.updateSearchQuery("")
+        vm.updateFilters(karat = 24, verifiedOnly = true, sortOption = ShopSortOption.HIGHEST_RATED)
+        assertTrue(vm.uiState.value.filteredShops.isNotEmpty())
+        assertEquals("s1", vm.uiState.value.filteredShops.first().id)
+    }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "King Gold",
+  "description": "King Gold — سوق الذهب الموثّق لشراء الذهب من محلات حقيقية قريبة منك بأمان وضمان حتى الاستلام.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
