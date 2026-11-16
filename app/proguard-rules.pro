@@ -5,17 +5,11 @@
 # For more details, see
 #   http://developer.android.com/guide/developing/tools/proguard.html
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# Preserve Firestore data models used with toObject() / @DocumentId / @ServerTimestamp
+-keepclassmembers class com.example.data.remote.** { *; }
+-keepclassmembers class com.example.model.** { *; }
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
-
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Preserve App Check reCAPTCHA site key string resource looked up dynamically
+-keepclassmembers class com.example.R$string {
+    public static int recaptcha_site_key;
+}

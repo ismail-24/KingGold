@@ -248,7 +248,7 @@ fun LoginScreen(
                                     },
                                     onAuthCancelled = {
                                         isLoading = false
-                                        infoMessage = "تم إلغاء نافذة تسجيل الدخول. اضغط مجدداً لاختيار حساب Google."
+                                        infoMessage = "تم إلغاء تسجيل الدخول بحساب Google. عند التثبيت على هاتف فعلي، تأكد من تسجيل بصمتي SHA-1 و SHA-256 لشهادة التوقيع في Firebase Console."
                                     },
                                     onAuthError = { msg ->
                                         isLoading = false
