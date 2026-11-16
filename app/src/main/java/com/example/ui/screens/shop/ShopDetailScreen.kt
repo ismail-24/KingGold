@@ -32,6 +32,9 @@ import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.Phone
 import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.ShoppingBag
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -81,7 +84,9 @@ fun ShopDetailScreen(
     shop: Shop,
     prices: List<KaratPrice>,
     isFavorite: Boolean = false,
+    cartItemCount: Int = 0,
     onToggleFavorite: () -> Unit = {},
+    onOpenCart: () -> Unit = {},
     onBack: () -> Unit,
     onBrowseProducts: (initialCategory: String?) -> Unit,
     onOpenProduct: (Product) -> Unit,
@@ -173,31 +178,64 @@ fun ShopDetailScreen(
                                 tint = AppColors.Ink,
                             )
                         }
-                        IconButton(
-                            onClick = {
-                                val nextFav = !isFavorite
-                                onToggleFavorite()
-                                scope.launch {
-                                    snackbarHostState.showSnackbar(
-                                        if (nextFav) "تمت إضافة ${shop.name} إلى المفضلة"
-                                        else "تمت إزالة ${shop.name} من المفضلة",
-                                    )
-                                }
-                            },
+                        Row(
                             modifier = Modifier
                                 .align(Alignment.TopEnd)
                                 .statusBarsPadding()
-                                .padding(12.dp)
-                                .size(48.dp)
-                                .clip(CircleShape)
-                                .background(AppColors.Parchment.copy(alpha = 0.9f))
-                                .testTag("shop_detail_favorite_button"),
+                                .padding(12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            Icon(
-                                imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                                contentDescription = if (isFavorite) "إزالة من المفضلة" else "إضافة إلى المفضلة",
-                                tint = if (isFavorite) AppColors.Brass else AppColors.Ink,
-                            )
+                            if (cartItemCount > 0) {
+                                IconButton(
+                                    onClick = onOpenCart,
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .clip(CircleShape)
+                                        .background(AppColors.Parchment.copy(alpha = 0.9f))
+                                        .testTag("shop_detail_cart_button"),
+                                ) {
+                                    BadgedBox(
+                                        badge = {
+                                            Badge(containerColor = AppColors.Brass) {
+                                                Text(
+                                                    text = cartItemCount.toString(),
+                                                    color = Color.White,
+                                                    fontSize = 10.sp,
+                                                )
+                                            }
+                                        },
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.ShoppingBag,
+                                            contentDescription = "عرض السلة",
+                                            tint = AppColors.Ink,
+                                        )
+                                    }
+                                }
+                            }
+                            IconButton(
+                                onClick = {
+                                    val nextFav = !isFavorite
+                                    onToggleFavorite()
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar(
+                                            if (nextFav) "تمت إضافة ${shop.name} إلى المفضلة"
+                                            else "تمت إزالة ${shop.name} من المفضلة",
+                                        )
+                                    }
+                                },
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(CircleShape)
+                                    .background(AppColors.Parchment.copy(alpha = 0.9f))
+                                    .testTag("shop_detail_favorite_button"),
+                            ) {
+                                Icon(
+                                    imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                                    contentDescription = if (isFavorite) "إزالة من المفضلة" else "إضافة إلى المفضلة",
+                                    tint = if (isFavorite) AppColors.Brass else AppColors.Ink,
+                                )
+                            }
                         }
                     }
                 }

@@ -141,4 +141,29 @@ class KingGoldViewModelTest {
         vm.updatePriceAlert(enabled = true, above = true, karat = 24, target = "6500")
         assertEquals(1, triggeredDrops.size)
     }
+
+    @Test
+    fun history21K7Days_returnsSevenPointsAnchoredToCurrent21KPrice() {
+        val vm = KingGoldViewModel()
+        val history = vm.uiState.value.history21K7Days
+
+        assertEquals(7, history.size)
+        assertEquals("اليوم", history.last().dayLabel)
+        assertEquals(vm.uiState.value.gramPrice(21), history.last().pricePerGram, 0.5)
+        assertTrue(history.all { it.pricePerGram > 0.0 })
+    }
+
+    @Test
+    fun addToCart_incrementsAndClampsToAvailablePieces() {
+        val vm = KingGoldViewModel()
+        val shop = KingGoldRepository.shops.first()
+        val product = KingGoldRepository.productsFor(shop.id).first()
+
+        repeat(product.availablePieces + 3) {
+            vm.addToCart(shop, product)
+        }
+
+        assertEquals(product.availablePieces, vm.uiState.value.cartItemCount)
+        assertEquals(582, vm.uiState.value.priceLockSecondsRemaining)
+    }
 }

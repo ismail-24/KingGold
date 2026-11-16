@@ -69,6 +69,7 @@ fun HomeShell(
     onToggleFavoriteShop: (String) -> Unit,
     onToggleFavoritesOnlyFilter: (Boolean) -> Unit,
     onOpenOrder: (GoldOrder) -> Unit,
+    onOpenProfile: () -> Unit = {},
     onOpenKyc: () -> Unit,
     onSelectPaymentMethod: (String) -> Unit,
     onDismissSyncError: () -> Unit,
@@ -132,6 +133,7 @@ fun HomeShell(
                         onToggleFavoriteShop = onToggleFavoriteShop,
                         onToggleFavoritesOnlyFilter = onToggleFavoritesOnlyFilter,
                         onOpenOrder = onOpenOrder,
+                        onOpenProfile = onOpenProfile,
                         onOpenKyc = onOpenKyc,
                         onSelectPaymentMethod = onSelectPaymentMethod,
                         onDismissSyncError = onDismissSyncError,
@@ -199,6 +201,7 @@ fun HomeShell(
                         onToggleFavoriteShop = onToggleFavoriteShop,
                         onToggleFavoritesOnlyFilter = onToggleFavoritesOnlyFilter,
                         onOpenOrder = onOpenOrder,
+                        onOpenProfile = onOpenProfile,
                         onOpenKyc = onOpenKyc,
                         onSelectPaymentMethod = onSelectPaymentMethod,
                         onDismissSyncError = onDismissSyncError,
@@ -224,6 +227,7 @@ private fun HomeTabContent(
     onToggleFavoriteShop: (String) -> Unit,
     onToggleFavoritesOnlyFilter: (Boolean) -> Unit,
     onOpenOrder: (GoldOrder) -> Unit,
+    onOpenProfile: () -> Unit,
     onOpenKyc: () -> Unit,
     onSelectPaymentMethod: (String) -> Unit,
     onDismissSyncError: () -> Unit,
@@ -241,6 +245,7 @@ private fun HomeTabContent(
             onOpenShop = onOpenShop,
             onToggleFavoriteShop = onToggleFavoriteShop,
             onToggleFavoritesOnlyFilter = onToggleFavoritesOnlyFilter,
+            onOpenProfile = onOpenProfile,
             onDismissSyncError = onDismissSyncError,
         )
         HomeTab.ORDERS -> OrdersScreen(
@@ -252,6 +257,7 @@ private fun HomeTabContent(
         )
         HomeTab.ACCOUNT -> AccountScreen(
             uiState = uiState,
+            onOpenProfile = onOpenProfile,
             onOpenKyc = onOpenKyc,
             onOpenPriceAlerts = onOpenPriceInsight,
             onSelectPaymentMethod = onSelectPaymentMethod,

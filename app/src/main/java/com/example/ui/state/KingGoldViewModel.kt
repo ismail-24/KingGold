@@ -136,6 +136,9 @@ data class KingGoldUiState(
     val history24K7Days: List<com.example.model.GoldPriceHistoryPoint>
         get() = KingGoldRepository.priceHistory24KForCurrentPrice(gramPrice(24))
 
+    val history21K7Days: List<com.example.model.GoldPriceHistoryPoint>
+        get() = KingGoldRepository.priceHistory21KForCurrentPrice(gramPrice(21))
+
     val is24KAlertTriggered: Boolean
         get() = GoldPriceNotificationHelper.shouldTrigger24KDropAlert(
             alertEnabled = priceAlertEnabled,
@@ -152,6 +155,7 @@ class KingGoldViewModel(
     userDisplayName: String? = null,
     userEmail: String? = null,
     private val on24KPriceDroppedBelowThreshold: ((current24K: Double, threshold: Double) -> Unit)? = null,
+    autoFetchPrices: Boolean = firestoreRepository != null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
@@ -168,6 +172,9 @@ class KingGoldViewModel(
     init {
         if (firestoreRepository != null && currentUserId != null) {
             startFirestoreSync(firestoreRepository, currentUserId)
+        }
+        if (autoFetchPrices) {
+            refreshGlobalGoldPrices()
         }
     }
 
@@ -597,11 +604,17 @@ class KingGoldViewModel(
                 is GlobalGoldFeedResult.Success -> {
                     val q = result.quote
                     val timeStr = SimpleDateFormat("h:mm a", Locale.forLanguageTag("ar")).format(Date())
+                    val prev24K = _uiState.value.gramPrice(24)
+                    val pctChange = if (_uiState.value.goldFeedStatus is GoldFeedStatus.Live && prev24K > 0.0) {
+                        ((q.price24KPerGramEgp - prev24K) / prev24K) * 100.0
+                    } else {
+                        0.0
+                    }
                     val updatedPrices = listOf(
-                        KaratPrice(24, "عيار 24", q.price24KPerGramEgp, 0.4),
-                        KaratPrice(21, "عيار 21", q.price21KPerGramEgp, 0.4),
-                        KaratPrice(18, "عيار 18", q.price18KPerGramEgp, 0.4),
-                        KaratPrice(0, "الجنيه", q.price21KPerGramEgp * 8.0, 0.4),
+                        KaratPrice(24, "عيار 24", q.price24KPerGramEgp, pctChange),
+                        KaratPrice(21, "عيار 21", q.price21KPerGramEgp, pctChange),
+                        KaratPrice(18, "عيار 18", q.price18KPerGramEgp, pctChange),
+                        KaratPrice(0, "الجنيه", q.price21KPerGramEgp * 8.0, pctChange),
                     )
                     _uiState.update {
                         it.copy(

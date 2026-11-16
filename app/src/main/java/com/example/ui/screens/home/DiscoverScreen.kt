@@ -29,6 +29,7 @@ import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.NearMe
 import androidx.compose.material.icons.outlined.NotificationsActive
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Shield
@@ -94,6 +95,7 @@ fun DiscoverScreen(
     onOpenShop: (Shop) -> Unit,
     onToggleFavoriteShop: (String) -> Unit,
     onToggleFavoritesOnlyFilter: (Boolean) -> Unit,
+    onOpenProfile: () -> Unit = {},
     onDismissSyncError: () -> Unit,
 ) {
     var showFilterSheet by remember { mutableStateOf(false) }
@@ -166,6 +168,16 @@ fun DiscoverScreen(
                                 imageVector = Icons.Outlined.ShowChart,
                                 contentDescription = "تفاصيل الأسعار",
                                 tint = AppColors.Brass,
+                            )
+                        }
+                        IconButton(
+                            onClick = onOpenProfile,
+                            modifier = Modifier.testTag("discover_profile_button"),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Person,
+                                contentDescription = "الملف الشخصي",
+                                tint = AppColors.Ink,
                             )
                         }
                     }

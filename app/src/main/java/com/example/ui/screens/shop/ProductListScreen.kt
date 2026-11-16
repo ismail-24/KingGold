@@ -24,6 +24,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.outlined.ShoppingBag
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -36,6 +39,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -107,6 +111,32 @@ fun ProductListScreen(
                             contentDescription = "رجوع",
                             tint = AppColors.Ink,
                         )
+                    }
+                },
+                actions = {
+                    if (uiState.cartItemCount > 0) {
+                        IconButton(
+                            onClick = onOpenCart,
+                            modifier = Modifier.testTag("product_list_cart_button"),
+                        ) {
+                            BadgedBox(
+                                badge = {
+                                    Badge(containerColor = AppColors.Brass) {
+                                        Text(
+                                            text = uiState.cartItemCount.toString(),
+                                            color = Color.White,
+                                            fontSize = 10.sp,
+                                        )
+                                    }
+                                },
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.ShoppingBag,
+                                    contentDescription = "عرض السلة",
+                                    tint = AppColors.Ink,
+                                )
+                            }
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = AppColors.Parchment),
@@ -238,14 +268,18 @@ fun ProductListScreen(
                                         onAddToCart(product)
                                         scope.launch {
                                             snackbarHostState.currentSnackbarData?.dismiss()
-                                            snackbarHostState.showSnackbar(
+                                            val result = snackbarHostState.showSnackbar(
                                                 message = "اتضاف ${product.name} للسلة",
+                                                actionLabel = "عرض السلة",
                                                 duration = SnackbarDuration.Short,
                                             )
+                                            if (result == SnackbarResult.ActionPerformed) {
+                                                onOpenCart()
+                                            }
                                         }
                                     },
                                     modifier = Modifier
-                                        .size(36.dp)
+                                        .size(48.dp)
                                         .testTag("quick_add_${product.id}"),
                                     colors = IconButtonDefaults.filledIconButtonColors(
                                         containerColor = AppColors.Ink,
@@ -255,7 +289,7 @@ fun ProductListScreen(
                                     Icon(
                                         imageVector = Icons.Filled.Add,
                                         contentDescription = "أضف ${product.name} للسلة",
-                                        modifier = Modifier.size(18.dp),
+                                        modifier = Modifier.size(20.dp),
                                     )
                                 }
                             }

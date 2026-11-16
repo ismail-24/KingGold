@@ -21,6 +21,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.ShoppingBag
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -57,8 +60,10 @@ fun ProductDetailScreen(
     shop: Shop,
     product: Product,
     gramPrice: Double = KingGoldRepository.gramPrice(product.karat),
+    cartItemCount: Int = 0,
     onBack: () -> Unit,
     onAddToCartAndGo: () -> Unit,
+    onOpenCart: () -> Unit = {},
     onAskAiAboutProduct: () -> Unit = {},
 ) {
     val goldValue = gramPrice * product.weightGrams
@@ -81,6 +86,32 @@ fun ProductDetailScreen(
                             contentDescription = "رجوع",
                             tint = AppColors.Ink,
                         )
+                    }
+                },
+                actions = {
+                    if (cartItemCount > 0) {
+                        IconButton(
+                            onClick = onOpenCart,
+                            modifier = Modifier.testTag("product_detail_cart_button"),
+                        ) {
+                            BadgedBox(
+                                badge = {
+                                    Badge(containerColor = AppColors.Brass) {
+                                        Text(
+                                            text = cartItemCount.toString(),
+                                            color = Color.White,
+                                            fontSize = 10.sp,
+                                        )
+                                    }
+                                },
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.ShoppingBag,
+                                    contentDescription = "عرض السلة",
+                                    tint = AppColors.Ink,
+                                )
+                            }
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = AppColors.Parchment),

@@ -167,6 +167,15 @@ fun PriceInsightScreen(
                 }
 
                 item {
+                    val history21K = uiState.history21K7Days
+                    val chartData = history21K.map { it.pricePerGram }
+                    val min21K = chartData.minOrNull() ?: uiState.gramPrice(21)
+                    val max21K = chartData.maxOrNull() ?: uiState.gramPrice(21)
+                    val first21K = chartData.firstOrNull() ?: min21K
+                    val last21K = chartData.lastOrNull() ?: max21K
+                    val changePct = if (first21K > 0.0) ((last21K - first21K) / first21K) * 100.0 else 0.0
+                    val changeLabel = String.format(java.util.Locale.US, "%+.2f%%", changePct)
+
                     Column {
                         Text(
                             text = "عيار 21 · آخر 7 أيام (ج.م/جرام)",
@@ -184,7 +193,7 @@ fun PriceInsightScreen(
                                 .padding(14.dp),
                         ) {
                             GoldPriceTrendChart(
-                                data = KingGoldRepository.priceHistory7Days,
+                                data = chartData,
                                 modifier = Modifier.fillMaxSize(),
                             )
                         }
@@ -193,24 +202,27 @@ fun PriceInsightScreen(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
-                            KingGoldRepository.priceHistoryLabels.forEach { day ->
+                            history21K.forEach { point ->
                                 Text(
-                                    text = day,
-                                    style = AppText.body.copy(fontSize = 10.5.sp, color = AppColors.Muted),
+                                    text = point.dayLabel,
+                                    style = AppText.body.copy(fontSize = 10.sp, color = AppColors.Muted),
                                 )
                             }
                         }
-                    }
-                }
-
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        StatBox("التغير", "+1.69%", AppColors.Trust, Modifier.weight(1f))
-                        StatBox("الأدنى", "5,300", AppColors.Ink, Modifier.weight(1f))
-                        StatBox("الأعلى", "5,425", AppColors.Ink, Modifier.weight(1f))
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            StatBox(
+                                label = "التغير",
+                                value = changeLabel,
+                                valueColor = if (changePct >= 0.0) AppColors.Trust else AppColors.Alert,
+                                modifier = Modifier.weight(1f),
+                            )
+                            StatBox("الأدنى", formatCurrency(min21K, 0), AppColors.Ink, Modifier.weight(1f))
+                            StatBox("الأعلى", formatCurrency(max21K, 0), AppColors.Ink, Modifier.weight(1f))
+                        }
                     }
                 }
 

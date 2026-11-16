@@ -25,6 +25,7 @@ import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.Badge
 import androidx.compose.material.icons.outlined.CreditCard
 import androidx.compose.material.icons.outlined.NotificationsNone
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -58,6 +59,7 @@ import com.example.ui.theme.AppText
 @Composable
 fun AccountScreen(
     uiState: KingGoldUiState,
+    onOpenProfile: () -> Unit = {},
     onOpenKyc: () -> Unit,
     onOpenPriceAlerts: () -> Unit,
     onSelectPaymentMethod: (String) -> Unit,
@@ -103,7 +105,9 @@ fun AccountScreen(
                         .clip(cardShape)
                         .background(Color.White)
                         .border(1.dp, AppColors.Line, cardShape)
-                        .padding(16.dp),
+                        .clickable(onClick = onOpenProfile)
+                        .padding(16.dp)
+                        .testTag("account_profile_card"),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     SealBadge(size = 48.dp)
@@ -139,6 +143,16 @@ fun AccountScreen(
             }
 
             item { Spacer(modifier = Modifier.height(4.dp)) }
+
+            item {
+                AccountMenuTile(
+                    icon = Icons.Outlined.Person,
+                    title = "الملف الشخصي وسجل الطلبات",
+                    subtitle = "$accountSubtitle · ${uiState.orders.size} طلبات",
+                    onClick = onOpenProfile,
+                    modifier = Modifier.testTag("account_profile_tile"),
+                )
+            }
 
             item {
                 AccountMenuTile(

@@ -44,6 +44,16 @@ object KingGoldRepository {
         }
     }
 
+    fun priceHistory21KForCurrentPrice(current21KPrice: Double): List<com.example.model.GoldPriceHistoryPoint> {
+        val anchor = if (current21KPrice > 0.0) current21KPrice else 5425.0
+        return relative24K7DayTrend.map { (label, factor) ->
+            com.example.model.GoldPriceHistoryPoint(
+                dayLabel = label,
+                pricePerGram = kotlin.math.round(anchor * factor),
+            )
+        }
+    }
+
     val shops: List<Shop> = listOf(
         Shop(
             id = "s1",

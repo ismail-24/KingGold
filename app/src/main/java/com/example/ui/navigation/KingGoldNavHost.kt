@@ -25,6 +25,7 @@ import com.example.ui.screens.checkout.CheckoutScreen
 import com.example.ui.screens.checkout.SuccessScreen
 import com.example.ui.screens.home.HomeShell
 import com.example.ui.screens.home.HomeTab
+import com.example.ui.screens.home.ProfileScreen
 import com.example.ui.screens.orders.OrderDetailScreen
 import com.example.ui.screens.orders.RatingScreen
 import com.example.ui.screens.orders.ReportIssueScreen
@@ -39,6 +40,7 @@ import kotlinx.coroutines.flow.map
 
 object Routes {
     const val HOME = "home"
+    const val PROFILE = "profile"
     const val KYC = "kyc"
     const val PRICE_INSIGHT = "price_insight"
     const val AI_ADVISOR = "ai_advisor?prompt={prompt}"
@@ -130,10 +132,21 @@ fun KingGoldNavHost(
                 onToggleFavoriteShop = viewModel::toggleFavoriteShop,
                 onToggleFavoritesOnlyFilter = viewModel::toggleFavoritesOnlyFilter,
                 onOpenOrder = { order -> navController.navigateSingleTop(Routes.orderDetail(order.id)) },
+                onOpenProfile = { navController.navigateSingleTop(Routes.PROFILE) },
                 onOpenKyc = { navController.navigateSingleTop(Routes.KYC) },
                 onSelectPaymentMethod = viewModel::selectPaymentMethod,
                 onDismissSyncError = viewModel::clearSyncError,
                 onLogout = onSignOut,
+            )
+        }
+
+        composable(Routes.PROFILE) {
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+            ProfileScreen(
+                uiState = uiState,
+                onBack = { navController.popBackSafely() },
+                onOrderClick = { order -> navController.navigateSingleTop(Routes.orderDetail(order.id)) },
+                onSignOut = onSignOut,
             )
         }
 
@@ -189,7 +202,9 @@ fun KingGoldNavHost(
                 shop = shop,
                 prices = uiState.prices,
                 isFavorite = uiState.favoriteShopIds.contains(shop.id),
+                cartItemCount = uiState.cartItemCount,
                 onToggleFavorite = { viewModel.toggleFavoriteShop(shop.id) },
+                onOpenCart = { navController.navigateSingleTop(Routes.CART) },
                 onBack = { navController.popBackSafely() },
                 onBrowseProducts = { category ->
                     navController.navigateSingleTop(Routes.productList(shop.id, category))
@@ -246,11 +261,13 @@ fun KingGoldNavHost(
                 shop = shop,
                 product = product,
                 gramPrice = uiState.gramPrice(product.karat),
+                cartItemCount = uiState.cartItemCount,
                 onBack = { navController.popBackSafely() },
                 onAddToCartAndGo = {
                     viewModel.addToCart(shop, product)
                     navController.navigateSingleTop(Routes.CART)
                 },
+                onOpenCart = { navController.navigateSingleTop(Routes.CART) },
                 onAskAiAboutProduct = {
                     val prompt = "هل قطعة ${product.name} (${product.weightGrams} جم عيار ${product.karat}) من محل ${shop.name} بمصنعية ${shop.makingFeePerGram.toInt()} ج.م/جم مناسبة للشراء الآن؟"
                     navController.navigateSingleTop(Routes.aiAdvisor(prompt))

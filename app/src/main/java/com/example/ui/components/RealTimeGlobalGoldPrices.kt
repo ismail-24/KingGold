@@ -78,9 +78,11 @@ fun RealTimeGlobalGoldPriceBanner(
 ) {
     var selectedKarat by remember { mutableIntStateOf(21) }
 
-    // Fetch live global gold prices on initial mount and refresh every 60 seconds
+    // Refresh live global gold prices every 60 seconds (initial fetch starts in ViewModel)
     LaunchedEffect(Unit) {
-        onRefresh()
+        if (feedStatus !is GoldFeedStatus.Live) {
+            onRefresh()
+        }
         while (true) {
             delay(60_000L)
             onRefresh()
@@ -173,7 +175,7 @@ fun RealTimeGlobalGoldPriceBanner(
                             text = when (feedStatus) {
                                 is GoldFeedStatus.Loading -> "جاري جلب السعر العالمي المباشر..."
                                 is GoldFeedStatus.Live ->
-                                    "الأونصة: $${formatCurrency(feedStatus.usdPerOunce, 2)} · تحديث ${feedStatus.fetchedAtLabel}"
+                                    "الأونصة: $${formatCurrency(feedStatus.usdPerOunce, 2)} · الدولار: ${formatCurrency(feedStatus.usdToEgpRate, 2)} ج.م · ${feedStatus.fetchedAtLabel}"
                                 is GoldFeedStatus.OfflineFallback ->
                                     "أسعار مرجعية محلية · ${feedStatus.errorMessage}"
                             },
