@@ -307,17 +307,23 @@ class KingGoldViewModel(
                 state.cart
             }
             val existingIndex = currentCart.indexOfFirst { it.product.id == product.id }
+            val maxPieces = product.availablePieces.coerceAtLeast(1)
             val updatedCart = if (existingIndex >= 0) {
                 currentCart.mapIndexed { idx, item ->
-                    if (idx == existingIndex) item.copy(quantity = item.quantity + 1) else item
+                    if (idx == existingIndex) {
+                        item.copy(quantity = (item.quantity + 1).coerceAtMost(maxPieces))
+                    } else {
+                        item
+                    }
                 }
             } else {
                 currentCart + CartItem(product = product, quantity = 1)
             }
+            val shouldResetTimer = currentCart.isEmpty() || state.priceLockSecondsRemaining <= 0
             state.copy(
                 cart = updatedCart,
                 cartShop = shop,
-                priceLockSecondsRemaining = if (currentCart.isEmpty()) 582 else state.priceLockSecondsRemaining,
+                priceLockSecondsRemaining = if (shouldResetTimer) 582 else state.priceLockSecondsRemaining,
             )
         }
         startPriceLockTimerIfNeeded()

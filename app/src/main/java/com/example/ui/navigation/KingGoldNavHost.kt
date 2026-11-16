@@ -8,7 +8,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -32,6 +34,8 @@ import com.example.ui.screens.shop.ProductDetailScreen
 import com.example.ui.screens.shop.ProductListScreen
 import com.example.ui.screens.shop.ShopDetailScreen
 import com.example.ui.state.KingGoldViewModel
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 
 object Routes {
     const val HOME = "home"
@@ -65,6 +69,22 @@ object Routes {
     fun reportIssue(orderId: String) = "report_issue/$orderId"
 }
 
+private fun NavController.navigateSingleTop(route: String) {
+    val canNavigate = currentBackStackEntry?.lifecycle?.currentState?.isAtLeast(Lifecycle.State.STARTED) ?: true
+    if (!canNavigate) return
+    if (currentDestination?.route == route) return
+    navigate(route) {
+        launchSingleTop = true
+    }
+}
+
+private fun NavController.popBackSafely() {
+    val canPop = currentBackStackEntry?.lifecycle?.currentState?.isAtLeast(Lifecycle.State.STARTED) ?: true
+    if (canPop && previousBackStackEntry != null) {
+        popBackStack()
+    }
+}
+
 @Composable
 fun KingGoldNavHost(
     viewModel: KingGoldViewModel,
@@ -72,19 +92,20 @@ fun KingGoldNavHost(
 ) {
     val context = LocalContext.current
     val navController = rememberNavController()
-    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var selectedHomeTab by remember { mutableStateOf(HomeTab.DISCOVER) }
 
-    LaunchedEffect(
-        uiState.priceAlertEnabled,
-        uiState.priceAlertKarat,
-        uiState.priceAlertAbove,
-    ) {
+    val alertConfig by remember(viewModel) {
+        viewModel.uiState
+            .map { Triple(it.priceAlertEnabled, it.priceAlertKarat, it.priceAlertAbove) }
+            .distinctUntilChanged()
+    }.collectAsStateWithLifecycle(initialValue = Triple(true, 24, false))
+
+    LaunchedEffect(alertConfig) {
         FcmRegistrationManager.syncFcmAlertSubscription(
             context = context,
-            enabled = uiState.priceAlertEnabled,
-            alertKarat = uiState.priceAlertKarat,
-            alertAbove = uiState.priceAlertAbove,
+            enabled = alertConfig.first,
+            alertKarat = alertConfig.second,
+            alertAbove = alertConfig.third,
             onTokenSynced = viewModel::updateFcmTokenState,
         )
     }
@@ -94,21 +115,22 @@ fun KingGoldNavHost(
         startDestination = Routes.HOME,
     ) {
         composable(Routes.HOME) {
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             HomeShell(
                 selectedTab = selectedHomeTab,
                 onSelectTab = { selectedHomeTab = it },
                 uiState = uiState,
                 onSearchChange = viewModel::updateSearchQuery,
                 onApplyFilters = viewModel::updateFilters,
-                onOpenPriceInsight = { navController.navigate(Routes.PRICE_INSIGHT) },
-                onOpenAiAdvisor = { prompt -> navController.navigate(Routes.aiAdvisor(prompt)) },
+                onOpenPriceInsight = { navController.navigateSingleTop(Routes.PRICE_INSIGHT) },
+                onOpenAiAdvisor = { prompt -> navController.navigateSingleTop(Routes.aiAdvisor(prompt)) },
                 onRefreshGlobalGoldPrices = viewModel::refreshGlobalGoldPrices,
-                onOpenCart = { navController.navigate(Routes.CART) },
-                onOpenShop = { shop -> navController.navigate(Routes.shopDetail(shop.id)) },
+                onOpenCart = { navController.navigateSingleTop(Routes.CART) },
+                onOpenShop = { shop -> navController.navigateSingleTop(Routes.shopDetail(shop.id)) },
                 onToggleFavoriteShop = viewModel::toggleFavoriteShop,
                 onToggleFavoritesOnlyFilter = viewModel::toggleFavoritesOnlyFilter,
-                onOpenOrder = { order -> navController.navigate(Routes.orderDetail(order.id)) },
-                onOpenKyc = { navController.navigate(Routes.KYC) },
+                onOpenOrder = { order -> navController.navigateSingleTop(Routes.orderDetail(order.id)) },
+                onOpenKyc = { navController.navigateSingleTop(Routes.KYC) },
                 onSelectPaymentMethod = viewModel::selectPaymentMethod,
                 onDismissSyncError = viewModel::clearSyncError,
                 onLogout = onSignOut,
@@ -125,31 +147,34 @@ fun KingGoldNavHost(
                 },
             ),
         ) { backStackEntry ->
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             val initialPrompt = backStackEntry.arguments?.getString("prompt")
             AiAdvisorScreen(
                 uiState = uiState,
                 initialPrompt = initialPrompt,
-                onBack = { navController.popBackStack() },
+                onBack = { navController.popBackSafely() },
             )
         }
 
         composable(Routes.KYC) {
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             KycScreen(
                 frontDone = uiState.kycFrontDone,
                 backDone = uiState.kycBackDone,
                 selfieDone = uiState.kycSelfieDone,
                 onStepCompleted = viewModel::toggleKycStep,
                 onSubmitKyc = viewModel::submitKyc,
-                onBack = { navController.popBackStack() },
+                onBack = { navController.popBackSafely() },
             )
         }
 
         composable(Routes.PRICE_INSIGHT) {
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             PriceInsightScreen(
                 uiState = uiState,
                 onSaveAlert = viewModel::updatePriceAlert,
-                onOpenAiAdvisor = { prompt -> navController.navigate(Routes.aiAdvisor(prompt)) },
-                onBack = { navController.popBackStack() },
+                onOpenAiAdvisor = { prompt -> navController.navigateSingleTop(Routes.aiAdvisor(prompt)) },
+                onBack = { navController.popBackSafely() },
             )
         }
 
@@ -157,21 +182,22 @@ fun KingGoldNavHost(
             route = Routes.SHOP_DETAIL,
             arguments = listOf(navArgument("shopId") { type = NavType.StringType }),
         ) { backStackEntry ->
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             val shopId = backStackEntry.arguments?.getString("shopId").orEmpty()
-            val shop = viewModel.findShop(shopId) ?: uiState.shops.first()
+            val shop = viewModel.findShop(shopId) ?: uiState.shops.firstOrNull() ?: return@composable
             ShopDetailScreen(
                 shop = shop,
                 prices = uiState.prices,
                 isFavorite = uiState.favoriteShopIds.contains(shop.id),
                 onToggleFavorite = { viewModel.toggleFavoriteShop(shop.id) },
-                onBack = { navController.popBackStack() },
+                onBack = { navController.popBackSafely() },
                 onBrowseProducts = { category ->
-                    navController.navigate(Routes.productList(shop.id, category))
+                    navController.navigateSingleTop(Routes.productList(shop.id, category))
                 },
                 onOpenProduct = { product ->
-                    navController.navigate(Routes.productDetail(shop.id, product.id))
+                    navController.navigateSingleTop(Routes.productDetail(shop.id, product.id))
                 },
-                onOpenPriceInsight = { navController.navigate(Routes.PRICE_INSIGHT) },
+                onOpenPriceInsight = { navController.navigateSingleTop(Routes.PRICE_INSIGHT) },
             )
         }
 
@@ -186,19 +212,20 @@ fun KingGoldNavHost(
                 },
             ),
         ) { backStackEntry ->
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             val shopId = backStackEntry.arguments?.getString("shopId").orEmpty()
             val category = backStackEntry.arguments?.getString("category")
-            val shop = viewModel.findShop(shopId) ?: uiState.shops.first()
+            val shop = viewModel.findShop(shopId) ?: uiState.shops.firstOrNull() ?: return@composable
             ProductListScreen(
                 shop = shop,
                 initialCategory = category,
                 uiState = uiState,
-                onBack = { navController.popBackStack() },
+                onBack = { navController.popBackSafely() },
                 onOpenProduct = { product ->
-                    navController.navigate(Routes.productDetail(shop.id, product.id))
+                    navController.navigateSingleTop(Routes.productDetail(shop.id, product.id))
                 },
                 onAddToCart = { product -> viewModel.addToCart(shop, product) },
-                onOpenCart = { navController.navigate(Routes.CART) },
+                onOpenCart = { navController.navigateSingleTop(Routes.CART) },
             )
         }
 
@@ -209,50 +236,54 @@ fun KingGoldNavHost(
                 navArgument("productId") { type = NavType.StringType },
             ),
         ) { backStackEntry ->
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             val shopId = backStackEntry.arguments?.getString("shopId").orEmpty()
             val productId = backStackEntry.arguments?.getString("productId").orEmpty()
-            val shop = viewModel.findShop(shopId) ?: uiState.shops.first()
+            val shop = viewModel.findShop(shopId) ?: uiState.shops.firstOrNull() ?: return@composable
             val products = KingGoldRepository.productsFor(shop.id)
             val product = products.firstOrNull { it.id == productId } ?: products.first()
             ProductDetailScreen(
                 shop = shop,
                 product = product,
                 gramPrice = uiState.gramPrice(product.karat),
-                onBack = { navController.popBackStack() },
+                onBack = { navController.popBackSafely() },
                 onAddToCartAndGo = {
                     viewModel.addToCart(shop, product)
-                    navController.navigate(Routes.CART)
+                    navController.navigateSingleTop(Routes.CART)
                 },
                 onAskAiAboutProduct = {
                     val prompt = "هل قطعة ${product.name} (${product.weightGrams} جم عيار ${product.karat}) من محل ${shop.name} بمصنعية ${shop.makingFeePerGram.toInt()} ج.م/جم مناسبة للشراء الآن؟"
-                    navController.navigate(Routes.aiAdvisor(prompt))
+                    navController.navigateSingleTop(Routes.aiAdvisor(prompt))
                 },
             )
         }
 
         composable(Routes.CART) {
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             CartScreen(
                 uiState = uiState,
-                onBack = { navController.popBackStack() },
+                onBack = { navController.popBackSafely() },
                 onIncrement = viewModel::incrementCartItem,
                 onDecrement = viewModel::decrementCartItem,
                 onRemove = viewModel::removeFromCart,
                 onSelectPickupSlot = viewModel::selectPickupSlot,
                 onRefreshPriceLock = viewModel::refreshPriceLock,
-                onProceedToCheckout = { navController.navigate(Routes.CHECKOUT) },
+                onProceedToCheckout = { navController.navigateSingleTop(Routes.CHECKOUT) },
             )
         }
 
         composable(Routes.CHECKOUT) {
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             CheckoutScreen(
                 uiState = uiState,
-                onBack = { navController.popBackStack() },
+                onBack = { navController.popBackSafely() },
                 onSelectPaymentMethod = viewModel::selectPaymentMethod,
                 onConfirmPay = {
                     val created = viewModel.placeOrder()
                     if (created != null) {
                         navController.navigate(Routes.success(created.id)) {
                             popUpTo(Routes.HOME) { inclusive = false }
+                            launchSingleTop = true
                         }
                     }
                 },
@@ -263,14 +294,16 @@ fun KingGoldNavHost(
             route = Routes.SUCCESS,
             arguments = listOf(navArgument("orderId") { type = NavType.StringType }),
         ) { backStackEntry ->
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             val orderId = backStackEntry.arguments?.getString("orderId").orEmpty()
-            val order = viewModel.findOrder(orderId) ?: uiState.orders.first()
+            val order = viewModel.findOrder(orderId) ?: uiState.orders.firstOrNull() ?: return@composable
             SuccessScreen(
                 order = order,
                 onViewAllOrders = {
                     selectedHomeTab = HomeTab.ORDERS
                     navController.navigate(Routes.HOME) {
                         popUpTo(Routes.HOME) { inclusive = true }
+                        launchSingleTop = true
                     }
                 },
             )
@@ -280,13 +313,14 @@ fun KingGoldNavHost(
             route = Routes.ORDER_DETAIL,
             arguments = listOf(navArgument("orderId") { type = NavType.StringType }),
         ) { backStackEntry ->
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             val orderId = backStackEntry.arguments?.getString("orderId").orEmpty()
-            val order = viewModel.findOrder(orderId) ?: uiState.orders.first()
+            val order = viewModel.findOrder(orderId) ?: uiState.orders.firstOrNull() ?: return@composable
             OrderDetailScreen(
                 order = order,
-                onBack = { navController.popBackStack() },
-                onStartVerifyPickup = { navController.navigate(Routes.verifyPickup(order.id)) },
-                onReportIssue = { navController.navigate(Routes.reportIssue(order.id)) },
+                onBack = { navController.popBackSafely() },
+                onStartVerifyPickup = { navController.navigateSingleTop(Routes.verifyPickup(order.id)) },
+                onReportIssue = { navController.navigateSingleTop(Routes.reportIssue(order.id)) },
             )
         }
 
@@ -294,15 +328,17 @@ fun KingGoldNavHost(
             route = Routes.VERIFY_PICKUP,
             arguments = listOf(navArgument("orderId") { type = NavType.StringType }),
         ) { backStackEntry ->
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             val orderId = backStackEntry.arguments?.getString("orderId").orEmpty()
-            val order = viewModel.findOrder(orderId) ?: uiState.orders.first()
+            val order = viewModel.findOrder(orderId) ?: uiState.orders.firstOrNull() ?: return@composable
             VerifyPickupScreen(
                 order = order,
-                onBack = { navController.popBackStack() },
+                onBack = { navController.popBackSafely() },
                 onConfirmRelease = {
                     viewModel.completePickup(order.id)
                     navController.navigate(Routes.rating(order.id)) {
                         popUpTo(Routes.VERIFY_PICKUP) { inclusive = true }
+                        launchSingleTop = true
                     }
                 },
             )
@@ -312,8 +348,9 @@ fun KingGoldNavHost(
             route = Routes.RATING,
             arguments = listOf(navArgument("orderId") { type = NavType.StringType }),
         ) { backStackEntry ->
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             val orderId = backStackEntry.arguments?.getString("orderId").orEmpty()
-            val order = viewModel.findOrder(orderId) ?: uiState.orders.first()
+            val order = viewModel.findOrder(orderId) ?: uiState.orders.firstOrNull() ?: return@composable
             RatingScreen(
                 order = order,
                 onSubmitRating = { stars ->
@@ -321,6 +358,7 @@ fun KingGoldNavHost(
                     selectedHomeTab = HomeTab.ORDERS
                     navController.navigate(Routes.HOME) {
                         popUpTo(Routes.HOME) { inclusive = true }
+                        launchSingleTop = true
                     }
                 },
             )
@@ -330,14 +368,15 @@ fun KingGoldNavHost(
             route = Routes.REPORT_ISSUE,
             arguments = listOf(navArgument("orderId") { type = NavType.StringType }),
         ) { backStackEntry ->
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             val orderId = backStackEntry.arguments?.getString("orderId").orEmpty()
-            val order = viewModel.findOrder(orderId) ?: uiState.orders.first()
+            val order = viewModel.findOrder(orderId) ?: uiState.orders.firstOrNull() ?: return@composable
             ReportIssueScreen(
                 order = order,
-                onBack = { navController.popBackStack() },
+                onBack = { navController.popBackSafely() },
                 onSubmitReport = { reason ->
                     viewModel.submitIssueReport(order.id, reason)
-                    navController.popBackStack()
+                    navController.popBackSafely()
                 },
             )
         }

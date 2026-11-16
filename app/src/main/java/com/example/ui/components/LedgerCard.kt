@@ -96,6 +96,8 @@ fun DottedDivider(modifier: Modifier = Modifier) {
         var x = 0f
         val dash = 3.dp.toPx()
         val gap = 4.dp.toPx()
+        val step = dash + gap
+        if (step <= 0f) return@Canvas
         while (x < size.width) {
             drawLine(
                 color = AppColors.Line,
@@ -103,7 +105,7 @@ fun DottedDivider(modifier: Modifier = Modifier) {
                 end = Offset((x + dash).coerceAtMost(size.width), 0f),
                 strokeWidth = 1.dp.toPx(),
             )
-            x += dash + gap
+            x += step
         }
     }
 }

@@ -261,7 +261,7 @@ fun CartScreen(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 IconButton(
                                     onClick = { onDecrement(item.product.id) },
-                                    modifier = Modifier.size(36.dp),
+                                    modifier = Modifier.size(48.dp),
                                 ) {
                                     Icon(
                                         imageVector = Icons.Filled.Remove,
@@ -273,11 +273,11 @@ fun CartScreen(
                                 Text(
                                     text = "${item.quantity}",
                                     style = AppText.body.copy(fontWeight = FontWeight.Bold, fontSize = 15.sp),
-                                    modifier = Modifier.padding(horizontal = 6.dp),
+                                    modifier = Modifier.padding(horizontal = 4.dp),
                                 )
                                 IconButton(
                                     onClick = { onIncrement(item.product.id) },
-                                    modifier = Modifier.size(36.dp),
+                                    modifier = Modifier.size(48.dp),
                                 ) {
                                     Icon(
                                         imageVector = Icons.Filled.Add,

@@ -25,12 +25,15 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Verified
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
@@ -62,6 +65,8 @@ import com.example.ui.auth.GoogleAuthHelper
 import com.example.ui.components.SealBadge
 import com.example.ui.theme.AppColors
 import com.example.ui.theme.AppText
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 
 @Composable
 fun LoginScreen(
@@ -73,13 +78,18 @@ fun LoginScreen(
 
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var infoMessage by remember { mutableStateOf<String?>(null) }
     var showPolicyDialog by remember { mutableStateOf<String?>(null) }
+    var autoSignInJob by remember { mutableStateOf<Job?>(null) }
 
     LaunchedEffect(Unit) {
-        val signedInSilently = GoogleAuthHelper.attemptAutoSignIn(context)
-        if (signedInSilently) {
-            onAuthSuccess()
+        val job = coroutineScope.launch {
+            val signedInSilently = GoogleAuthHelper.attemptAutoSignIn(context)
+            if (signedInSilently) {
+                onAuthSuccess()
+            }
         }
+        autoSignInJob = job
     }
 
     Scaffold(
@@ -152,90 +162,138 @@ fun LoginScreen(
                     text = "سجّل الدخول بحساب Google لحفظ طلباتك في السحابة وتأمين محفظة الضمان.",
                     style = AppText.body.copy(color = AppColors.Muted),
                 )
-                Spacer(modifier = Modifier.height(22.dp))
+                Spacer(modifier = Modifier.height(20.dp))
 
-                if (errorMessage != null) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(AppColors.Alert.copy(alpha = 0.08f))
-                            .border(1.dp, AppColors.Alert.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
-                            .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.ErrorOutline,
-                            contentDescription = "خطأ في تسجيل الدخول",
-                            tint = AppColors.Alert,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = errorMessage.orEmpty(),
-                            style = AppText.body.copy(color = AppColors.Alert, fontSize = 12.5.sp),
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(16.dp))
-                }
-
-                Button(
-                    onClick = {
-                        errorMessage = null
-                        isLoading = true
-                        GoogleAuthHelper.signInWithGoogle(
-                            context = context,
-                            credentialManager = credentialManager,
-                            scope = coroutineScope,
-                            onAuthSuccess = {
-                                isLoading = false
-                                onAuthSuccess()
-                            },
-                            onAuthCancelled = {
-                                isLoading = false
-                            },
-                            onAuthError = { msg ->
-                                isLoading = false
-                                errorMessage = msg
-                            },
-                        )
-                    },
-                    enabled = !isLoading,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(54.dp)
-                        .testTag("google_sign_in_button"),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = AppColors.Ink,
-                        contentColor = AppColors.BrassLight,
-                        disabledContainerColor = AppColors.Line,
-                        disabledContentColor = AppColors.Muted,
-                    ),
-                    border = BorderStroke(1.dp, AppColors.Brass.copy(alpha = 0.5f)),
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    border = BorderStroke(1.dp, AppColors.Line),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
                 ) {
-                    if (isLoading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(22.dp),
-                            color = AppColors.BrassLight,
-                            strokeWidth = 2.dp,
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Outlined.AccountCircle,
-                            contentDescription = null,
-                            tint = AppColors.BrassLight,
-                            modifier = Modifier.size(22.dp),
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
+                    Column(modifier = Modifier.padding(18.dp)) {
                         Text(
-                            text = "تسجيل الدخول بحساب Google",
-                            style = AppText.body.copy(
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.5.sp,
-                            ),
+                            text = "تسجيل الدخول الموثّق",
+                            style = AppText.display.copy(fontSize = 17.sp),
                         )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "دخول سريع وآمن ومرتبط بحسابك السحابي لحماية طلبات الشراء والمفضلة.",
+                            style = AppText.body.copy(color = AppColors.Muted, fontSize = 12.5.sp),
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        if (errorMessage != null) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(AppColors.Alert.copy(alpha = 0.08f))
+                                    .border(1.dp, AppColors.Alert.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.ErrorOutline,
+                                    contentDescription = "خطأ في تسجيل الدخول",
+                                    tint = AppColors.Alert,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = errorMessage.orEmpty(),
+                                    style = AppText.body.copy(color = AppColors.Alert, fontSize = 12.5.sp),
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(14.dp))
+                        } else if (infoMessage != null) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(AppColors.ParchmentDeep)
+                                    .border(1.dp, AppColors.Line, RoundedCornerShape(12.dp))
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Info,
+                                    contentDescription = "تنبيه",
+                                    tint = AppColors.Brass,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = infoMessage.orEmpty(),
+                                    style = AppText.body.copy(color = AppColors.Ink, fontSize = 12.5.sp),
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(14.dp))
+                        }
+
+                        Button(
+                            onClick = {
+                                autoSignInJob?.cancel()
+                                autoSignInJob = null
+                                errorMessage = null
+                                infoMessage = null
+                                isLoading = true
+                                GoogleAuthHelper.signInWithGoogle(
+                                    context = context,
+                                    credentialManager = credentialManager,
+                                    scope = coroutineScope,
+                                    onAuthSuccess = {
+                                        isLoading = false
+                                        onAuthSuccess()
+                                    },
+                                    onAuthCancelled = {
+                                        isLoading = false
+                                        infoMessage = "تم إلغاء نافذة تسجيل الدخول. اضغط مجدداً لاختيار حساب Google."
+                                    },
+                                    onAuthError = { msg ->
+                                        isLoading = false
+                                        errorMessage = msg
+                                    },
+                                )
+                            },
+                            enabled = !isLoading,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(54.dp)
+                                .testTag("google_sign_in_button"),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = AppColors.Ink,
+                                contentColor = AppColors.BrassLight,
+                                disabledContainerColor = AppColors.Line,
+                                disabledContentColor = AppColors.Muted,
+                            ),
+                            border = BorderStroke(1.dp, AppColors.Brass.copy(alpha = 0.5f)),
+                        ) {
+                            if (isLoading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(22.dp),
+                                    color = AppColors.BrassLight,
+                                    strokeWidth = 2.dp,
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Outlined.AccountCircle,
+                                    contentDescription = null,
+                                    tint = AppColors.BrassLight,
+                                    modifier = Modifier.size(22.dp),
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = "المتابعة بحساب Google",
+                                    style = AppText.body.copy(
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.5.sp,
+                                    ),
+                                )
+                            }
+                        }
                     }
                 }
 
