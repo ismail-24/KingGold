@@ -97,6 +97,20 @@ class FirestoreMarketplaceRepository(
                 }
         }
 
+    fun observePendingMerchantsAdmin(): Flow<List<MerchantStore>> =
+        wrapQueryFlow("merchants?status=PENDING") {
+            db.collection("merchants")
+                .whereEqualTo("status", MerchantStatus.PENDING.name)
+                .snapshots()
+                .map { snap ->
+                    snap.toObjects(
+                        MerchantStoreRecord::class.java,
+                        DocumentSnapshot.ServerTimestampBehavior.ESTIMATE,
+                    ).sortedByDescending { it.createdAt ?: Timestamp(0, 0) }
+                        .map { it.toDomain() }
+                }
+        }
+
     fun observeActiveProducts(): Flow<List<MerchantProduct>> =
         wrapQueryFlow("products?status=ACTIVE") {
             db.collection("products")

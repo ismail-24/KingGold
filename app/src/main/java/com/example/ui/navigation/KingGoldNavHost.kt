@@ -35,6 +35,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.notifications.FcmRegistrationManager
+import com.example.ui.screens.admin.AdminApprovalScreen
 import com.example.ui.screens.admin.AdminControlCenterScreen
 import com.example.ui.screens.ai.AiAdvisorScreen
 import com.example.ui.screens.auth.KycScreen
@@ -55,6 +56,7 @@ import com.example.ui.screens.price.PriceInsightScreen
 import com.example.ui.screens.shop.ProductDetailScreen
 import com.example.ui.screens.shop.ProductListScreen
 import com.example.ui.screens.shop.ShopDetailScreen
+import com.example.ui.state.AdminApprovalViewModel
 import com.example.ui.state.KingGoldViewModel
 import com.example.ui.state.MerchantRegistrationViewModel
 import com.example.ui.theme.AppColors
@@ -70,6 +72,7 @@ object Routes {
     const val MERCHANT_PORTAL = "merchant_portal"
     const val MERCHANT_REGISTRATION = "merchant_registration"
     const val ADMIN_CENTER = "admin_center"
+    const val ADMIN_APPROVAL = "admin_approval"
     const val PRICE_INSIGHT = "price_insight"
     const val AI_ADVISOR = "ai_advisor?prompt={prompt}"
     const val CART = "cart"
@@ -120,6 +123,7 @@ fun KingGoldNavHost(
     viewModel: KingGoldViewModel,
     onSignOut: () -> Unit,
     merchantRegistrationViewModel: MerchantRegistrationViewModel? = null,
+    adminApprovalViewModel: AdminApprovalViewModel? = null,
 ) {
     val context = LocalContext.current
     val navController = rememberNavController()
@@ -165,6 +169,7 @@ fun KingGoldNavHost(
                 onOpenMerchantPortal = { navController.navigateSingleTop(Routes.MERCHANT_PORTAL) },
                 onOpenMerchantRegistration = { navController.navigateSingleTop(Routes.MERCHANT_REGISTRATION) },
                 onOpenAdminCenter = { navController.navigateSingleTop(Routes.ADMIN_CENTER) },
+                onOpenAdminApproval = { navController.navigateSingleTop(Routes.ADMIN_APPROVAL) },
                 onOpenSupport = { navController.navigateSingleTop(Routes.SUPPORT) },
                 onBuyFractionalGold = viewModel::buyFractionalGold,
                 onRequestWithdrawal = viewModel::requestPhysicalWithdrawal,
@@ -231,6 +236,18 @@ fun KingGoldNavHost(
                 onProcessFractional = viewModel::adminConfirmOrRejectFractional,
                 onUpdatePricing = viewModel::adminUpdatePricingConfig,
                 onClearMessages = viewModel::clearActionMessages,
+                onOpenPendingApprovalScreen = { navController.navigateSingleTop(Routes.ADMIN_APPROVAL) },
+            )
+        }
+
+        composable(Routes.ADMIN_APPROVAL) {
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+            val approvalVm = adminApprovalViewModel ?: remember(uiState.isAdmin) {
+                AdminApprovalViewModel(isAdmin = uiState.isAdmin)
+            }
+            AdminApprovalScreen(
+                viewModel = approvalVm,
+                onBack = { navController.popBackSafely() },
             )
         }
 

@@ -29,6 +29,7 @@ import com.example.ui.auth.authStateFlow
 import com.example.ui.navigation.KingGoldNavHost
 import com.example.ui.screens.SplashScreen
 import com.example.ui.screens.auth.LoginScreen
+import com.example.ui.state.AdminApprovalViewModel
 import com.example.ui.state.KingGoldViewModel
 import com.example.ui.state.MerchantRegistrationViewModel
 import com.example.ui.theme.KingGoldTheme
@@ -130,9 +131,26 @@ private fun AppContent() {
                     }
                 },
             )
+            val adminApprovalViewModel: AdminApprovalViewModel = viewModel(
+                key = "admin_approval_${user.uid}",
+                factory = viewModelFactory {
+                    initializer {
+                        val app = checkNotNull(this[APPLICATION_KEY]) {
+                            "APPLICATION_KEY missing from CreationExtras"
+                        }
+                        val databaseId = app.getString(R.string.firestore_database_id)
+                        val db = FirebaseFirestore.getInstance(databaseId)
+                        AdminApprovalViewModel(
+                            marketplaceRepository = FirestoreMarketplaceRepository(db, auth),
+                            isAdmin = user.email.equals(KingGoldViewModel.ADMIN_EMAIL, ignoreCase = true),
+                        )
+                    }
+                },
+            )
             KingGoldNavHost(
                 viewModel = kingGoldViewModel,
                 merchantRegistrationViewModel = merchantRegistrationViewModel,
+                adminApprovalViewModel = adminApprovalViewModel,
                 onSignOut = {
                     GoogleAuthHelper.signOut(
                         credentialManager = credentialManager,

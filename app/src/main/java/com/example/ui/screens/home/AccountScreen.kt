@@ -71,6 +71,7 @@ fun AccountScreen(
     onOpenMerchantPortal: () -> Unit = {},
     onOpenMerchantRegistration: () -> Unit = {},
     onOpenAdminCenter: () -> Unit = {},
+    onOpenAdminApproval: () -> Unit = {},
     onOpenSupport: () -> Unit = {},
     onOpenKyc: () -> Unit,
     onOpenPriceAlerts: () -> Unit,
@@ -210,6 +211,17 @@ fun AccountScreen(
                         subtitle = "اعتماد التجار، المنتجات، تقييم الذهب، التسويات، والتسعير",
                         onClick = onOpenAdminCenter,
                         modifier = Modifier.testTag("account_admin_tile"),
+                    )
+                }
+
+                item {
+                    val pendingMerchantsCount = uiState.allMerchantsAdmin.count { it.status.name == "PENDING" }
+                    AccountMenuTile(
+                        icon = Icons.Outlined.Storefront,
+                        title = "اعتماد التجار المعلّقين (Pending)",
+                        subtitle = "مراجعة طلبات merchants ذات الحالة PENDING ($pendingMerchantsCount طلب)",
+                        onClick = onOpenAdminApproval,
+                        modifier = Modifier.testTag("account_admin_approval_tile"),
                     )
                 }
             }

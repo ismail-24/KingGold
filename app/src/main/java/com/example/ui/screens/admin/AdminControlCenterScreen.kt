@@ -83,6 +83,7 @@ fun AdminControlCenterScreen(
     onProcessFractional: (FractionalGoldOrder, Boolean) -> Unit,
     onUpdatePricing: (PlatformPricingConfig) -> Unit,
     onClearMessages: () -> Unit,
+    onOpenPendingApprovalScreen: (() -> Unit)? = null,
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
     var inspectingMerchant by remember { mutableStateOf<MerchantStore?>(null) }
@@ -166,6 +167,22 @@ fun AdminControlCenterScreen(
             ) {
                 when (selectedTab) {
                     0 -> {
+                        if (onOpenPendingApprovalScreen != null) {
+                            item {
+                                OutlinedButton(
+                                    onClick = onOpenPendingApprovalScreen,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("open_admin_approval_screen_button"),
+                                    shape = RoundedCornerShape(12.dp),
+                                ) {
+                                    Text(
+                                        "فتح شاشة اعتماد التجار المعلّقين ($pendingMerchants)",
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                }
+                            }
+                        }
                         val sorted = uiState.allMerchantsAdmin.sortedBy { if (it.status == MerchantStatus.PENDING) 0 else 1 }
                         if (sorted.isEmpty()) {
                             item { EmptyAdminNotice("لا توجد طلبات تجار حالياً.") }

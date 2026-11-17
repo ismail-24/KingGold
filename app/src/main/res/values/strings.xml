@@ -5,4 +5,5 @@
     <string name="fcm_price_alert_channel_desc">إشعارات فورية عبر Firebase Cloud Messaging عند انخفاض سعر عيار 24 عن الحد المحدد</string>
     <string name="merchant_reg_title">تسجيل حساب تاجر</string>
     <string name="merchant_reg_submit">إرسال طلب تسجيل التاجر</string>
+    <string name="admin_approval_title">اعتماد التجار المعلّقين</string>
 </resources>
