@@ -1,13 +1,31 @@
 package com.example.ui.navigation
 
 import android.net.Uri
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
@@ -16,8 +34,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.example.data.KingGoldRepository
 import com.example.notifications.FcmRegistrationManager
+import com.example.ui.screens.admin.AdminControlCenterScreen
 import com.example.ui.screens.ai.AiAdvisorScreen
 import com.example.ui.screens.auth.KycScreen
 import com.example.ui.screens.cart.CartScreen
@@ -26,6 +44,8 @@ import com.example.ui.screens.checkout.SuccessScreen
 import com.example.ui.screens.home.HomeShell
 import com.example.ui.screens.home.HomeTab
 import com.example.ui.screens.home.ProfileScreen
+import com.example.ui.screens.home.SupportScreen
+import com.example.ui.screens.merchant.MerchantPortalScreen
 import com.example.ui.screens.orders.OrderDetailScreen
 import com.example.ui.screens.orders.RatingScreen
 import com.example.ui.screens.orders.ReportIssueScreen
@@ -35,6 +55,8 @@ import com.example.ui.screens.shop.ProductDetailScreen
 import com.example.ui.screens.shop.ProductListScreen
 import com.example.ui.screens.shop.ShopDetailScreen
 import com.example.ui.state.KingGoldViewModel
+import com.example.ui.theme.AppColors
+import com.example.ui.theme.AppText
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 
@@ -42,6 +64,9 @@ object Routes {
     const val HOME = "home"
     const val PROFILE = "profile"
     const val KYC = "kyc"
+    const val SUPPORT = "support"
+    const val MERCHANT_PORTAL = "merchant_portal"
+    const val ADMIN_CENTER = "admin_center"
     const val PRICE_INSIGHT = "price_insight"
     const val AI_ADVISOR = "ai_advisor?prompt={prompt}"
     const val CART = "cart"
@@ -133,10 +158,59 @@ fun KingGoldNavHost(
                 onToggleFavoritesOnlyFilter = viewModel::toggleFavoritesOnlyFilter,
                 onOpenOrder = { order -> navController.navigateSingleTop(Routes.orderDetail(order.id)) },
                 onOpenProfile = { navController.navigateSingleTop(Routes.PROFILE) },
+                onOpenMerchantPortal = { navController.navigateSingleTop(Routes.MERCHANT_PORTAL) },
+                onOpenAdminCenter = { navController.navigateSingleTop(Routes.ADMIN_CENTER) },
+                onOpenSupport = { navController.navigateSingleTop(Routes.SUPPORT) },
+                onBuyFractionalGold = viewModel::buyFractionalGold,
+                onRequestWithdrawal = viewModel::requestPhysicalWithdrawal,
+                onSubmitDepositRequest = viewModel::submitDepositRequest,
+                onSubmitSellGoldRequest = viewModel::submitSellGoldRequest,
+                onCancelSellGoldRequest = viewModel::cancelSellGoldRequest,
+                onAcceptSellGoldOffer = viewModel::acceptSellGoldOffer,
+                onClearActionMessages = viewModel::clearActionMessages,
                 onOpenKyc = { navController.navigateSingleTop(Routes.KYC) },
                 onSelectPaymentMethod = viewModel::selectPaymentMethod,
                 onDismissSyncError = viewModel::clearSyncError,
                 onLogout = onSignOut,
+            )
+        }
+
+        composable(Routes.SUPPORT) {
+            SupportScreen(
+                onOpenAiAdvisor = { navController.navigateSingleTop(Routes.aiAdvisor(null)) },
+                onBack = { navController.popBackSafely() },
+            )
+        }
+
+        composable(Routes.MERCHANT_PORTAL) {
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+            MerchantPortalScreen(
+                uiState = uiState,
+                onBack = { navController.popBackSafely() },
+                onLoadMerchantDetails = viewModel::loadMerchantInspectionDetails,
+                onSubmitRegistration = viewModel::submitMerchantRegistration,
+                onSaveProduct = viewModel::saveMerchantProduct,
+                onToggleProductPause = viewModel::toggleMerchantProductPause,
+                onUpdateOrderStatus = viewModel::updateMerchantOrderStatus,
+                onClearMessages = viewModel::clearActionMessages,
+            )
+        }
+
+        composable(Routes.ADMIN_CENTER) {
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+            AdminControlCenterScreen(
+                uiState = uiState,
+                onBack = { navController.popBackSafely() },
+                onLoadMerchantDetails = viewModel::loadMerchantInspectionDetails,
+                onReviewMerchant = viewModel::adminReviewMerchant,
+                onReviewProduct = viewModel::adminReviewProduct,
+                onEvaluateSellGold = viewModel::adminEvaluateSellGold,
+                onRejectSellGold = viewModel::adminRejectSellGold,
+                onProcessDeposit = viewModel::adminApproveOrRejectDeposit,
+                onProcessWithdrawal = viewModel::adminProcessWithdrawal,
+                onProcessFractional = viewModel::adminConfirmOrRejectFractional,
+                onUpdatePricing = viewModel::adminUpdatePricingConfig,
+                onClearMessages = viewModel::clearActionMessages,
             )
         }
 
@@ -200,6 +274,7 @@ fun KingGoldNavHost(
             val shop = viewModel.findShop(shopId) ?: uiState.shops.firstOrNull() ?: return@composable
             ShopDetailScreen(
                 shop = shop,
+                products = uiState.productsForShop(shop.id),
                 prices = uiState.prices,
                 isFavorite = uiState.favoriteShopIds.contains(shop.id),
                 cartItemCount = uiState.cartItemCount,
@@ -254,22 +329,51 @@ fun KingGoldNavHost(
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             val shopId = backStackEntry.arguments?.getString("shopId").orEmpty()
             val productId = backStackEntry.arguments?.getString("productId").orEmpty()
-            val shop = viewModel.findShop(shopId) ?: uiState.shops.firstOrNull() ?: return@composable
-            val products = KingGoldRepository.productsFor(shop.id)
-            val product = products.firstOrNull { it.id == productId } ?: products.first()
+            val shop = viewModel.findShop(shopId)
+            val product = shop?.let { s ->
+                uiState.productsForShop(s.id).firstOrNull { it.id == productId }
+            }
+            if (shop == null || product == null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(AppColors.Parchment)
+                        .padding(24.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Text(
+                            text = "هذا المنتج غير متاح حالياً أو تم تحديث مخزونه",
+                            style = AppText.display.copy(fontSize = 18.sp),
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Button(
+                            onClick = { navController.popBackSafely() },
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = AppColors.Ink,
+                                contentColor = Color.White,
+                            ),
+                        ) {
+                            Text("رجوع للمتجر", style = AppText.body.copy(color = Color.White, fontWeight = FontWeight.Bold))
+                        }
+                    }
+                }
+                return@composable
+            }
             ProductDetailScreen(
                 shop = shop,
                 product = product,
                 gramPrice = uiState.gramPrice(product.karat),
                 cartItemCount = uiState.cartItemCount,
                 onBack = { navController.popBackSafely() },
-                onAddToCartAndGo = {
-                    viewModel.addToCart(shop, product)
-                    navController.navigateSingleTop(Routes.CART)
-                },
+                onAddToCart = { viewModel.addToCart(shop, product) },
                 onOpenCart = { navController.navigateSingleTop(Routes.CART) },
                 onAskAiAboutProduct = {
-                    val prompt = "هل قطعة ${product.name} (${product.weightGrams} جم عيار ${product.karat}) من محل ${shop.name} بمصنعية ${shop.makingFeePerGram.toInt()} ج.م/جم مناسبة للشراء الآن؟"
+                    val prompt = "هل قطعة ${product.name} (${product.weightGrams} جم عيار ${product.karat}) من محل ${shop.name} بالسعر الشامل بدون مصنعية إضافية مناسبة للشراء الآن؟"
                     navController.navigateSingleTop(Routes.aiAdvisor(prompt))
                 },
             )

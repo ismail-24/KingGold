@@ -47,7 +47,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.data.KingGoldRepository
 import com.example.ui.components.EscrowTimeline
 import com.example.ui.components.LedgerCard
 import com.example.ui.components.LedgerLine
@@ -149,13 +148,30 @@ fun CheckoutScreen(
                 contentPadding = PaddingValues(18.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
+                if (uiState.actionErrorMessage != null) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(AppColors.AlertSoft)
+                                .border(1.dp, AppColors.Alert.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                                .padding(12.dp),
+                        ) {
+                            Text(
+                                text = uiState.actionErrorMessage,
+                                style = AppText.body.copy(color = AppColors.Alert, fontSize = 13.sp, fontWeight = FontWeight.Bold),
+                            )
+                        }
+                    }
+                }
+
                 item {
                     LedgerCard(
                         lines = listOf(
-                            LedgerLine("قيمة الذهب", formatCurrency(uiState.cartGoldValue)),
-                            LedgerLine("مصنعية المحل", formatCurrency(uiState.cartMakingFee)),
-                            LedgerLine("رسوم خدمة King Gold", formatCurrency(uiState.cartServiceFee)),
-                            LedgerLine("الإجمالي", "${formatCurrency(uiState.cartTotal)} ج.م", isTotal = true),
+                            LedgerLine("إجمالي سعر القطع", formatCurrency(uiState.cartGoldValue)),
+                            LedgerLine("مصنعية إضافية", "0.00 ج.م (مشمولة)"),
+                            LedgerLine("السعر النهائي", "${formatCurrency(uiState.cartTotal)} ج.م", isTotal = true),
                         ),
                     )
                 }
@@ -171,7 +187,7 @@ fun CheckoutScreen(
                     )
                 }
 
-                items(KingGoldRepository.paymentMethods, key = { it.id }) { method ->
+                items(uiState.availablePaymentMethods, key = { it.id }) { method ->
                     val selected = uiState.selectedPaymentMethodId == method.id
                     val icon = when (method.id) {
                         "card" -> Icons.Outlined.CreditCard

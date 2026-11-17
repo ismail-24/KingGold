@@ -22,6 +22,7 @@ data class OrderItemRecord(
     val weightGrams: Double = 0.0,
     val stamped: Boolean = true,
     val quantity: Long = 1L,
+    val sellingPricePiasters: Long = 0L,
 ) {
     fun toCartItem(): CartItem = CartItem(
         product = Product(
@@ -33,6 +34,7 @@ data class OrderItemRecord(
             weightGrams = weightGrams,
             stamped = stamped,
             availablePieces = quantity.toInt().coerceAtLeast(1),
+            sellingPricePiasters = sellingPricePiasters,
         ),
         quantity = quantity.toInt().coerceAtLeast(1),
     )
@@ -46,6 +48,7 @@ data class OrderItemRecord(
         "weightGrams" to weightGrams,
         "stamped" to stamped,
         "quantity" to quantity,
+        "sellingPricePiasters" to sellingPricePiasters,
     )
 
     companion object {
@@ -58,6 +61,7 @@ data class OrderItemRecord(
             weightGrams = item.product.weightGrams,
             stamped = item.product.stamped,
             quantity = item.quantity.toLong(),
+            sellingPricePiasters = item.product.sellingPricePiasters,
         )
     }
 }
@@ -68,10 +72,14 @@ data class GoldOrderRecord(
     val userId: String = "",
     val shopId: String = "",
     val shopName: String = "",
+    val merchantOwnerUid: String? = null,
     val items: List<OrderItemRecord> = emptyList(),
     val goldValue: Double = 0.0,
     val makingFee: Double = 0.0,
     val serviceFee: Double = 0.0,
+    val totalPiasters: Long? = null,
+    val paymentSource: String? = null,
+    val idempotencyKey: String? = null,
     val pickupWindow: String = "",
     val status: String = OrderStatus.READY_FOR_PICKUP.name,
     val ratingGiven: Long? = null,
@@ -91,7 +99,8 @@ data class GoldOrderRecord(
             distanceKm = 2.0,
             verified = true,
             closesAt = "9:00 م",
-            makingFeePerGram = 95.0,
+            makingFeePerGram = 0.0,
+            ownerUid = merchantOwnerUid.orEmpty(),
         )
         val parsedStatus = runCatching { OrderStatus.valueOf(status) }
             .getOrDefault(OrderStatus.READY_FOR_PICKUP)
@@ -106,6 +115,8 @@ data class GoldOrderRecord(
             status = parsedStatus,
             ratingGiven = ratingGiven?.toInt(),
             disputeReason = disputeReason,
+            totalPiasters = totalPiasters ?: 0L,
+            paymentSource = paymentSource ?: "ESCROW_METHOD",
         )
     }
 
@@ -114,10 +125,14 @@ data class GoldOrderRecord(
             "userId" to userId,
             "shopId" to shopId,
             "shopName" to shopName,
+            "merchantOwnerUid" to merchantOwnerUid?.takeIf { it.isNotBlank() },
             "items" to items.map { it.toMap() },
             "goldValue" to goldValue,
             "makingFee" to makingFee,
             "serviceFee" to serviceFee,
+            "totalPiasters" to totalPiasters,
+            "paymentSource" to paymentSource?.takeIf { it.isNotBlank() },
+            "idempotencyKey" to idempotencyKey?.takeIf { it.isNotBlank() },
             "pickupWindow" to pickupWindow,
             "status" to status,
             "ratingGiven" to ratingGiven,
@@ -130,15 +145,23 @@ data class GoldOrderRecord(
     }
 
     companion object {
-        fun fromGoldOrder(userId: String, order: GoldOrder): GoldOrderRecord = GoldOrderRecord(
+        fun fromGoldOrder(
+            userId: String,
+            order: GoldOrder,
+            idempotencyKey: String? = null,
+        ): GoldOrderRecord = GoldOrderRecord(
             id = order.id,
             userId = userId,
             shopId = order.shop.id,
             shopName = order.shop.name,
+            merchantOwnerUid = order.shop.ownerUid.takeIf { it.isNotBlank() },
             items = order.items.map { OrderItemRecord.fromCartItem(it) },
             goldValue = order.goldValue,
             makingFee = order.makingFee,
             serviceFee = order.serviceFee,
+            totalPiasters = order.totalPiasters.takeIf { it > 0L },
+            paymentSource = order.paymentSource.takeIf { it.isNotBlank() },
+            idempotencyKey = idempotencyKey,
             pickupWindow = order.pickupWindow,
             status = order.status.name,
             ratingGiven = order.ratingGiven?.toLong(),

@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -31,11 +33,17 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -45,6 +53,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.KingGoldRepository
+import com.example.model.MoneyUtils
 import com.example.model.Product
 import com.example.model.Shop
 import com.example.ui.components.LedgerCard
@@ -53,6 +62,8 @@ import com.example.ui.components.ProductGoldArtwork
 import com.example.ui.components.formatCurrency
 import com.example.ui.theme.AppColors
 import com.example.ui.theme.AppText
+import com.example.ui.util.Base64ThumbnailImage
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,15 +73,21 @@ fun ProductDetailScreen(
     gramPrice: Double = KingGoldRepository.gramPrice(product.karat),
     cartItemCount: Int = 0,
     onBack: () -> Unit,
-    onAddToCartAndGo: () -> Unit,
+    onAddToCart: () -> Unit,
     onOpenCart: () -> Unit = {},
     onAskAiAboutProduct: () -> Unit = {},
 ) {
-    val goldValue = gramPrice * product.weightGrams
-    val makingFee = shop.makingFeePerGram * product.weightGrams
+    val finalPriceEgp = if (product.sellingPricePiasters > 0L) {
+        MoneyUtils.piastersToEgp(product.sellingPricePiasters)
+    } else {
+        gramPrice * product.weightGrams
+    }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     Scaffold(
         containerColor = AppColors.Parchment,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -122,18 +139,32 @@ fun ProductDetailScreen(
                 color = AppColors.Parchment,
                 shadowElevation = 4.dp,
             ) {
-                Box(
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .navigationBarsPadding()
                         .padding(horizontal = 18.dp, vertical = 10.dp),
-                    contentAlignment = Alignment.Center,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Button(
-                        onClick = onAddToCartAndGo,
+                        onClick = {
+                            onAddToCart()
+                            scope.launch {
+                                snackbarHostState.currentSnackbarData?.dismiss()
+                                val res = snackbarHostState.showSnackbar(
+                                    message = "تمت إضافة ${product.name} إلى السلة",
+                                    actionLabel = "عرض السلة",
+                                    duration = SnackbarDuration.Short,
+                                )
+                                if (res == SnackbarResult.ActionPerformed) {
+                                    onOpenCart()
+                                }
+                            }
+                        },
+                        enabled = product.availablePieces > 0,
                         modifier = Modifier
-                            .widthIn(max = 560.dp)
-                            .fillMaxWidth()
+                            .weight(1f)
                             .height(52.dp)
                             .testTag("add_to_cart_button"),
                         shape = RoundedCornerShape(14.dp),
@@ -143,13 +174,30 @@ fun ProductDetailScreen(
                         ),
                     ) {
                         Text(
-                            text = "أضف للسلة",
+                            text = if (product.availablePieces > 0) "أضف للسلة" else "نفد المخزون",
                             style = AppText.body.copy(
                                 color = Color.White,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 15.5.sp,
                             ),
                         )
+                    }
+                    if (cartItemCount > 0) {
+                        OutlinedButton(
+                            onClick = onOpenCart,
+                            modifier = Modifier
+                                .height(52.dp)
+                                .testTag("product_detail_open_cart_cta"),
+                            shape = RoundedCornerShape(14.dp),
+                        ) {
+                            Text(
+                                text = "السلة ($cartItemCount)",
+                                style = AppText.body.copy(
+                                    color = AppColors.Ink,
+                                    fontWeight = FontWeight.Bold,
+                                ),
+                            )
+                        }
                     }
                 }
             }
@@ -169,14 +217,29 @@ fun ProductDetailScreen(
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 item {
-                    ProductGoldArtwork(
-                        category = product.category,
-                        karat = product.karat,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(180.dp),
-                        cornerRadius = 18.dp,
-                    )
+                    if (product.imageThumbnails.isNotEmpty()) {
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            items(product.imageThumbnails) { b64 ->
+                                Base64ThumbnailImage(
+                                    encoded = b64,
+                                    contentDescription = product.name,
+                                    modifier = Modifier
+                                        .width(280.dp)
+                                        .height(180.dp)
+                                        .clip(RoundedCornerShape(18.dp)),
+                                )
+                            }
+                        }
+                    } else {
+                        ProductGoldArtwork(
+                            category = product.category,
+                            karat = product.karat,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(180.dp),
+                            cornerRadius = 18.dp,
+                        )
+                    }
                 }
 
                 item {
@@ -199,29 +262,36 @@ fun ProductDetailScreen(
                             text = "${shop.name} · موثّق · ${shop.rating} ★ ${shop.distanceKm} كم",
                             style = AppText.body.copy(color = AppColors.Muted),
                         )
+                        if (product.description.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = product.description,
+                                style = AppText.body.copy(fontSize = 13.5.sp, color = AppColors.Ink.copy(alpha = 0.85f)),
+                            )
+                        }
                     }
                 }
 
                 item {
                     Column {
                         Text(
-                            text = "السعر التقديري — مرتبط بالسعر اللحظي",
+                            text = "السعر النهائي — بدون مصنعية إضافية",
                             style = AppText.display.copy(fontSize = 16.sp),
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         LedgerCard(
                             lines = listOf(
                                 LedgerLine(
-                                    label = "قيمة الذهب (${product.weightGrams} جم × ${formatCurrency(gramPrice, 0)})",
-                                    value = formatCurrency(goldValue, 0),
+                                    label = "سعر القطعة (${product.weightGrams} جم · عيار ${product.karat})",
+                                    value = formatCurrency(finalPriceEgp, 0),
                                 ),
                                 LedgerLine(
-                                    label = "مصنعية المحل (${product.weightGrams} جم × ${formatCurrency(shop.makingFeePerGram, 0)})",
-                                    value = formatCurrency(makingFee, 0),
+                                    label = "المصنعية الإضافية",
+                                    value = "0.00 ج.م (مشمولة)",
                                 ),
                                 LedgerLine(
-                                    label = "الإجمالي قبل رسوم الخدمة",
-                                    value = "${formatCurrency(goldValue + makingFee, 0)} ج.م",
+                                    label = "الإجمالي النهائي",
+                                    value = "${formatCurrency(finalPriceEgp, 0)} ج.م",
                                     isTotal = true,
                                 ),
                             ),
@@ -237,7 +307,7 @@ fun ProductDetailScreen(
                         )
                         CheckLine("القطعة بعد وزنها قدامك على ميزان المحل")
                         CheckLine("دمغة العيار ظاهرة على القطعة")
-                        CheckLine("فاتورة باسمك بتفاصيل الوزن والعيار والمصنعية")
+                        CheckLine("السعر نهائي بدون أي مصنعية إضافية أو رسوم خفية")
                     }
                 }
 

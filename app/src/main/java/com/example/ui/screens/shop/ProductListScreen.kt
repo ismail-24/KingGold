@@ -58,7 +58,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.data.KingGoldRepository
+import com.example.model.MoneyUtils
 import com.example.model.Product
 import com.example.model.Shop
 import com.example.ui.components.ProductGoldArtwork
@@ -66,6 +66,7 @@ import com.example.ui.components.formatCurrency
 import com.example.ui.state.KingGoldUiState
 import com.example.ui.theme.AppColors
 import com.example.ui.theme.AppText
+import com.example.ui.util.Base64ThumbnailImage
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -79,9 +80,11 @@ fun ProductListScreen(
     onAddToCart: (Product) -> Unit,
     onOpenCart: () -> Unit,
 ) {
-    val products = remember(shop.id) { KingGoldRepository.productsFor(shop.id) }
+    val products = remember(shop.id, uiState.activeMerchantProducts) {
+        uiState.productsForShop(shop.id)
+    }
     val categories = remember(products) { listOf("الكل") + products.map { it.category }.distinct() }
-    var selectedCategory by remember(initialCategory) {
+    var selectedCategory by remember(initialCategory, categories) {
         mutableStateOf(
             if (initialCategory != null && categories.contains(initialCategory)) initialCategory else "الكل",
         )
@@ -226,71 +229,112 @@ fun ProductListScreen(
                     contentPadding = PaddingValues(14.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    items(shown, key = { it.id }) { product ->
-                        val estPrice = uiState.gramPrice(product.karat) * product.weightGrams
-                        val shape = RoundedCornerShape(14.dp)
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(shape)
-                                .background(Color.White)
-                                .border(1.dp, AppColors.Line, shape)
-                                .clickable { onOpenProduct(product) }
-                                .padding(12.dp)
-                                .testTag("product_card_${product.id}"),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            ProductGoldArtwork(
-                                category = product.category,
-                                karat = product.karat,
-                                modifier = Modifier.size(56.dp),
-                                cornerRadius = 10.dp,
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
+                    if (shown.isEmpty()) {
+                        item {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(Color.White)
+                                    .border(1.dp, AppColors.Line, RoundedCornerShape(14.dp))
+                                    .padding(20.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
                                 Text(
-                                    text = product.name,
-                                    style = AppText.body.copy(fontWeight = FontWeight.ExtraBold, fontSize = 15.sp),
-                                )
-                                Text(
-                                    text = "عيار ${product.karat} · ${product.weightGrams} جم",
-                                    style = AppText.body.copy(color = AppColors.Muted, fontSize = 12.sp),
+                                    text = "لا توجد قطع ذهب متاحة في هذا القسم حالياً.",
+                                    style = AppText.body.copy(color = AppColors.Muted),
                                 )
                             }
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text(
-                                    text = "${formatCurrency(estPrice, decimals = 0)} ج.م",
-                                    style = AppText.body.copy(fontWeight = FontWeight.ExtraBold, fontSize = 14.sp),
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                IconButton(
-                                    onClick = {
-                                        onAddToCart(product)
-                                        scope.launch {
-                                            snackbarHostState.currentSnackbarData?.dismiss()
-                                            val result = snackbarHostState.showSnackbar(
-                                                message = "اتضاف ${product.name} للسلة",
-                                                actionLabel = "عرض السلة",
-                                                duration = SnackbarDuration.Short,
-                                            )
-                                            if (result == SnackbarResult.ActionPerformed) {
-                                                onOpenCart()
-                                            }
-                                        }
-                                    },
-                                    modifier = Modifier
-                                        .size(48.dp)
-                                        .testTag("quick_add_${product.id}"),
-                                    colors = IconButtonDefaults.filledIconButtonColors(
-                                        containerColor = AppColors.Ink,
-                                        contentColor = AppColors.BrassLight,
-                                    ),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Add,
-                                        contentDescription = "أضف ${product.name} للسلة",
-                                        modifier = Modifier.size(20.dp),
+                        }
+                    } else {
+                        items(shown, key = { it.id }) { product ->
+                            val finalPriceEgp = MoneyUtils.piastersToEgp(uiState.productFinalPricePiasters(product))
+                            val shape = RoundedCornerShape(14.dp)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(shape)
+                                    .background(Color.White)
+                                    .border(1.dp, AppColors.Line, shape)
+                                    .clickable { onOpenProduct(product) }
+                                    .padding(12.dp)
+                                    .testTag("product_card_${product.id}"),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                val thumb = product.imageThumbnails.firstOrNull()
+                                if (!thumb.isNullOrBlank()) {
+                                    Base64ThumbnailImage(
+                                        encoded = thumb,
+                                        contentDescription = product.name,
+                                        modifier = Modifier
+                                            .size(56.dp)
+                                            .clip(RoundedCornerShape(10.dp)),
                                     )
+                                } else {
+                                    ProductGoldArtwork(
+                                        category = product.category,
+                                        karat = product.karat,
+                                        modifier = Modifier.size(56.dp),
+                                        cornerRadius = 10.dp,
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = product.name,
+                                        style = AppText.body.copy(fontWeight = FontWeight.ExtraBold, fontSize = 15.sp),
+                                    )
+                                    Text(
+                                        text = "عيار ${product.karat} · ${product.weightGrams} جم · ${product.availablePieces} متاح",
+                                        style = AppText.body.copy(color = AppColors.Muted, fontSize = 12.sp),
+                                    )
+                                    Text(
+                                        text = "السعر شامل (0 مصنعية إضافية)",
+                                        style = AppText.body.copy(
+                                            color = AppColors.Trust,
+                                            fontSize = 10.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                        ),
+                                    )
+                                }
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text(
+                                        text = "${formatCurrency(finalPriceEgp, decimals = 0)} ج.م",
+                                        style = AppText.body.copy(fontWeight = FontWeight.ExtraBold, fontSize = 14.sp),
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    IconButton(
+                                        onClick = {
+                                            if (product.availablePieces > 0) {
+                                                onAddToCart(product)
+                                                scope.launch {
+                                                    snackbarHostState.currentSnackbarData?.dismiss()
+                                                    val result = snackbarHostState.showSnackbar(
+                                                        message = "تمت إضافة ${product.name} للسلة",
+                                                        actionLabel = "عرض السلة",
+                                                        duration = SnackbarDuration.Short,
+                                                    )
+                                                    if (result == SnackbarResult.ActionPerformed) {
+                                                        onOpenCart()
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        enabled = product.availablePieces > 0,
+                                        modifier = Modifier
+                                            .size(48.dp)
+                                            .testTag("quick_add_${product.id}"),
+                                        colors = IconButtonDefaults.filledIconButtonColors(
+                                            containerColor = AppColors.Ink,
+                                            contentColor = AppColors.BrassLight,
+                                        ),
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Add,
+                                            contentDescription = "أضف ${product.name} للسلة",
+                                            modifier = Modifier.size(20.dp),
+                                        )
+                                    }
                                 }
                             }
                         }

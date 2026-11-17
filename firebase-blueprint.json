@@ -5,14 +5,15 @@
       "description": "Line item inside a verified gold pickup order",
       "type": "object",
       "properties": {
-        "productId": { "type": "string", "description": "Catalog product ID" },
-        "shopId": { "type": "string", "description": "Partner shop ID" },
-        "name": { "type": "string", "description": "Arabic display title of the gold piece" },
+        "productId": { "type": "string", "description": "Catalog or merchant product ID" },
+        "shopId": { "type": "string", "description": "Merchant or partner shop ID" },
+        "name": { "type": "string", "description": "Display title of the gold piece" },
         "category": { "type": "string", "description": "Product category label" },
         "karat": { "type": "integer", "description": "Gold purity karat (18, 21, 24)" },
         "weightGrams": { "type": "number", "description": "Weight per piece in grams" },
         "stamped": { "type": "boolean", "description": "Official hallmark stamp verification" },
-        "quantity": { "type": "integer", "description": "Number of pieces ordered" }
+        "quantity": { "type": "integer", "description": "Number of pieces ordered" },
+        "unitSellingPricePiasters": { "type": "integer", "description": "Final customer selling price per piece in piasters (no extra making charges)" }
       },
       "required": ["productId", "shopId", "name", "category", "karat", "weightGrams", "stamped", "quantity"]
     },
@@ -22,12 +23,16 @@
       "type": "object",
       "properties": {
         "userId": { "type": "string", "description": "Firebase Auth UID of the buyer" },
-        "shopId": { "type": "string", "description": "Partner shop ID" },
-        "shopName": { "type": "string", "description": "Partner shop display name" },
+        "shopId": { "type": "string", "description": "Merchant or partner shop ID" },
+        "shopName": { "type": "string", "description": "Merchant shop display name" },
+        "merchantOwnerUid": { "type": "string", "description": "Optional Firebase Auth UID of the owning merchant" },
         "items": { "type": "array", "description": "Bounded list of ordered gold items (max 50)" },
-        "goldValue": { "type": "number", "description": "Locked gold bullion value in EGP" },
-        "makingFee": { "type": "number", "description": "Shop making fee in EGP" },
-        "serviceFee": { "type": "number", "description": "Platform escrow fee in EGP" },
+        "goldValue": { "type": "number", "description": "Total product selling value in EGP" },
+        "makingFee": { "type": "number", "description": "Additional customer making fee (0 for merchant products under prepaid making-charge policy)" },
+        "serviceFee": { "type": "number", "description": "Additional platform fee (0 for transparent merchant selling price)" },
+        "totalPiasters": { "type": "integer", "description": "Exact total in piasters" },
+        "paymentSource": { "type": "string", "description": "CASH_WALLET or ESCROW_METHOD" },
+        "idempotencyKey": { "type": "string", "description": "Unique client idempotency key to prevent duplicate orders" },
         "pickupWindow": { "type": "string", "description": "Scheduled pickup time slot" },
         "status": {
           "type": "string",
@@ -36,8 +41,8 @@
         },
         "ratingGiven": { "type": "integer", "description": "Optional buyer rating from 1 to 5 after completion" },
         "disputeReason": { "type": "string", "description": "Optional buyer dispute explanation" },
-        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp on creation (clients submit FieldValue.serverTimestamp())" },
-        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp on update (clients submit FieldValue.serverTimestamp())" }
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp on creation" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp on update" }
       },
       "required": ["userId", "shopId", "shopName", "items", "goldValue", "makingFee", "serviceFee", "pickupWindow", "status", "createdAt", "updatedAt"]
     },
@@ -47,28 +52,350 @@
       "type": "object",
       "properties": {
         "userId": { "type": "string", "description": "Firebase Auth UID of the account owner" },
-        "kycFrontDone": { "type": "boolean", "description": "Whether national ID front step is completed" },
-        "kycBackDone": { "type": "boolean", "description": "Whether national ID back step is completed" },
-        "kycSelfieDone": { "type": "boolean", "description": "Whether selfie verification step is completed" },
-        "kycStatus": {
-          "type": "string",
-          "enum": ["NOT_STARTED", "PENDING_REVIEW", "VERIFIED"],
-          "description": "KYC verification status"
-        },
-        "selectedPaymentMethodId": { "type": "string", "description": "Default payment method identifier" },
-        "priceAlertEnabled": { "type": "boolean", "description": "Whether target gold price alert is active" },
-        "priceAlertAbove": { "type": "boolean", "description": "Alert condition: true for above target, false for below" },
-        "priceAlertKarat": { "type": "integer", "description": "Monitored gold purity karat for alerts (18, 21, 24)" },
-        "priceAlertTarget": { "type": "string", "description": "Target price per gram in EGP" },
-        "fcmToken": { "type": "string", "description": "Optional Firebase Cloud Messaging device registration token for push alerts" },
-        "favoriteShopIds": { "type": "array", "description": "Bounded list of user's favorite verified shop IDs (max 100)" },
-        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp on creation (clients submit FieldValue.serverTimestamp())" },
-        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp on update (clients submit FieldValue.serverTimestamp())" }
+        "kycFrontDone": { "type": "boolean" },
+        "kycBackDone": { "type": "boolean" },
+        "kycSelfieDone": { "type": "boolean" },
+        "kycStatus": { "type": "string", "enum": ["NOT_STARTED", "PENDING_REVIEW", "VERIFIED"] },
+        "selectedPaymentMethodId": { "type": "string" },
+        "priceAlertEnabled": { "type": "boolean" },
+        "priceAlertAbove": { "type": "boolean" },
+        "priceAlertKarat": { "type": "integer" },
+        "priceAlertTarget": { "type": "string" },
+        "fcmToken": { "type": "string" },
+        "favoriteShopIds": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["userId", "kycFrontDone", "kycBackDone", "kycSelfieDone", "kycStatus", "selectedPaymentMethodId", "priceAlertEnabled", "priceAlertAbove", "priceAlertKarat", "priceAlertTarget", "favoriteShopIds", "createdAt", "updatedAt"]
+    },
+    "UserCart": {
+      "title": "UserCart",
+      "description": "Persistent shopping cart stored under the authenticated buyer",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "shopId": { "type": "string" },
+        "shopName": { "type": "string" },
+        "merchantOwnerUid": { "type": "string" },
+        "items": { "type": "array" },
+        "pickupSlotIndex": { "type": "integer" },
+        "priceLockExpiresAtMs": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "shopId", "shopName", "items", "pickupSlotIndex", "priceLockExpiresAtMs", "createdAt", "updatedAt"]
+    },
+    "MerchantStore": {
+      "title": "MerchantStore",
+      "description": "Public merchant storefront and verification status (no PII)",
+      "type": "object",
+      "properties": {
+        "ownerUid": { "type": "string", "description": "Merchant owner Firebase Auth UID" },
+        "shopName": { "type": "string" },
+        "area": { "type": "string" },
+        "address": { "type": "string" },
+        "contactPhone": { "type": "string" },
+        "verifiedEmail": { "type": "string" },
+        "description": { "type": "string" },
+        "rating": { "type": "number" },
+        "reviewsCount": { "type": "integer" },
+        "status": { "type": "string", "enum": ["PENDING", "APPROVED", "REJECTED", "SUSPENDED"] },
+        "rejectionReason": { "type": "string" },
+        "prepaidMakingApproved": { "type": "boolean" },
+        "prepaidMakingBudgetPiasters": { "type": "integer" },
+        "pricingPolicyNote": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerUid", "shopName", "area", "address", "contactPhone", "verifiedEmail", "description", "rating", "reviewsCount", "status", "prepaidMakingApproved", "prepaidMakingBudgetPiasters", "createdAt", "updatedAt"]
+    },
+    "MerchantPrivateDocs": {
+      "title": "MerchantPrivateDocs",
+      "description": "Confidential merchant legal identity and tax documentation isolated to owner and admin",
+      "type": "object",
+      "properties": {
+        "ownerUid": { "type": "string" },
+        "legalFullName": { "type": "string" },
+        "nationalIdNumber": { "type": "string" },
+        "commercialRegNumber": { "type": "string" },
+        "taxCardNumber": { "type": "string" },
+        "authorizationNotes": { "type": "string" },
+        "documentThumbnails": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerUid", "legalFullName", "nationalIdNumber", "commercialRegNumber", "taxCardNumber", "authorizationNotes", "documentThumbnails", "createdAt", "updatedAt"]
+    },
+    "MerchantAuditLog": {
+      "title": "MerchantAuditLog",
+      "description": "Verification audit trail for merchant onboarding and status changes",
+      "type": "object",
+      "properties": {
+        "merchantId": { "type": "string" },
+        "merchantOwnerUid": { "type": "string" },
+        "actorUid": { "type": "string" },
+        "action": { "type": "string" },
+        "note": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["merchantId", "merchantOwnerUid", "actorUid", "action", "note", "createdAt"]
+    },
+    "MerchantProduct": {
+      "title": "MerchantProduct",
+      "description": "Structured gold product listed by an approved merchant at final selling price",
+      "type": "object",
+      "properties": {
+        "merchantId": { "type": "string" },
+        "ownerUid": { "type": "string" },
+        "merchantName": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "category": { "type": "string" },
+        "karat": { "type": "integer" },
+        "weightMg": { "type": "integer" },
+        "weightGrams": { "type": "number" },
+        "sellingPricePiasters": { "type": "integer" },
+        "stockQuantity": { "type": "integer" },
+        "stamped": { "type": "boolean" },
+        "imageThumbnails": { "type": "array" },
+        "status": { "type": "string", "enum": ["PENDING_REVIEW", "ACTIVE", "PAUSED", "REJECTED"] },
+        "rejectionReason": { "type": "string" },
+        "lastOrderId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["merchantId", "ownerUid", "merchantName", "name", "description", "category", "karat", "weightMg", "weightGrams", "sellingPricePiasters", "stockQuantity", "stamped", "imageThumbnails", "status", "createdAt", "updatedAt"]
+    },
+    "MerchantOrderView": {
+      "title": "MerchantOrderView",
+      "description": "Merchant-scoped projection of marketplace orders without exposing buyer PII",
+      "type": "object",
+      "properties": {
+        "orderId": { "type": "string" },
+        "merchantId": { "type": "string" },
+        "merchantOwnerUid": { "type": "string" },
+        "buyerUid": { "type": "string" },
+        "items": { "type": "array" },
+        "totalPiasters": { "type": "integer" },
+        "pickupWindow": { "type": "string" },
+        "status": { "type": "string", "enum": ["PAID", "PREPARING", "READY_FOR_PICKUP", "COMPLETED", "DISPUTED"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["orderId", "merchantId", "merchantOwnerUid", "buyerUid", "items", "totalPiasters", "pickupWindow", "status", "createdAt", "updatedAt"]
+    },
+    "SellGoldRequest": {
+      "title": "SellGoldRequest",
+      "description": "Customer-to-platform physical gold sale request with manual admin inspection and custom making-charge deduction",
+      "type": "object",
+      "properties": {
+        "customerUid": { "type": "string" },
+        "customerEmail": { "type": "string" },
+        "itemTitle": { "type": "string" },
+        "category": { "type": "string" },
+        "karat": { "type": "integer" },
+        "estimatedWeightMg": { "type": "integer" },
+        "conditionNotes": { "type": "string" },
+        "photoThumbnails": { "type": "array" },
+        "status": { "type": "string", "enum": ["SUBMITTED", "UNDER_REVIEW", "OFFER_SENT", "COMPLETED", "REJECTED", "CANCELLED"] },
+        "evaluatorAdminUid": { "type": "string" },
+        "verifiedWeightMg": { "type": "integer" },
+        "confirmedKarat": { "type": "integer" },
+        "referencePricePerGramPiasters": { "type": "integer" },
+        "evaluatedGoldValuePiasters": { "type": "integer" },
+        "makingChargeDeductionPiasters": { "type": "integer" },
+        "finalOfferPiasters": { "type": "integer" },
+        "inspectionNotes": { "type": "string" },
+        "rejectionReason": { "type": "string" },
+        "settlementTransactionId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["customerUid", "customerEmail", "itemTitle", "category", "karat", "estimatedWeightMg", "conditionNotes", "photoThumbnails", "status", "verifiedWeightMg", "confirmedKarat", "referencePricePerGramPiasters", "evaluatedGoldValuePiasters", "makingChargeDeductionPiasters", "finalOfferPiasters", "createdAt", "updatedAt"]
+    },
+    "WalletSummary": {
+      "title": "WalletSummary",
+      "description": "Authoritative cash wallet (piasters) and digital gold vault (milligrams) balances",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "cashAvailablePiasters": { "type": "integer" },
+        "cashPendingPiasters": { "type": "integer" },
+        "cashTotalCreditedPiasters": { "type": "integer" },
+        "cashTotalDebitedPiasters": { "type": "integer" },
+        "goldConfirmedMg": { "type": "integer" },
+        "goldReservedMg": { "type": "integer" },
+        "goldPendingMg": { "type": "integer" },
+        "gold24kMg": { "type": "integer" },
+        "gold21kMg": { "type": "integer" },
+        "gold18kMg": { "type": "integer" },
+        "totalInvestedPiasters": { "type": "integer" },
+        "lastSettlementRef": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "cashAvailablePiasters", "cashPendingPiasters", "cashTotalCreditedPiasters", "cashTotalDebitedPiasters", "goldConfirmedMg", "goldReservedMg", "goldPendingMg", "gold24kMg", "gold21kMg", "gold18kMg", "totalInvestedPiasters", "lastSettlementRef", "createdAt", "updatedAt"]
+    },
+    "LedgerEntry": {
+      "title": "LedgerEntry",
+      "description": "Append-only immutable cash and gold transaction ledger entry",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "idempotencyKey": { "type": "string" },
+        "txType": { "type": "string", "enum": ["GOLD_SALE_PROCEEDS", "CASH_DEPOSIT_PENDING", "CASH_DEPOSIT", "FRACTIONAL_GOLD_BUY", "FRACTIONAL_GOLD_PENDING", "MARKETPLACE_ORDER_PAID", "GOLD_RESERVATION", "GOLD_WITHDRAWAL_FULFILLED", "GOLD_RESERVATION_RELEASED", "ADMIN_ADJUSTMENT"] },
+        "referenceId": { "type": "string" },
+        "karat": { "type": "integer" },
+        "cashDeltaPiasters": { "type": "integer" },
+        "pendingCashDeltaPiasters": { "type": "integer" },
+        "goldDeltaMg": { "type": "integer" },
+        "reservedDeltaMg": { "type": "integer" },
+        "pendingGoldDeltaMg": { "type": "integer" },
+        "unitPricePerGramPiasters": { "type": "integer" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "idempotencyKey", "txType", "referenceId", "karat", "cashDeltaPiasters", "pendingCashDeltaPiasters", "goldDeltaMg", "reservedDeltaMg", "pendingGoldDeltaMg", "unitPricePerGramPiasters", "notes", "createdAt"]
+    },
+    "FractionalGoldOrder": {
+      "title": "FractionalGoldOrder",
+      "description": "Milligram-precision fractional digital gold acquisition record",
+      "type": "object",
+      "properties": {
+        "customerUid": { "type": "string" },
+        "karat": { "type": "integer" },
+        "weightMg": { "type": "integer" },
+        "pricePerGramPiasters": { "type": "integer" },
+        "totalPiasters": { "type": "integer" },
+        "paymentSource": { "type": "string", "enum": ["CASH_WALLET", "EXTERNAL_PENDING"] },
+        "status": { "type": "string", "enum": ["CONFIRMED", "PENDING_PAYMENT", "REJECTED"] },
+        "ledgerEntryId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["customerUid", "karat", "weightMg", "pricePerGramPiasters", "totalPiasters", "paymentSource", "status", "ledgerEntryId", "createdAt", "updatedAt"]
+    },
+    "WithdrawalRequest": {
+      "title": "WithdrawalRequest",
+      "description": "Physical gold withdrawal request requiring >= 1000 mg available balance",
+      "type": "object",
+      "properties": {
+        "customerUid": { "type": "string" },
+        "customerEmail": { "type": "string" },
+        "karat": { "type": "integer" },
+        "amountMg": { "type": "integer" },
+        "deliveryType": { "type": "string", "enum": ["PICKUP_HUB", "INSURED_COURIER"] },
+        "deliveryAddress": { "type": "string" },
+        "withdrawalRef": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING", "APPROVED", "FULFILLED", "REJECTED"] },
+        "proofNote": { "type": "string" },
+        "adminUid": { "type": "string" },
+        "ledgerEntryId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["customerUid", "customerEmail", "karat", "amountMg", "deliveryType", "deliveryAddress", "withdrawalRef", "status", "ledgerEntryId", "createdAt", "updatedAt"]
+    },
+    "DepositRequest": {
+      "title": "DepositRequest",
+      "description": "Customer cash deposit request requiring admin verification before crediting available cash",
+      "type": "object",
+      "properties": {
+        "customerUid": { "type": "string" },
+        "customerEmail": { "type": "string" },
+        "amountPiasters": { "type": "integer" },
+        "channel": { "type": "string" },
+        "paymentReference": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"] },
+        "adminUid": { "type": "string" },
+        "adminNote": { "type": "string" },
+        "ledgerEntryId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["customerUid", "customerEmail", "amountPiasters", "channel", "paymentReference", "status", "ledgerEntryId", "createdAt", "updatedAt"]
+    },
+    "PlatformPricingConfig": {
+      "title": "PlatformPricingConfig",
+      "description": "Admin-controlled market reference prices and customer gold valuation prices",
+      "type": "object",
+      "properties": {
+        "reference24kPerGramPiasters": { "type": "integer" },
+        "reference21kPerGramPiasters": { "type": "integer" },
+        "reference18kPerGramPiasters": { "type": "integer" },
+        "valuation24kPerGramPiasters": { "type": "integer" },
+        "valuation21kPerGramPiasters": { "type": "integer" },
+        "valuation18kPerGramPiasters": { "type": "integer" },
+        "merchantPolicyNote": { "type": "string" },
+        "updatedByAdminUid": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["reference24kPerGramPiasters", "reference21kPerGramPiasters", "reference18kPerGramPiasters", "valuation24kPerGramPiasters", "valuation21kPerGramPiasters", "valuation18kPerGramPiasters", "merchantPolicyNote", "updatedByAdminUid", "updatedAt"]
+    },
+    "AuditLogRecord": {
+      "title": "AuditLogRecord",
+      "description": "Immutable platform audit log for security and financial compliance",
+      "type": "object",
+      "properties": {
+        "actorUid": { "type": "string" },
+        "actorRole": { "type": "string" },
+        "action": { "type": "string" },
+        "targetPath": { "type": "string" },
+        "details": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["actorUid", "actorRole", "action", "targetPath", "details", "createdAt"]
     }
   },
   "firestore": {
+    "/admins/{adminUid}": {
+      "schema": { "$ref": "#/entities/AuditLogRecord" },
+      "description": "Platform administrator roster"
+    },
+    "/platform_config/{configId}": {
+      "schema": { "$ref": "#/entities/PlatformPricingConfig" },
+      "description": "Admin-controlled reference & valuation gold pricing configuration"
+    },
+    "/merchants/{merchantId}": {
+      "schema": { "$ref": "#/entities/MerchantStore" },
+      "description": "Merchant store metadata & verification workflow"
+    },
+    "/merchants/{merchantId}/private/{docId}": {
+      "schema": { "$ref": "#/entities/MerchantPrivateDocs" },
+      "description": "Private legal documents isolated to owning merchant and admin"
+    },
+    "/merchants/{merchantId}/audit_logs/{logId}": {
+      "schema": { "$ref": "#/entities/MerchantAuditLog" },
+      "description": "Merchant verification audit trail"
+    },
+    "/products/{productId}": {
+      "schema": { "$ref": "#/entities/MerchantProduct" },
+      "description": "Merchant gold products at transparent customer-facing prices"
+    },
+    "/merchant_orders/{orderId}": {
+      "schema": { "$ref": "#/entities/MerchantOrderView" },
+      "description": "Merchant-scoped marketplace orders"
+    },
+    "/sell_requests/{requestId}": {
+      "schema": { "$ref": "#/entities/SellGoldRequest" },
+      "description": "Customer-to-platform physical gold sale requests"
+    },
+    "/fractional_orders/{txId}": {
+      "schema": { "$ref": "#/entities/FractionalGoldOrder" },
+      "description": "Milligram-level digital gold purchase records"
+    },
+    "/withdrawal_requests/{requestId}": {
+      "schema": { "$ref": "#/entities/WithdrawalRequest" },
+      "description": "Physical gold redemption requests (>= 1000 mg enforced)"
+    },
+    "/deposit_requests/{requestId}": {
+      "schema": { "$ref": "#/entities/DepositRequest" },
+      "description": "Cash wallet deposit requests awaiting admin confirmation"
+    },
+    "/audit_logs/{logId}": {
+      "schema": { "$ref": "#/entities/AuditLogRecord" },
+      "description": "Immutable platform-wide audit log"
+    },
     "/users/{userId}/orders/{orderId}": {
       "schema": { "$ref": "#/entities/GoldOrderRecord" },
       "description": "Escrow-backed gold pickup orders scoped to the authenticated buyer"
@@ -76,6 +403,18 @@
     "/users/{userId}/preferences/{prefId}": {
       "schema": { "$ref": "#/entities/UserPreferences" },
       "description": "Buyer KYC verification progress, payment preference, and gold price alerts"
+    },
+    "/users/{userId}/cart/{cartId}": {
+      "schema": { "$ref": "#/entities/UserCart" },
+      "description": "Persistent shopping cart for the authenticated buyer"
+    },
+    "/users/{userId}/wallet/{walletId}": {
+      "schema": { "$ref": "#/entities/WalletSummary" },
+      "description": "Authoritative customer Cash Wallet & Digital Gold Vault balances"
+    },
+    "/users/{userId}/ledger/{entryId}": {
+      "schema": { "$ref": "#/entities/LedgerEntry" },
+      "description": "Append-only immutable cash & gold movement ledger"
     }
   }
 }

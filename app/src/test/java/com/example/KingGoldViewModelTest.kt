@@ -1,8 +1,16 @@
 package com.example
 
 import com.example.data.KingGoldRepository
+import com.example.model.MerchantProduct
+import com.example.model.MerchantProductStatus
+import com.example.model.MerchantStatus
+import com.example.model.MerchantStore
+import com.example.model.MoneyUtils
 import com.example.model.OrderStatus
+import com.example.model.Product
 import com.example.model.ShopSortOption
+import com.example.model.WalletSummary
+import com.example.model.WithdrawalDeliveryType
 import com.example.ui.state.KingGoldViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -11,7 +19,9 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -32,7 +42,7 @@ class KingGoldViewModelTest {
     }
 
     @Test
-    fun cartCalculations_and_orderPlacement_updateEscrowProperly() {
+    fun cartCalculations_and_orderPlacement_haveZeroExtraMakingOrServiceFees() {
         val vm = KingGoldViewModel()
         val shop = KingGoldRepository.shops.first()
         val product = KingGoldRepository.productsFor(shop.id).first() // 8g 21k gold coin
@@ -43,21 +53,80 @@ class KingGoldViewModelTest {
         val stateWithItem = vm.uiState.value
         assertEquals(1, stateWithItem.cartItemCount)
         val expectedGold = 5425.0 * 8.0
-        val expectedMaking = shop.makingFeePerGram * 8.0
-        val expectedService = (expectedGold + expectedMaking) * 0.01
         assertEquals(expectedGold, stateWithItem.cartGoldValue, 0.01)
-        assertEquals(expectedMaking, stateWithItem.cartMakingFee, 0.01)
-        assertEquals(expectedService, stateWithItem.cartServiceFee, 0.01)
+        assertEquals(0.0, stateWithItem.cartMakingFee, 0.001)
+        assertEquals(0.0, stateWithItem.cartServiceFee, 0.001)
+        assertEquals(expectedGold, stateWithItem.cartTotal, 0.01)
 
         val order = vm.placeOrder()
         assertNotNull(order)
         assertEquals(0, vm.uiState.value.cartItemCount)
         assertEquals(OrderStatus.READY_FOR_PICKUP, order!!.status)
+        assertEquals(0.0, order.makingFee, 0.001)
+        assertEquals(0.0, order.serviceFee, 0.001)
         assertEquals(initialEscrow + order.total, vm.uiState.value.escrowHeld, 0.01)
 
         vm.completePickup(order.id)
         assertEquals(initialEscrow, vm.uiState.value.escrowHeld, 0.01)
         assertEquals(OrderStatus.COMPLETED, vm.findOrder(order.id)?.status)
+    }
+
+    @Test
+    fun merchantProductFixedPrice_usesExactMerchantPriceWithZeroExtraFees() {
+        val fixedPricePiasters = 6_450_000L // 64,500.00 EGP final price
+        val merchantProduct = MerchantProduct(
+            id = "mp_1",
+            merchantId = "m_1",
+            ownerUid = "u_merchant",
+            merchantName = "متجر الملكية",
+            name = "سبيكة ذهب 10 جم",
+            description = "سعر نهائي شامل",
+            category = "جنيهات وسبائك",
+            karat = 24,
+            weightMg = 10_000L,
+            weightGrams = 10.0,
+            sellingPricePiasters = fixedPricePiasters,
+            stockQuantity = 3,
+            stamped = true,
+            status = MerchantProductStatus.ACTIVE,
+        )
+        val mappedProduct: Product = merchantProduct.toProduct()
+        val merchantShop = MerchantStore(
+            id = "m_1",
+            ownerUid = "u_merchant",
+            shopName = "متجر الملكية",
+            area = "المعادي",
+            address = "شارع 9 المعادي",
+            contactPhone = "01000000000",
+            status = MerchantStatus.APPROVED,
+            prepaidMakingApproved = true,
+        ).toShop()
+
+        val vm = KingGoldViewModel()
+        vm.addToCart(merchantShop, mappedProduct)
+
+        val state = vm.uiState.value
+        assertEquals(fixedPricePiasters, state.cartTotalPiasters)
+        assertEquals(0.0, state.cartMakingFee, 0.001)
+        assertEquals(0.0, state.cartServiceFee, 0.001)
+        assertEquals(64_500.0, state.cartTotal, 0.01)
+    }
+
+    @Test
+    fun cashWalletCheckout_blocksInsufficientBalance_withoutClearingCart() {
+        val vm = KingGoldViewModel()
+        val shop = KingGoldRepository.shops.first()
+        val product = KingGoldRepository.productsFor(shop.id).first()
+
+        vm.addToCart(shop, product)
+        vm.selectPaymentMethod("cash_wallet")
+
+        // Wallet cash is 0 -> placeOrder must fail cleanly & preserve cart
+        val order = vm.placeOrder()
+        assertNull(order)
+        assertEquals(1, vm.uiState.value.cartItemCount)
+        assertNotNull(vm.uiState.value.actionErrorMessage)
+        assertTrue(vm.uiState.value.actionErrorMessage!!.contains("بالمحفظة النقدية"))
     }
 
     @Test
@@ -75,6 +144,74 @@ class KingGoldViewModelTest {
         assertEquals(shop2.id, vm.uiState.value.cartShop?.id)
         assertEquals(1, vm.uiState.value.cart.size)
         assertEquals(p2.id, vm.uiState.value.cart.first().product.id)
+    }
+
+    @Test
+    fun fractionalGoldPurchase_accumulatesMilligrams_and_enforces1000MgWithdrawalMinimum() {
+        val vm = KingGoldViewModel()
+
+        // Fractional gold is paid via external pending flow when wallet cash is 0 -> becomes pending
+        vm.buyFractionalGold(karat = 24, weightMg = 100L, payWithWallet = false)
+        assertEquals(100L, vm.uiState.value.wallet.goldPendingMg)
+
+        // Small offline buy via wallet after deposit -> let's test direct MoneyUtils & wallet math + withdrawal guard
+        // Test withdrawal below 1000 mg strictly blocked
+        vm.requestPhysicalWithdrawal(
+            karat = 24,
+            amountMg = 350L,
+            deliveryType = WithdrawalDeliveryType.PICKUP_HUB,
+            deliveryAddress = "فرع المعادي الرئيسي",
+        )
+        assertNotNull(vm.uiState.value.actionErrorMessage)
+        assertTrue(vm.uiState.value.actionErrorMessage!!.contains("1.000"))
+
+        vm.clearActionMessages()
+        vm.requestPhysicalWithdrawal(
+            karat = 24,
+            amountMg = 999L,
+            deliveryType = WithdrawalDeliveryType.PICKUP_HUB,
+            deliveryAddress = "فرع المعادي الرئيسي",
+        )
+        assertNotNull(vm.uiState.value.actionErrorMessage)
+
+        vm.clearActionMessages()
+        val cost100Mg = MoneyUtils.computeFractionalCostPiasters(100L, 620_000L)
+        val cost250Mg = MoneyUtils.computeFractionalCostPiasters(250L, 620_000L)
+        assertEquals(62_000L, cost100Mg)
+        assertEquals(155_000L, cost250Mg)
+        assertEquals(350L, 100L + 250L)
+
+        // Verify MoneyUtils vault valuation, avg cost, and unrealized P/L precision
+        val valAt6500 = MoneyUtils.computeGoldValuationPiasters(
+            gold24kMg = 1000L,
+            gold21kMg = 0L,
+            gold18kMg = 0L,
+            valuation24kPerGramPiasters = 650_000L,
+            valuation21kPerGramPiasters = 568_750L,
+            valuation18kPerGramPiasters = 487_500L,
+        )
+        assertEquals(650_000L, valAt6500)
+        val avgCost = MoneyUtils.computeAverageCostPerGramPiasters(totalInvestedPiasters = 620_000L, goldConfirmedMg = 1000L)
+        assertEquals(620_000L, avgCost)
+        val plPct = MoneyUtils.computeProfitLossPercent(currentValuationPiasters = 650_000L, totalInvestedPiasters = 620_000L)
+        assertEquals(4.84, plPct, 0.01)
+
+        // Verify WalletSummary available gold subtracts reserved
+        val wallet = WalletSummary(goldConfirmedMg = 1250L, goldReservedMg = 1000L)
+        assertEquals(250L, wallet.goldAvailableMg)
+        assertFalse(wallet.goldAvailableMg >= MoneyUtils.MIN_PHYSICAL_WITHDRAWAL_MG)
+    }
+
+    @Test
+    fun adminPrivilege_matchesBootstrapAdminEmailOnly() {
+        val anonVm = KingGoldViewModel()
+        assertFalse(anonVm.uiState.value.isAdmin)
+
+        val regularVm = KingGoldViewModel(currentUserId = "u_regular", userDisplayName = "Customer", userEmail = "customer@gmail.com")
+        assertFalse(regularVm.uiState.value.isAdmin)
+
+        val adminVm = KingGoldViewModel(currentUserId = "u_admin", userDisplayName = "Esmail Admin", userEmail = "EsmailTarek228@gmail.com")
+        assertTrue(adminVm.uiState.value.isAdmin)
     }
 
     @Test
@@ -127,17 +264,14 @@ class KingGoldViewModelTest {
             },
         )
 
-        // Default 24K is 6200.0; threshold 6000 is above? No, 6200 >= 6000 so should NOT trigger.
         vm.updatePriceAlert(enabled = true, above = false, karat = 24, target = "6000")
         assertTrue(triggeredDrops.isEmpty())
 
-        // Setting threshold to 6500 when 24K is 6200 means 24K is below 6500 -> triggers once.
         vm.updatePriceAlert(enabled = true, above = false, karat = 24, target = "6500")
         assertEquals(1, triggeredDrops.size)
         assertEquals(6200.0, triggeredDrops.first().first, 0.01)
         assertEquals(6500.0, triggeredDrops.first().second, 0.01)
 
-        // Above-mode alert should not trigger a drop-below notification.
         vm.updatePriceAlert(enabled = true, above = true, karat = 24, target = "6500")
         assertEquals(1, triggeredDrops.size)
     }

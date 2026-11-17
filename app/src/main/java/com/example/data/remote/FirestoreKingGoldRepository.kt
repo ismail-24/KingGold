@@ -265,6 +265,72 @@ class FirestoreKingGoldRepository(
         }
     }
 
+    private fun cartDoc(userId: String) =
+        db.collection("users").document(userId).collection("cart").document(CART_DOC_ID)
+
+    fun observeCart(userId: String): Flow<UserCartRecord?> = flow {
+        val path = "users/$userId/cart/$CART_DOC_ID"
+        emitAll(
+            cartDoc(userId)
+                .snapshots()
+                .map { snapshot ->
+                    if (snapshot.exists()) {
+                        snapshot.toObject(
+                            UserCartRecord::class.java,
+                            DocumentSnapshot.ServerTimestampBehavior.ESTIMATE,
+                        )
+                    } else {
+                        null
+                    }
+                }
+                .catch { error ->
+                    val firestoreError = generateSequence(error) { it.cause }
+                        .filterIsInstance<FirebaseFirestoreException>()
+                        .firstOrNull()
+                    if (firestoreError == null && error is CancellationException) throw error
+                    val toLog = firestoreError ?: (error as? Exception)
+                    if (toLog != null && auth.currentUser?.uid == userId) {
+                        handleFirestoreError(toLog, OperationType.GET, path)
+                    }
+                    throw (firestoreError ?: error)
+                },
+        )
+    }
+
+    suspend fun saveCart(cart: UserCartRecord): Result<Unit> {
+        val uid = requireUserId()
+        val docRef = cartDoc(uid)
+        val scoped = cart.copy(userId = uid)
+        return try {
+            val snap = docRef.get().await()
+            if (snap.exists()) {
+                docRef.update(scoped.toUpdateMap()).await()
+            } else {
+                docRef.set(scoped.toCreateMap()).await()
+            }
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, docRef.path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun clearCart(): Result<Unit> {
+        val uid = requireUserId()
+        val docRef = cartDoc(uid)
+        return try {
+            docRef.delete().await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.DELETE, docRef.path)
+            Result.failure(e)
+        }
+    }
+
     suspend fun updateFcmToken(token: String): Result<Unit> {
         val trimmed = token.trim()
         if (trimmed.isEmpty()) return Result.success(Unit)
@@ -291,5 +357,6 @@ class FirestoreKingGoldRepository(
 
     companion object {
         const val PREFS_DOC_ID = "settings"
+        const val CART_DOC_ID = "current"
     }
 }

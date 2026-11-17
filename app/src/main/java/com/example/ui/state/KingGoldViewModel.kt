@@ -7,22 +7,45 @@ import com.example.data.GlobalGoldFeedResult
 import com.example.data.GlobalGoldPriceService
 import com.example.data.KingGoldRepository
 import com.example.data.remote.FirestoreKingGoldRepository
+import com.example.data.remote.FirestoreMarketplaceRepository
+import com.example.data.remote.FirestoreVaultRepository
+import com.example.data.remote.OrderItemRecord
+import com.example.data.remote.UserCartRecord
 import com.example.data.remote.UserPreferencesRecord
+import com.example.model.AuditLogRecord
 import com.example.model.CartItem
+import com.example.model.DepositRequest
+import com.example.model.FractionalGoldOrder
 import com.example.model.GoldOrder
 import com.example.model.KaratPrice
 import com.example.model.KycStatus
+import com.example.model.LedgerEntry
+import com.example.model.MerchantAuditLog
+import com.example.model.MerchantOrderView
+import com.example.model.MerchantPrivateDocs
+import com.example.model.MerchantProduct
+import com.example.model.MerchantProductStatus
+import com.example.model.MerchantStatus
+import com.example.model.MerchantStore
+import com.example.model.MoneyUtils
 import com.example.model.OrderStatus
 import com.example.model.PaymentMethod
+import com.example.model.PlatformPricingConfig
 import com.example.model.Product
+import com.example.model.SellGoldRequest
 import com.example.model.Shop
 import com.example.model.ShopSortOption
+import com.example.model.WalletSummary
+import com.example.model.WithdrawalDeliveryType
+import com.example.model.WithdrawalRequest
+import com.example.model.WithdrawalStatus
 import com.example.notifications.GoldPriceNotificationHelper
 import com.example.ui.components.GoldFeedStatus
 import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -34,13 +57,26 @@ import java.util.Date
 import java.util.Locale
 
 data class KingGoldUiState(
+    val userId: String = "",
     val userName: String = "مستخدم King Gold",
     val userEmail: String = "",
+    val isAdmin: Boolean = false,
     val phoneNumber: String = "1012345642",
     val otpCode: String = "",
     val prices: List<KaratPrice> = KingGoldRepository.prices,
     val goldFeedStatus: GoldFeedStatus = GoldFeedStatus.Loading,
-    val shops: List<Shop> = KingGoldRepository.shops,
+    val platformPricing: PlatformPricingConfig = PlatformPricingConfig(),
+    val hasRemotePricingConfig: Boolean = false,
+    val staticShops: List<Shop> = KingGoldRepository.shops,
+    val approvedMerchants: List<MerchantStore> = emptyList(),
+    val ownMerchants: List<MerchantStore> = emptyList(),
+    val allMerchantsAdmin: List<MerchantStore> = emptyList(),
+    val activeMerchantProducts: List<MerchantProduct> = emptyList(),
+    val ownMerchantProducts: List<MerchantProduct> = emptyList(),
+    val allProductsAdmin: List<MerchantProduct> = emptyList(),
+    val merchantOrders: List<MerchantOrderView> = emptyList(),
+    val selectedMerchantDocs: MerchantPrivateDocs? = null,
+    val selectedMerchantAuditLogs: List<MerchantAuditLog> = emptyList(),
     val searchQuery: String = "",
     val selectedKaratFilter: Int? = null,
     val verifiedOnlyFilter: Boolean = true,
@@ -62,15 +98,44 @@ data class KingGoldUiState(
     val fcmToken: String? = null,
     val favoriteShopIds: Set<String> = emptySet(),
     val favoritesOnlyFilter: Boolean = false,
+    val wallet: WalletSummary = WalletSummary(),
+    val ledgerEntries: List<LedgerEntry> = emptyList(),
+    val sellRequests: List<SellGoldRequest> = emptyList(),
+    val allSellRequestsAdmin: List<SellGoldRequest> = emptyList(),
+    val fractionalOrders: List<FractionalGoldOrder> = emptyList(),
+    val allFractionalOrdersAdmin: List<FractionalGoldOrder> = emptyList(),
+    val withdrawalRequests: List<WithdrawalRequest> = emptyList(),
+    val allWithdrawalsAdmin: List<WithdrawalRequest> = emptyList(),
+    val depositRequests: List<DepositRequest> = emptyList(),
+    val allDepositsAdmin: List<DepositRequest> = emptyList(),
+    val auditLogsAdmin: List<AuditLogRecord> = emptyList(),
+    val actionBannerMessage: String? = null,
+    val actionErrorMessage: String? = null,
+    val isActionBusy: Boolean = false,
     val firestoreSyncError: String? = null,
 ) {
+    val shops: List<Shop>
+        get() = staticShops + approvedMerchants.map { it.toShop() }
+
+    fun productsForShop(shopId: String): List<Product> {
+        val dynamic = activeMerchantProducts
+            .filter { it.merchantId == shopId }
+            .map { it.toProduct() }
+        val isStatic = staticShops.any { it.id == shopId }
+        return if (isStatic) {
+            KingGoldRepository.productsFor(shopId) + dynamic
+        } else {
+            dynamic
+        }
+    }
+
     val filteredShops: List<Shop>
         get() {
             val q = searchQuery.trim().lowercase()
             return shops.filter { shop ->
                 val matchesVerified = !verifiedOnlyFilter || shop.verified
                 val matchesFavorite = !favoritesOnlyFilter || favoriteShopIds.contains(shop.id)
-                val shopProducts = KingGoldRepository.productsFor(shop.id)
+                val shopProducts = productsForShop(shop.id)
                 val matchesKarat = selectedKaratFilter == null ||
                     shopProducts.any { it.karat == selectedKaratFilter }
                 val matchesQuery = q.isEmpty() ||
@@ -83,7 +148,7 @@ data class KingGoldUiState(
                 when (sortOption) {
                     ShopSortOption.NEAREST -> list.sortedBy { it.distanceKm }
                     ShopSortOption.HIGHEST_RATED -> list.sortedByDescending { it.rating }
-                    ShopSortOption.LOWEST_MAKING_FEE -> list.sortedBy { it.makingFeePerGram }
+                    ShopSortOption.LOWEST_MAKING_FEE -> list.sortedBy { it.distanceKm }
                 }
             }
         }
@@ -91,28 +156,86 @@ data class KingGoldUiState(
     fun gramPrice(karat: Int): Double =
         prices.firstOrNull { it.karat == karat }?.pricePerGram ?: KingGoldRepository.gramPrice(karat)
 
-    val cartGoldValue: Double
-        get() = cart.sumOf { item ->
-            gramPrice(item.product.karat) *
-                item.product.weightGrams *
-                item.quantity
+    fun effectivePurchaseGramPiasters(karat: Int): Long =
+        if (hasRemotePricingConfig) {
+            platformPricing.referencePriceForKarat(karat)
+        } else {
+            MoneyUtils.egpToPiasters(gramPrice(karat))
         }
+
+    fun effectiveValuationGramPiasters(karat: Int): Long =
+        if (hasRemotePricingConfig) {
+            platformPricing.valuationPriceForKarat(karat)
+        } else {
+            MoneyUtils.egpToPiasters(gramPrice(karat))
+        }
+
+    fun productFinalPricePiasters(product: Product): Long =
+        if (product.sellingPricePiasters > 0L) {
+            product.sellingPricePiasters
+        } else {
+            MoneyUtils.egpToPiasters(gramPrice(product.karat) * product.weightGrams)
+        }
+
+    val cartTotalPiasters: Long
+        get() = cart.sumOf { item -> productFinalPricePiasters(item.product) * item.quantity }
+
+    // Feature 3: Customer prices NEVER add making charges or service fees anywhere.
+    val cartGoldValue: Double
+        get() = MoneyUtils.piastersToEgp(cartTotalPiasters)
 
     val cartMakingFee: Double
-        get() = cart.sumOf { item ->
-            (cartShop?.makingFeePerGram ?: 0.0) *
-                item.product.weightGrams *
-                item.quantity
-        }
+        get() = 0.0
 
     val cartServiceFee: Double
-        get() = (cartGoldValue + cartMakingFee) * 0.01
+        get() = 0.0
 
     val cartTotal: Double
-        get() = cartGoldValue + cartMakingFee + cartServiceFee
+        get() = cartGoldValue
 
     val cartItemCount: Int
         get() = cart.sumOf { it.quantity }
+
+    val vaultAvailableGoldMg: Long
+        get() = wallet.goldAvailableMg
+
+    val vaultCurrentValuationPiasters: Long
+        get() = MoneyUtils.computeGoldValuationPiasters(
+            gold24kMg = wallet.gold24kMg,
+            gold21kMg = wallet.gold21kMg,
+            gold18kMg = wallet.gold18kMg,
+            valuation24kPerGramPiasters = effectiveValuationGramPiasters(24),
+            valuation21kPerGramPiasters = effectiveValuationGramPiasters(21),
+            valuation18kPerGramPiasters = effectiveValuationGramPiasters(18),
+        )
+
+    val vaultUnrealizedProfitLossPiasters: Long
+        get() = if (wallet.goldConfirmedMg > 0L) {
+            vaultCurrentValuationPiasters - wallet.totalInvestedPiasters
+        } else {
+            0L
+        }
+
+    val vaultProfitLossPercent: Double
+        get() = MoneyUtils.computeProfitLossPercent(
+            currentValuationPiasters = vaultCurrentValuationPiasters,
+            totalInvestedPiasters = wallet.totalInvestedPiasters,
+        )
+
+    val vaultAvgCostPerGramPiasters: Long
+        get() = MoneyUtils.computeAverageCostPerGramPiasters(
+            totalInvestedPiasters = wallet.totalInvestedPiasters,
+            goldConfirmedMg = wallet.goldConfirmedMg,
+        )
+
+    val availablePaymentMethods: List<PaymentMethod>
+        get() = listOf(
+            PaymentMethod(
+                id = "cash_wallet",
+                title = "المحفظة النقدية",
+                subtitle = "المتاح الآن: ${MoneyUtils.piastersToEgpString(wallet.cashAvailablePiasters)} ج.م",
+            ),
+        ) + KingGoldRepository.paymentMethods
 
     val escrowHeld: Double
         get() = orders
@@ -130,8 +253,8 @@ data class KingGoldUiState(
         }
 
     val selectedPaymentMethod: PaymentMethod
-        get() = KingGoldRepository.paymentMethods.firstOrNull { it.id == selectedPaymentMethodId }
-            ?: KingGoldRepository.paymentMethods.first()
+        get() = availablePaymentMethods.firstOrNull { it.id == selectedPaymentMethodId }
+            ?: availablePaymentMethods.first()
 
     val history24K7Days: List<com.example.model.GoldPriceHistoryPoint>
         get() = KingGoldRepository.priceHistory24KForCurrentPrice(gramPrice(24))
@@ -151,6 +274,8 @@ data class KingGoldUiState(
 
 class KingGoldViewModel(
     private val firestoreRepository: FirestoreKingGoldRepository? = null,
+    private val marketplaceRepository: FirestoreMarketplaceRepository? = null,
+    private val vaultRepository: FirestoreVaultRepository? = null,
     private val currentUserId: String? = null,
     userDisplayName: String? = null,
     userEmail: String? = null,
@@ -158,23 +283,56 @@ class KingGoldViewModel(
     autoFetchPrices: Boolean = firestoreRepository != null,
 ) : ViewModel() {
 
+    private val isAdminUser = userEmail.equals(ADMIN_EMAIL, ignoreCase = true)
+
     private val _uiState = MutableStateFlow(
         KingGoldUiState(
+            userId = currentUserId.orEmpty(),
             userName = userDisplayName?.takeIf { it.isNotBlank() } ?: "مستخدم King Gold",
             userEmail = userEmail.orEmpty(),
+            isAdmin = isAdminUser,
         ),
     )
     val uiState: StateFlow<KingGoldUiState> = _uiState.asStateFlow()
 
     private var priceLockTimerJob: Job? = null
+    private var cartSyncJob: Job? = null
+    private var merchantAuditJob: Job? = null
+    private var hasLocalCartEdits = false
     private var lastNotifiedDropSignature: Pair<Double, Double>? = null
 
     init {
         if (firestoreRepository != null && currentUserId != null) {
             startFirestoreSync(firestoreRepository, currentUserId)
         }
+        if (marketplaceRepository != null && currentUserId != null) {
+            startMarketplaceSync(marketplaceRepository, currentUserId)
+        }
+        if (vaultRepository != null && currentUserId != null) {
+            startVaultSync(vaultRepository, currentUserId)
+        }
         if (autoFetchPrices) {
             refreshGlobalGoldPrices()
+        }
+    }
+
+    private fun <T> collectSafeFlow(
+        flow: Flow<T>,
+        errorLabel: String,
+        onValue: (T) -> Unit,
+    ) {
+        viewModelScope.launch {
+            flow.catch { error ->
+                val firestoreError = generateSequence(error) { it.cause }
+                    .filterIsInstance<FirebaseFirestoreException>()
+                    .firstOrNull()
+                if (firestoreError == null && error is CancellationException) throw error
+                val root = firestoreError ?: error
+                Log.w(TAG, errorLabel, root)
+                _uiState.update {
+                    it.copy(firestoreSyncError = root.localizedMessage ?: errorLabel)
+                }
+            }.collect(onValue)
         }
     }
 
@@ -182,62 +340,142 @@ class KingGoldViewModel(
         viewModelScope.launch {
             repo.ensureInitialUserData(uid)
         }
-        viewModelScope.launch {
-            repo.observeOrders(uid)
-                .catch { error ->
-                    val firestoreError = generateSequence(error) { it.cause }
-                        .filterIsInstance<FirebaseFirestoreException>()
-                        .firstOrNull()
-                    if (firestoreError == null && error is CancellationException) throw error
-                    val root = firestoreError ?: error
-                    Log.w(TAG, "Error observing orders", root)
-                    _uiState.update {
-                        it.copy(firestoreSyncError = root.localizedMessage ?: "تعذّر مزامنة الطلبات")
-                    }
-                }
-                .collect { records ->
-                    if (records.isNotEmpty()) {
-                        val mapped = records.map { it.toGoldOrder(_uiState.value.shops) }
-                        _uiState.update { it.copy(orders = mapped, firestoreSyncError = null) }
-                    }
-                }
+        collectSafeFlow(repo.observeOrders(uid), "تعذّر مزامنة الطلبات") { records ->
+            if (records.isNotEmpty()) {
+                val mapped = records.map { it.toGoldOrder(_uiState.value.shops) }
+                _uiState.update { it.copy(orders = mapped, firestoreSyncError = null) }
+            }
         }
+        collectSafeFlow(repo.observePreferences(uid), "تعذّر مزامنة الإعدادات") { prefs ->
+            if (prefs != null) {
+                _uiState.update { state ->
+                    state.copy(
+                        kycFrontDone = prefs.kycFrontDone,
+                        kycBackDone = prefs.kycBackDone,
+                        kycSelfieDone = prefs.kycSelfieDone,
+                        kycStatus = prefs.parsedKycStatus(),
+                        selectedPaymentMethodId = prefs.selectedPaymentMethodId,
+                        priceAlertEnabled = prefs.priceAlertEnabled,
+                        priceAlertAbove = prefs.priceAlertAbove,
+                        priceAlertKarat = prefs.priceAlertKarat.toInt().let {
+                            if (it in listOf(18, 21, 24)) it else 24
+                        },
+                        priceAlertTarget = prefs.priceAlertTarget,
+                        fcmToken = prefs.fcmToken,
+                        favoriteShopIds = prefs.favoriteShopIds.toSet(),
+                        firestoreSyncError = null,
+                    )
+                }
+                evaluateAndNotify24KPriceDrop()
+            }
+        }
+        collectSafeFlow(repo.observeCart(uid), "تعذّر مزامنة السلة") { remoteCart ->
+            if (remoteCart != null && !hasLocalCartEdits && remoteCart.items.isNotEmpty()) {
+                val matchedShop = _uiState.value.shops.firstOrNull { it.id == remoteCart.shopId }
+                    ?: Shop(
+                        id = remoteCart.shopId,
+                        name = remoteCart.shopName.ifBlank { "محل شريك" },
+                        area = "القاهرة",
+                        address = "فرع معتمد",
+                        phone = "+201001234567",
+                        rating = 4.8,
+                        reviews = 1,
+                        distanceKm = 2.0,
+                        verified = true,
+                        closesAt = "9:00 م",
+                        makingFeePerGram = 0.0,
+                        ownerUid = remoteCart.merchantOwnerUid.orEmpty(),
+                        isDynamicMerchant = !remoteCart.merchantOwnerUid.isNullOrBlank(),
+                    )
+                val remainingSec = ((remoteCart.priceLockExpiresAtMs - System.currentTimeMillis()) / 1000L)
+                    .toInt()
+                    .coerceIn(0, 600)
+                _uiState.update { state ->
+                    if (state.cart.isEmpty()) {
+                        state.copy(
+                            cart = remoteCart.items.map { it.toCartItem() },
+                            cartShop = matchedShop,
+                            selectedPickupSlotIndex = remoteCart.pickupSlotIndex.toInt(),
+                            priceLockSecondsRemaining = if (remainingSec > 0) remainingSec else 582,
+                        )
+                    } else {
+                        state
+                    }
+                }
+                if (_uiState.value.cart.isNotEmpty()) startPriceLockTimerIfNeeded()
+            }
+        }
+    }
+
+    private fun startMarketplaceSync(repo: FirestoreMarketplaceRepository, uid: String) {
+        collectSafeFlow(repo.observeApprovedMerchants(), "تعذّر مزامنة المحلات") { merchants ->
+            _uiState.update { it.copy(approvedMerchants = merchants) }
+        }
+        collectSafeFlow(repo.observeOwnMerchants(uid), "تعذّر مزامنة حساب التاجر") { own ->
+            _uiState.update { it.copy(ownMerchants = own) }
+        }
+        collectSafeFlow(repo.observeActiveProducts(), "تعذّر مزامنة المنتجات") { products ->
+            _uiState.update { it.copy(activeMerchantProducts = products) }
+        }
+        collectSafeFlow(repo.observeOwnMerchantProducts(uid), "تعذّر مزامنة منتجات التاجر") { products ->
+            _uiState.update { it.copy(ownMerchantProducts = products) }
+        }
+        collectSafeFlow(repo.observeMerchantOrders(uid), "تعذّر مزامنة طلبات التاجر") { orders ->
+            _uiState.update { it.copy(merchantOrders = orders) }
+        }
+        if (isAdminUser) {
+            collectSafeFlow(repo.observeAllMerchantsAdmin(), "تعذّر مزامنة قائمة التجار للإدارة") { list ->
+                _uiState.update { it.copy(allMerchantsAdmin = list) }
+            }
+            collectSafeFlow(repo.observeAllProductsAdmin(), "تعذّر مزامنة قائمة المنتجات للإدارة") { list ->
+                _uiState.update { it.copy(allProductsAdmin = list) }
+            }
+        }
+    }
+
+    private fun startVaultSync(repo: FirestoreVaultRepository, uid: String) {
         viewModelScope.launch {
-            repo.observePreferences(uid)
-                .catch { error ->
-                    val firestoreError = generateSequence(error) { it.cause }
-                        .filterIsInstance<FirebaseFirestoreException>()
-                        .firstOrNull()
-                    if (firestoreError == null && error is CancellationException) throw error
-                    val root = firestoreError ?: error
-                    Log.w(TAG, "Error observing preferences", root)
-                    _uiState.update {
-                        it.copy(firestoreSyncError = root.localizedMessage ?: "تعذّر مزامنة الإعدادات")
-                    }
-                }
-                .collect { prefs ->
-                    if (prefs != null) {
-                        _uiState.update { state ->
-                            state.copy(
-                                kycFrontDone = prefs.kycFrontDone,
-                                kycBackDone = prefs.kycBackDone,
-                                kycSelfieDone = prefs.kycSelfieDone,
-                                kycStatus = prefs.parsedKycStatus(),
-                                selectedPaymentMethodId = prefs.selectedPaymentMethodId,
-                                priceAlertEnabled = prefs.priceAlertEnabled,
-                                priceAlertAbove = prefs.priceAlertAbove,
-                                priceAlertKarat = prefs.priceAlertKarat.toInt().let {
-                                    if (it in listOf(18, 21, 24)) it else 24
-                                },
-                                priceAlertTarget = prefs.priceAlertTarget,
-                                fcmToken = prefs.fcmToken,
-                                favoriteShopIds = prefs.favoriteShopIds.toSet(),
-                                firestoreSyncError = null,
-                            )
-                        }
-                        evaluateAndNotify24KPriceDrop()
-                    }
-                }
+            repo.ensureInitialWallet(uid)
+        }
+        collectSafeFlow(repo.observeWallet(uid), "تعذّر مزامنة المحفظة") { wallet ->
+            _uiState.update { it.copy(wallet = wallet) }
+        }
+        collectSafeFlow(repo.observeLedger(uid), "تعذّر مزامنة سجل المعاملات") { entries ->
+            _uiState.update { it.copy(ledgerEntries = entries) }
+        }
+        collectSafeFlow(repo.observePlatformPricing(), "تعذّر مزامنة تسعير المنصة") { cfg ->
+            if (cfg != null) {
+                _uiState.update { it.copy(platformPricing = cfg, hasRemotePricingConfig = true) }
+            }
+        }
+        collectSafeFlow(repo.observeUserSellRequests(uid), "تعذّر مزامنة طلبات البيع") { list ->
+            _uiState.update { it.copy(sellRequests = list) }
+        }
+        collectSafeFlow(repo.observeUserFractionalOrders(uid), "تعذّر مزامنة مشتريات الذهب المجزأ") { list ->
+            _uiState.update { it.copy(fractionalOrders = list) }
+        }
+        collectSafeFlow(repo.observeUserWithdrawals(uid), "تعذّر مزامنة طلبات السحب") { list ->
+            _uiState.update { it.copy(withdrawalRequests = list) }
+        }
+        collectSafeFlow(repo.observeUserDeposits(uid), "تعذّر مزامنة طلبات الإيداع") { list ->
+            _uiState.update { it.copy(depositRequests = list) }
+        }
+        if (isAdminUser) {
+            collectSafeFlow(repo.observeAllSellRequestsAdmin(), "تعذّر مزامنة طلبات البيع للإدارة") { list ->
+                _uiState.update { it.copy(allSellRequestsAdmin = list) }
+            }
+            collectSafeFlow(repo.observeAllWithdrawalsAdmin(), "تعذّر مزامنة السحوبات للإدارة") { list ->
+                _uiState.update { it.copy(allWithdrawalsAdmin = list) }
+            }
+            collectSafeFlow(repo.observeAllDepositsAdmin(), "تعذّر مزامنة الإيداعات للإدارة") { list ->
+                _uiState.update { it.copy(allDepositsAdmin = list) }
+            }
+            collectSafeFlow(repo.observeAllPendingFractionalAdmin(), "تعذّر مزامنة المشتريات المجزأة المعلقة") { list ->
+                _uiState.update { it.copy(allFractionalOrdersAdmin = list) }
+            }
+            collectSafeFlow(repo.observeAuditLogsAdmin(), "تعذّر مزامنة سجلات التدقيق") { list ->
+                _uiState.update { it.copy(auditLogsAdmin = list) }
+            }
         }
     }
 
@@ -268,8 +506,39 @@ class KingGoldViewModel(
         }
     }
 
+    private fun scheduleCartSyncToCloud() {
+        val repo = firestoreRepository ?: return
+        val uid = currentUserId ?: return
+        cartSyncJob?.cancel()
+        cartSyncJob = viewModelScope.launch {
+            delay(180L)
+            val state = _uiState.value
+            val shop = state.cartShop
+            if (state.cart.isEmpty() || shop == null) {
+                repo.clearCart()
+            } else {
+                val expiresAt = System.currentTimeMillis() + (state.priceLockSecondsRemaining.coerceAtLeast(60) * 1000L)
+                repo.saveCart(
+                    UserCartRecord(
+                        userId = uid,
+                        shopId = shop.id,
+                        shopName = shop.name,
+                        merchantOwnerUid = shop.ownerUid.takeIf { it.isNotBlank() },
+                        items = state.cart.map { OrderItemRecord.fromCartItem(it) },
+                        pickupSlotIndex = state.selectedPickupSlotIndex.toLong(),
+                        priceLockExpiresAtMs = expiresAt,
+                    ),
+                )
+            }
+        }
+    }
+
     fun clearSyncError() {
         _uiState.update { it.copy(firestoreSyncError = null) }
+    }
+
+    fun clearActionMessages() {
+        _uiState.update { it.copy(actionBannerMessage = null, actionErrorMessage = null) }
     }
 
     fun updateSearchQuery(query: String) {
@@ -307,6 +576,7 @@ class KingGoldViewModel(
     }
 
     fun addToCart(shop: Shop, product: Product) {
+        hasLocalCartEdits = true
         _uiState.update { state ->
             val currentCart = if (state.cartShop != null && state.cartShop.id != shop.id) {
                 emptyList()
@@ -331,12 +601,15 @@ class KingGoldViewModel(
                 cart = updatedCart,
                 cartShop = shop,
                 priceLockSecondsRemaining = if (shouldResetTimer) 582 else state.priceLockSecondsRemaining,
+                actionErrorMessage = null,
             )
         }
         startPriceLockTimerIfNeeded()
+        scheduleCartSyncToCloud()
     }
 
     fun incrementCartItem(productId: String) {
+        hasLocalCartEdits = true
         _uiState.update { state ->
             state.copy(
                 cart = state.cart.map { item ->
@@ -348,9 +621,11 @@ class KingGoldViewModel(
                 },
             )
         }
+        scheduleCartSyncToCloud()
     }
 
     fun decrementCartItem(productId: String) {
+        hasLocalCartEdits = true
         _uiState.update { state ->
             val updated = state.cart.mapNotNull { item ->
                 if (item.product.id == productId) {
@@ -367,9 +642,11 @@ class KingGoldViewModel(
         if (_uiState.value.cart.isEmpty()) {
             priceLockTimerJob?.cancel()
         }
+        scheduleCartSyncToCloud()
     }
 
     fun removeFromCart(productId: String) {
+        hasLocalCartEdits = true
         _uiState.update { state ->
             val updated = state.cart.filterNot { it.product.id == productId }
             state.copy(
@@ -380,15 +657,19 @@ class KingGoldViewModel(
         if (_uiState.value.cart.isEmpty()) {
             priceLockTimerJob?.cancel()
         }
+        scheduleCartSyncToCloud()
     }
 
     fun selectPickupSlot(index: Int) {
+        hasLocalCartEdits = true
         _uiState.update { it.copy(selectedPickupSlotIndex = index) }
+        scheduleCartSyncToCloud()
     }
 
     fun refreshPriceLock() {
         _uiState.update { it.copy(priceLockSecondsRemaining = 582) }
         startPriceLockTimerIfNeeded()
+        scheduleCartSyncToCloud()
     }
 
     private fun startPriceLockTimerIfNeeded() {
@@ -408,7 +689,7 @@ class KingGoldViewModel(
     }
 
     fun selectPaymentMethod(methodId: String) {
-        _uiState.update { it.copy(selectedPaymentMethodId = methodId) }
+        _uiState.update { it.copy(selectedPaymentMethodId = methodId, actionErrorMessage = null) }
         syncPreferencesToFirestore(_uiState.value)
     }
 
@@ -417,28 +698,54 @@ class KingGoldViewModel(
         val shop = state.cartShop ?: return null
         if (state.cart.isEmpty()) return null
 
+        val payWithWallet = state.selectedPaymentMethodId == "cash_wallet"
+        val totalPiasters = state.cartTotalPiasters
+        if (payWithWallet && state.wallet.cashAvailablePiasters < totalPiasters) {
+            _uiState.update {
+                it.copy(actionErrorMessage = "الرصيد المتاح بالمحفظة النقدية غير كافٍ لإتمام الطلب.")
+            }
+            return null
+        }
+
         val suffix = (System.currentTimeMillis() % 100_000L).toInt()
         val newOrder = GoldOrder(
             id = "KG-${20480 + state.orders.size + 1}-$suffix",
             shop = shop,
             items = state.cart.toList(),
             goldValue = state.cartGoldValue,
-            makingFee = state.cartMakingFee,
-            serviceFee = state.cartServiceFee,
+            makingFee = 0.0,
+            serviceFee = 0.0,
             pickupWindow = state.selectedPickupWindow,
             status = OrderStatus.READY_FOR_PICKUP,
+            totalPiasters = totalPiasters,
+            paymentSource = if (payWithWallet) "CASH_WALLET" else "ESCROW_METHOD",
         )
         priceLockTimerJob?.cancel()
+        hasLocalCartEdits = true
+        val dynamicItems = state.cart.toList()
         _uiState.update { current ->
             current.copy(
                 orders = listOf(newOrder) + current.orders,
                 cart = emptyList(),
                 cartShop = null,
+                actionErrorMessage = null,
             )
         }
-        firestoreRepository?.let { repo ->
-            viewModelScope.launch {
-                repo.createOrder(newOrder).onFailure { err ->
+        viewModelScope.launch {
+            firestoreRepository?.clearCart()
+            val mRepo = marketplaceRepository
+            if (mRepo != null) {
+                mRepo.placeMarketplaceOrderAtomic(
+                    order = newOrder,
+                    payWithWallet = payWithWallet,
+                    dynamicCartProductIds = dynamicItems,
+                ).onFailure { err ->
+                    _uiState.update {
+                        it.copy(firestoreSyncError = err.localizedMessage ?: "تعذّر حفظ الطلب في السحابة")
+                    }
+                }
+            } else {
+                firestoreRepository?.createOrder(newOrder)?.onFailure { err ->
                     _uiState.update {
                         it.copy(firestoreSyncError = err.localizedMessage ?: "تعذّر حفظ الطلب في السحابة")
                     }
@@ -456,14 +763,13 @@ class KingGoldViewModel(
                 },
             )
         }
-        firestoreRepository?.let { repo ->
-            viewModelScope.launch {
-                repo.completePickup(orderId).onFailure { err ->
-                    _uiState.update {
-                        it.copy(firestoreSyncError = err.localizedMessage ?: "تعذّر تحديث حالة الاستلام")
-                    }
+        viewModelScope.launch {
+            firestoreRepository?.completePickup(orderId)?.onFailure { err ->
+                _uiState.update {
+                    it.copy(firestoreSyncError = err.localizedMessage ?: "تعذّر تحديث حالة الاستلام")
                 }
             }
+            marketplaceRepository?.syncBuyerOrderStatusToMerchantOrder(orderId, OrderStatus.COMPLETED)
         }
     }
 
@@ -473,8 +779,8 @@ class KingGoldViewModel(
             val updatedOrders = state.orders.map { order ->
                 if (order.id == orderId) order.copy(ratingGiven = stars) else order
             }
-            val updatedShops = if (targetOrder != null) {
-                state.shops.map { shop ->
+            val updatedStaticShops = if (targetOrder != null) {
+                state.staticShops.map { shop ->
                     if (shop.id == targetOrder.shop.id) {
                         val totalReviews = shop.reviews + 1
                         val newRating = ((shop.rating * shop.reviews) + stars) / totalReviews
@@ -487,9 +793,9 @@ class KingGoldViewModel(
                     }
                 }
             } else {
-                state.shops
+                state.staticShops
             }
-            state.copy(orders = updatedOrders, shops = updatedShops)
+            state.copy(orders = updatedOrders, staticShops = updatedStaticShops)
         }
         firestoreRepository?.let { repo ->
             viewModelScope.launch {
@@ -514,16 +820,647 @@ class KingGoldViewModel(
                 },
             )
         }
-        firestoreRepository?.let { repo ->
-            viewModelScope.launch {
-                repo.submitIssueReport(orderId, reason).onFailure { err ->
-                    _uiState.update {
-                        it.copy(firestoreSyncError = err.localizedMessage ?: "تعذّر إرسال البلاغ")
-                    }
+        viewModelScope.launch {
+            firestoreRepository?.submitIssueReport(orderId, reason)?.onFailure { err ->
+                _uiState.update {
+                    it.copy(firestoreSyncError = err.localizedMessage ?: "تعذّر إرسال البلاغ")
+                }
+            }
+            marketplaceRepository?.syncBuyerOrderStatusToMerchantOrder(orderId, OrderStatus.DISPUTED)
+        }
+    }
+
+    // =========================================================================
+    // Feature 5 & 6: Digital Gold Vault & Cash Wallet Actions
+    // =========================================================================
+
+    fun buyFractionalGold(
+        karat: Int,
+        weightMg: Long,
+        payWithWallet: Boolean,
+        onSuccess: (String) -> Unit = {},
+    ) {
+        val state = _uiState.value
+        if (karat !in listOf(18, 21, 24)) {
+            _uiState.update { it.copy(actionErrorMessage = "العيار غير مدعوم.") }
+            return
+        }
+        if (weightMg <= 0L) {
+            _uiState.update { it.copy(actionErrorMessage = "الرجاء إدخال وزن صحيح أكبر من 0 ملجم.") }
+            return
+        }
+        val unitPricePiasters = state.effectivePurchaseGramPiasters(karat)
+        val totalPiasters = MoneyUtils.computeFractionalCostPiasters(weightMg, unitPricePiasters)
+        if (totalPiasters <= 0L) {
+            _uiState.update { it.copy(actionErrorMessage = "قيمة الشراء غير صالحة.") }
+            return
+        }
+        if (payWithWallet && state.wallet.cashAvailablePiasters < totalPiasters) {
+            _uiState.update {
+                it.copy(actionErrorMessage = "رصيد المحفظة النقدية غير كافٍ (${MoneyUtils.piastersToEgpString(totalPiasters)} ج.م مطلوب).")
+            }
+            return
+        }
+
+        val repo = vaultRepository
+        if (repo == null) {
+            // Pure local unit test path without Firestore
+            _uiState.update { s ->
+                val prev = s.wallet
+                val nextWallet = if (payWithWallet) {
+                    prev.copy(
+                        cashAvailablePiasters = prev.cashAvailablePiasters - totalPiasters,
+                        cashTotalDebitedPiasters = prev.cashTotalDebitedPiasters + totalPiasters,
+                        goldConfirmedMg = prev.goldConfirmedMg + weightMg,
+                        gold24kMg = prev.gold24kMg + if (karat == 24) weightMg else 0L,
+                        gold21kMg = prev.gold21kMg + if (karat == 21) weightMg else 0L,
+                        gold18kMg = prev.gold18kMg + if (karat == 18) weightMg else 0L,
+                        totalInvestedPiasters = prev.totalInvestedPiasters + totalPiasters,
+                    )
+                } else {
+                    prev.copy(goldPendingMg = prev.goldPendingMg + weightMg)
+                }
+                s.copy(
+                    wallet = nextWallet,
+                    actionBannerMessage = "تم تسجيل شراء ${MoneyUtils.mgToGramsString(weightMg)} عيار $karat بنجاح",
+                    actionErrorMessage = null,
+                )
+            }
+            onSuccess("local_frac")
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isActionBusy = true, actionErrorMessage = null) }
+            repo.buyFractionalGoldAtomic(
+                karat = karat,
+                weightMg = weightMg,
+                pricePerGramPiasters = unitPricePiasters,
+                payWithWallet = payWithWallet,
+            ).onSuccess { ordId ->
+                _uiState.update {
+                    it.copy(
+                        isActionBusy = false,
+                        actionBannerMessage = if (payWithWallet) {
+                            "تمت إضافة ${MoneyUtils.mgToGramsString(weightMg)} عيار $karat لخزنتك فوراً"
+                        } else {
+                            "تم إنشاء طلب شراء معلق لحين تأكيد السداد"
+                        },
+                    )
+                }
+                onSuccess(ordId)
+            }.onFailure { err ->
+                _uiState.update {
+                    it.copy(
+                        isActionBusy = false,
+                        actionErrorMessage = err.localizedMessage ?: "تعذّر إتمام شراء الذهب المجزأ",
+                    )
                 }
             }
         }
     }
+
+    fun requestPhysicalWithdrawal(
+        karat: Int,
+        amountMg: Long,
+        deliveryType: WithdrawalDeliveryType,
+        deliveryAddress: String,
+        onSuccess: (String) -> Unit = {},
+    ) {
+        if (amountMg < MoneyUtils.MIN_PHYSICAL_WITHDRAWAL_MG) {
+            _uiState.update {
+                it.copy(actionErrorMessage = "الحد الأدنى لاستلام الذهب الفعلي هو 1.000 جرام (1000 ملجم).")
+            }
+            return
+        }
+        val state = _uiState.value
+        val karatHeld = state.wallet.confirmedMgForKarat(karat)
+        if (state.wallet.goldAvailableMg < amountMg || karatHeld < amountMg) {
+            _uiState.update {
+                it.copy(actionErrorMessage = "رصيد عيار $karat المتاح غير محجوز لا يكفي لسحب ${MoneyUtils.mgToGramsString(amountMg)}.")
+            }
+            return
+        }
+        if (deliveryAddress.trim().length < 4) {
+            _uiState.update {
+                it.copy(actionErrorMessage = "يرجى إدخال عنوان التوصيل أو اسم فرع الاستلام بوضوح.")
+            }
+            return
+        }
+
+        val repo = vaultRepository
+        if (repo == null) {
+            val wdRef = "WD-TEST-${amountMg}"
+            _uiState.update { s ->
+                val prev = s.wallet
+                s.copy(
+                    wallet = prev.copy(goldReservedMg = prev.goldReservedMg + amountMg),
+                    actionBannerMessage = "تم حجز ${MoneyUtils.mgToGramsString(amountMg)} للسحب الفعلي ($wdRef)",
+                    actionErrorMessage = null,
+                )
+            }
+            onSuccess(wdRef)
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isActionBusy = true, actionErrorMessage = null) }
+            repo.requestPhysicalWithdrawalAtomic(
+                karat = karat,
+                amountMg = amountMg,
+                deliveryType = deliveryType,
+                deliveryAddress = deliveryAddress,
+            ).onSuccess { wdRef ->
+                _uiState.update {
+                    it.copy(
+                        isActionBusy = false,
+                        actionBannerMessage = "تم إنشاء طلب السحب الفعلي $wdRef وحجز الرصيد بأمان",
+                    )
+                }
+                onSuccess(wdRef)
+            }.onFailure { err ->
+                _uiState.update {
+                    it.copy(
+                        isActionBusy = false,
+                        actionErrorMessage = err.localizedMessage ?: "تعذّر إنشاء طلب السحب الفعلي",
+                    )
+                }
+            }
+        }
+    }
+
+    fun submitDepositRequest(
+        amountPiasters: Long,
+        channel: String,
+        paymentReference: String,
+        onSuccess: () -> Unit = {},
+    ) {
+        if (amountPiasters < 1000L) {
+            _uiState.update { it.copy(actionErrorMessage = "الحد الأدنى لطلب الإيداع هو 10.00 ج.م.") }
+            return
+        }
+        if (paymentReference.trim().length < 3) {
+            _uiState.update { it.copy(actionErrorMessage = "يرجى إدخال مرجع التحويل المالي.") }
+            return
+        }
+        val repo = vaultRepository ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isActionBusy = true, actionErrorMessage = null) }
+            repo.submitDepositRequestAtomic(amountPiasters, channel, paymentReference)
+                .onSuccess {
+                    _uiState.update {
+                        it.copy(
+                            isActionBusy = false,
+                            actionBannerMessage = "تم تسجيل طلب إيداع قيد المراجعة بمبلغ ${MoneyUtils.piastersToEgpString(amountPiasters)} ج.م",
+                        )
+                    }
+                    onSuccess()
+                }
+                .onFailure { err ->
+                    _uiState.update {
+                        it.copy(
+                            isActionBusy = false,
+                            actionErrorMessage = err.localizedMessage ?: "تعذّر إرسال طلب الإيداع",
+                        )
+                    }
+                }
+        }
+    }
+
+    // =========================================================================
+    // Feature 2: Customer-to-Platform Sell Your Gold
+    // =========================================================================
+
+    fun submitSellGoldRequest(
+        itemTitle: String,
+        category: String,
+        karat: Int,
+        estimatedWeightMg: Long,
+        conditionNotes: String,
+        photoThumbnails: List<String>,
+        onSuccess: () -> Unit = {},
+    ) {
+        if (itemTitle.trim().length < 2) {
+            _uiState.update { it.copy(actionErrorMessage = "يرجى كتابة اسم القطعة المراد بيعها.") }
+            return
+        }
+        if (estimatedWeightMg < 10L) {
+            _uiState.update { it.copy(actionErrorMessage = "الوزن التقديري يجب أن لا يقل عن 0.01 جم.") }
+            return
+        }
+        val repo = vaultRepository ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isActionBusy = true, actionErrorMessage = null) }
+            repo.submitSellGoldRequest(
+                itemTitle = itemTitle,
+                category = category,
+                karat = karat,
+                estimatedWeightMg = estimatedWeightMg,
+                conditionNotes = conditionNotes,
+                photoThumbnails = photoThumbnails,
+            ).onSuccess {
+                _uiState.update {
+                    it.copy(
+                        isActionBusy = false,
+                        actionBannerMessage = "تم إرسال طلب بيع الذهب للمنصة وهو قيد الفحص الآن",
+                    )
+                }
+                onSuccess()
+            }.onFailure { err ->
+                _uiState.update {
+                    it.copy(
+                        isActionBusy = false,
+                        actionErrorMessage = err.localizedMessage ?: "تعذّر إرسال طلب بيع الذهب",
+                    )
+                }
+            }
+        }
+    }
+
+    fun cancelSellGoldRequest(requestId: String) {
+        val repo = vaultRepository ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isActionBusy = true, actionErrorMessage = null) }
+            repo.cancelSellGoldRequest(requestId).onSuccess {
+                _uiState.update {
+                    it.copy(isActionBusy = false, actionBannerMessage = "تم إلغاء طلب البيع")
+                }
+            }.onFailure { err ->
+                _uiState.update {
+                    it.copy(isActionBusy = false, actionErrorMessage = err.localizedMessage ?: "تعذّر إلغاء الطلب")
+                }
+            }
+        }
+    }
+
+    fun acceptSellGoldOffer(request: SellGoldRequest) {
+        val repo = vaultRepository ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isActionBusy = true, actionErrorMessage = null) }
+            repo.acceptSellGoldOfferAtomic(request).onSuccess {
+                _uiState.update {
+                    it.copy(
+                        isActionBusy = false,
+                        actionBannerMessage = "تم قبول العرض وإضافة ${MoneyUtils.piastersToEgpString(request.finalOfferPiasters)} ج.م إلى محفظتك النقدية",
+                    )
+                }
+            }.onFailure { err ->
+                _uiState.update {
+                    it.copy(isActionBusy = false, actionErrorMessage = err.localizedMessage ?: "تعذّر تسوية طلب البيع")
+                }
+            }
+        }
+    }
+
+    // =========================================================================
+    // Feature 1: Merchant Registration & Store Management
+    // =========================================================================
+
+    fun loadMerchantInspectionDetails(merchantId: String) {
+        val repo = marketplaceRepository ?: return
+        merchantAuditJob?.cancel()
+        merchantAuditJob = collectSafeJob(repo.observeMerchantAuditLogs(merchantId)) { logs ->
+            _uiState.update { it.copy(selectedMerchantAuditLogs = logs) }
+        }
+        viewModelScope.launch {
+            repo.getMerchantPrivateDocs(merchantId).onSuccess { docs ->
+                _uiState.update { it.copy(selectedMerchantDocs = docs) }
+            }
+        }
+    }
+
+    private fun <T> collectSafeJob(flow: Flow<T>, onValue: (T) -> Unit): Job =
+        viewModelScope.launch {
+            flow.catch { error ->
+                if (error is CancellationException) throw error
+                Log.w(TAG, "Audit log stream error", error)
+            }.collect(onValue)
+        }
+
+    fun submitMerchantRegistration(
+        shopName: String,
+        area: String,
+        address: String,
+        contactPhone: String,
+        verifiedEmail: String,
+        description: String,
+        legalFullName: String,
+        nationalIdNumber: String,
+        commercialRegNumber: String,
+        taxCardNumber: String,
+        authorizationNotes: String,
+        documentThumbnails: List<String>,
+        onSuccess: () -> Unit = {},
+    ) {
+        if (shopName.trim().length < 2 || address.trim().length < 4 || legalFullName.trim().length < 3 || nationalIdNumber.trim().length < 5) {
+            _uiState.update {
+                it.copy(actionErrorMessage = "يرجى استكمال اسم المحل والعنوان والاسم القانوني ورقم الهوية/الترخيص.")
+            }
+            return
+        }
+        val repo = marketplaceRepository ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isActionBusy = true, actionErrorMessage = null) }
+            repo.submitMerchantRegistration(
+                shopName = shopName,
+                area = area,
+                address = address,
+                contactPhone = contactPhone,
+                verifiedEmail = verifiedEmail.ifBlank { _uiState.value.userEmail },
+                description = description,
+                legalFullName = legalFullName,
+                nationalIdNumber = nationalIdNumber,
+                commercialRegNumber = commercialRegNumber,
+                taxCardNumber = taxCardNumber,
+                authorizationNotes = authorizationNotes,
+                documentThumbnails = documentThumbnails,
+            ).onSuccess {
+                _uiState.update {
+                    it.copy(
+                        isActionBusy = false,
+                        actionBannerMessage = "تم تقديم طلب تسجيل التاجر وهو بانتظار اعتماد الإدارة",
+                    )
+                }
+                onSuccess()
+            }.onFailure { err ->
+                _uiState.update {
+                    it.copy(isActionBusy = false, actionErrorMessage = err.localizedMessage ?: "تعذّر إرسال طلب التسجيل")
+                }
+            }
+        }
+    }
+
+    fun saveMerchantProduct(
+        merchant: MerchantStore,
+        existingProduct: MerchantProduct?,
+        name: String,
+        description: String,
+        category: String,
+        karat: Int,
+        weightGrams: Double,
+        sellingPricePiasters: Long,
+        stockQuantity: Int,
+        stamped: Boolean,
+        imageThumbnails: List<String>,
+        onSuccess: () -> Unit = {},
+    ) {
+        if (merchant.status != MerchantStatus.APPROVED) {
+            _uiState.update { it.copy(actionErrorMessage = "لا يمكن نشر منتجات قبل اعتماد حساب التاجر من الإدارة.") }
+            return
+        }
+        if (name.trim().length < 2 || weightGrams <= 0.0 || sellingPricePiasters <= 0L) {
+            _uiState.update { it.copy(actionErrorMessage = "يرجى إدخال اسم المنتج والوزن والسعر النهائي بشكل صحيح.") }
+            return
+        }
+        val repo = marketplaceRepository ?: return
+        val resubmit = existingProduct != null &&
+            (existingProduct.status == MerchantProductStatus.PAUSED || existingProduct.status == MerchantProductStatus.REJECTED)
+        viewModelScope.launch {
+            _uiState.update { it.copy(isActionBusy = true, actionErrorMessage = null) }
+            repo.createOrUpdateMerchantProduct(
+                merchant = merchant,
+                existingProductId = existingProduct?.id,
+                name = name,
+                description = description,
+                category = category,
+                karat = karat,
+                weightGrams = weightGrams,
+                sellingPricePiasters = sellingPricePiasters,
+                stockQuantity = stockQuantity,
+                stamped = stamped,
+                imageThumbnails = imageThumbnails,
+                resubmitForReview = resubmit,
+            ).onSuccess {
+                _uiState.update {
+                    it.copy(
+                        isActionBusy = false,
+                        actionBannerMessage = if (existingProduct == null) {
+                            "تمت إضافة المنتج وإرساله للمراجعة"
+                        } else {
+                            "تم تحديث بيانات المنتج"
+                        },
+                    )
+                }
+                onSuccess()
+            }.onFailure { err ->
+                _uiState.update {
+                    it.copy(isActionBusy = false, actionErrorMessage = err.localizedMessage ?: "تعذّر حفظ المنتج")
+                }
+            }
+        }
+    }
+
+    fun toggleMerchantProductPause(product: MerchantProduct) {
+        val repo = marketplaceRepository ?: return
+        viewModelScope.launch {
+            repo.toggleMerchantProductPause(product).onSuccess {
+                _uiState.update { it.copy(actionBannerMessage = "تم تحديث حالة عرض المنتج") }
+            }.onFailure { err ->
+                _uiState.update { it.copy(actionErrorMessage = err.localizedMessage ?: "تعذّر تعديل حالة المنتج") }
+            }
+        }
+    }
+
+    fun updateMerchantOrderStatus(orderId: String, nextStatus: OrderStatus) {
+        val repo = marketplaceRepository ?: return
+        viewModelScope.launch {
+            repo.updateMerchantOrderStatus(orderId, nextStatus).onSuccess {
+                _uiState.update { it.copy(actionBannerMessage = "تم تحديث حالة الطلب إلى ${nextStatus.arabicLabel}") }
+            }.onFailure { err ->
+                _uiState.update { it.copy(actionErrorMessage = err.localizedMessage ?: "تعذّر تحديث حالة الطلب") }
+            }
+        }
+    }
+
+    // =========================================================================
+    // Feature 7: Admin Control Center Actions
+    // =========================================================================
+
+    fun adminReviewMerchant(
+        merchant: MerchantStore,
+        newStatus: MerchantStatus,
+        prepaidApproved: Boolean,
+        prepaidBudgetPiasters: Long,
+        reasonOrNote: String,
+    ) {
+        if (!_uiState.value.isAdmin) return
+        val repo = marketplaceRepository ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isActionBusy = true, actionErrorMessage = null) }
+            repo.adminReviewMerchant(merchant, newStatus, prepaidApproved, prepaidBudgetPiasters, reasonOrNote)
+                .onSuccess {
+                    _uiState.update {
+                        it.copy(isActionBusy = false, actionBannerMessage = "تم تحديث حالة التاجر (${merchant.shopName})")
+                    }
+                }
+                .onFailure { err ->
+                    _uiState.update {
+                        it.copy(isActionBusy = false, actionErrorMessage = err.localizedMessage ?: "تعذّر تنفيذ إجراء الإدارة")
+                    }
+                }
+        }
+    }
+
+    fun adminReviewProduct(
+        product: MerchantProduct,
+        newStatus: MerchantProductStatus,
+        reason: String,
+    ) {
+        if (!_uiState.value.isAdmin) return
+        val repo = marketplaceRepository ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isActionBusy = true, actionErrorMessage = null) }
+            repo.adminReviewProduct(product, newStatus, reason)
+                .onSuccess {
+                    _uiState.update {
+                        it.copy(isActionBusy = false, actionBannerMessage = "تم تحديث حالة المنتج (${product.name})")
+                    }
+                }
+                .onFailure { err ->
+                    _uiState.update {
+                        it.copy(isActionBusy = false, actionErrorMessage = err.localizedMessage ?: "تعذّر مراجعة المنتج")
+                    }
+                }
+        }
+    }
+
+    fun adminEvaluateSellGold(
+        request: SellGoldRequest,
+        verifiedWeightMg: Long,
+        confirmedKarat: Int,
+        referencePricePerGramPiasters: Long,
+        makingChargeDeductionPiasters: Long,
+        inspectionNotes: String,
+    ) {
+        if (!_uiState.value.isAdmin) return
+        if (verifiedWeightMg <= 0L || referencePricePerGramPiasters <= 0L) {
+            _uiState.update { it.copy(actionErrorMessage = "الرجاء إدخال الوزن الفعلي والسعر المرجعي بشكل صحيح.") }
+            return
+        }
+        val repo = vaultRepository ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isActionBusy = true, actionErrorMessage = null) }
+            repo.adminEvaluateSellGold(
+                request = request,
+                verifiedWeightMg = verifiedWeightMg,
+                confirmedKarat = confirmedKarat,
+                referencePricePerGramPiasters = referencePricePerGramPiasters,
+                makingChargeDeductionPiasters = makingChargeDeductionPiasters,
+                inspectionNotes = inspectionNotes,
+            ).onSuccess {
+                _uiState.update {
+                    it.copy(isActionBusy = false, actionBannerMessage = "تم إرسال تقييم وعرض السعر النهائي للعميل")
+                }
+            }.onFailure { err ->
+                _uiState.update {
+                    it.copy(isActionBusy = false, actionErrorMessage = err.localizedMessage ?: "تعذّر إرسال التقييم")
+                }
+            }
+        }
+    }
+
+    fun adminRejectSellGold(request: SellGoldRequest, reason: String) {
+        if (!_uiState.value.isAdmin) return
+        val repo = vaultRepository ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isActionBusy = true, actionErrorMessage = null) }
+            repo.adminRejectSellGold(request, reason).onSuccess {
+                _uiState.update {
+                    it.copy(isActionBusy = false, actionBannerMessage = "تم رفض طلب بيع الذهب")
+                }
+            }.onFailure { err ->
+                _uiState.update {
+                    it.copy(isActionBusy = false, actionErrorMessage = err.localizedMessage ?: "تعذّر رفض الطلب")
+                }
+            }
+        }
+    }
+
+    fun adminApproveOrRejectDeposit(deposit: DepositRequest, approve: Boolean, adminNote: String) {
+        if (!_uiState.value.isAdmin) return
+        val repo = vaultRepository ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isActionBusy = true, actionErrorMessage = null) }
+            repo.adminApproveOrRejectDepositAtomic(deposit, approve, adminNote)
+                .onSuccess {
+                    _uiState.update {
+                        it.copy(
+                            isActionBusy = false,
+                            actionBannerMessage = if (approve) "تم اعتماد الإيداع وإضافته لمحفظة العميل" else "تم رفض طلب الإيداع",
+                        )
+                    }
+                }
+                .onFailure { err ->
+                    _uiState.update {
+                        it.copy(isActionBusy = false, actionErrorMessage = err.localizedMessage ?: "تعذّر معالجة الإيداع")
+                    }
+                }
+        }
+    }
+
+    fun adminProcessWithdrawal(request: WithdrawalRequest, nextStatus: WithdrawalStatus, proofNote: String) {
+        if (!_uiState.value.isAdmin) return
+        val repo = vaultRepository ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isActionBusy = true, actionErrorMessage = null) }
+            repo.adminProcessWithdrawalAtomic(request, nextStatus, proofNote)
+                .onSuccess {
+                    _uiState.update {
+                        it.copy(
+                            isActionBusy = false,
+                            actionBannerMessage = "تم تحديث السحب ${request.withdrawalRef} إلى ${nextStatus.arabicLabel}",
+                        )
+                    }
+                }
+                .onFailure { err ->
+                    _uiState.update {
+                        it.copy(isActionBusy = false, actionErrorMessage = err.localizedMessage ?: "تعذّر معالجة طلب السحب")
+                    }
+                }
+        }
+    }
+
+    fun adminConfirmOrRejectFractional(order: FractionalGoldOrder, confirm: Boolean) {
+        if (!_uiState.value.isAdmin) return
+        val repo = vaultRepository ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isActionBusy = true, actionErrorMessage = null) }
+            repo.adminConfirmOrRejectFractionalOrderAtomic(order, confirm)
+                .onSuccess {
+                    _uiState.update {
+                        it.copy(isActionBusy = false, actionBannerMessage = if (confirm) "تم تأكيد رصيد الذهب المجزأ للعميل" else "تم رفض الطلب المعلق")
+                    }
+                }
+                .onFailure { err ->
+                    _uiState.update {
+                        it.copy(isActionBusy = false, actionErrorMessage = err.localizedMessage ?: "تعذّر معالجة الطلب")
+                    }
+                }
+        }
+    }
+
+    fun adminUpdatePricingConfig(config: PlatformPricingConfig) {
+        if (!_uiState.value.isAdmin) return
+        val repo = vaultRepository ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isActionBusy = true, actionErrorMessage = null) }
+            repo.adminUpdatePricingConfig(config)
+                .onSuccess {
+                    _uiState.update {
+                        it.copy(isActionBusy = false, actionBannerMessage = "تم تحديث تسعير المنصة وسياسات المصنعية بنجاح")
+                    }
+                }
+                .onFailure { err ->
+                    _uiState.update {
+                        it.copy(isActionBusy = false, actionErrorMessage = err.localizedMessage ?: "تعذّر تحديث التسعير")
+                    }
+                }
+        }
+    }
+
+    // =========================================================================
+    // KYC, Price Alerts, FCM & Global Price Feed
+    // =========================================================================
 
     fun toggleKycStep(step: Int) {
         _uiState.update { state ->
@@ -639,7 +1576,8 @@ class KingGoldViewModel(
         }
     }
 
-    private companion object {
-        const val TAG = "KingGoldVM"
+    companion object {
+        private const val TAG = "KingGoldVM"
+        const val ADMIN_EMAIL = "esmailtarek228@gmail.com"
     }
 }

@@ -272,14 +272,21 @@ fun OrderDetailScreen(
                 }
 
                 item {
-                    LedgerCard(
-                        lines = listOf(
+                    val ledgerLines = if (order.makingFee == 0.0 && order.serviceFee == 0.0) {
+                        listOf(
+                            LedgerLine("سعر القطع النهائي", formatCurrency(order.goldValue)),
+                            LedgerLine("المصنعية الإضافية", "0.00 ج.م (مشمولة)"),
+                            LedgerLine("الإجمالي النهائي", "${formatCurrency(order.total)} ج.م", isTotal = true),
+                        )
+                    } else {
+                        listOf(
                             LedgerLine("قيمة الذهب", formatCurrency(order.goldValue)),
                             LedgerLine("مصنعية المحل", formatCurrency(order.makingFee)),
                             LedgerLine("رسوم خدمة King Gold", formatCurrency(order.serviceFee)),
                             LedgerLine("الإجمالي المدفوع", "${formatCurrency(order.total)} ج.م", isTotal = true),
-                        ),
-                    )
+                        )
+                    }
+                    LedgerCard(lines = ledgerLines)
                 }
 
                 if (order.status == OrderStatus.READY_FOR_PICKUP) {

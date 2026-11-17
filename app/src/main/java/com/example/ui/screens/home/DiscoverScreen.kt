@@ -23,6 +23,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.outlined.AccountBalanceWallet
+import androidx.compose.material.icons.outlined.AdminPanelSettings
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.FavoriteBorder
@@ -32,10 +34,13 @@ import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Sell
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.ShoppingBag
 import androidx.compose.material.icons.outlined.ShowChart
 import androidx.compose.material.icons.outlined.Star
+import androidx.compose.material.icons.outlined.Storefront
+import androidx.compose.material.icons.outlined.SupportAgent
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -71,6 +76,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.model.MoneyUtils
 import com.example.model.Shop
 import com.example.model.ShopSortOption
 import com.example.ui.components.Gold24KHistoryChartCard
@@ -96,6 +102,11 @@ fun DiscoverScreen(
     onToggleFavoriteShop: (String) -> Unit,
     onToggleFavoritesOnlyFilter: (Boolean) -> Unit,
     onOpenProfile: () -> Unit = {},
+    onOpenVault: () -> Unit = {},
+    onOpenSellGold: () -> Unit = {},
+    onOpenMerchantPortal: () -> Unit = {},
+    onOpenAdminCenter: () -> Unit = {},
+    onOpenSupport: () -> Unit = {},
     onDismissSyncError: () -> Unit,
 ) {
     var showFilterSheet by remember { mutableStateOf(false) }
@@ -204,6 +215,84 @@ fun DiscoverScreen(
                     onRefresh = onRefreshGlobalGoldPrices,
                     onBannerClick = onOpenPriceInsight,
                 )
+            }
+
+            item {
+                Card(
+                    onClick = onOpenVault,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("discover_vault_summary_card"),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = AppColors.Ink),
+                ) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column {
+                                Text(
+                                    text = "خزنتك الرقمية ومحفظتك",
+                                    style = AppText.body.copy(color = AppColors.BrassLight, fontSize = 11.5.sp, fontWeight = FontWeight.Bold),
+                                )
+                                Text(
+                                    text = "${MoneyUtils.mgToGramsString(uiState.wallet.goldConfirmedMg)} جم ذهب · ${MoneyUtils.piastersToEgpString(uiState.wallet.cashAvailablePiasters)} ج.م",
+                                    style = AppText.display.copy(color = Color.White, fontSize = 16.sp),
+                                )
+                            }
+                            Icon(
+                                imageVector = Icons.Outlined.AccountBalanceWallet,
+                                contentDescription = "خزنتي ومحفظتي",
+                                tint = AppColors.BrassLight,
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            DiscoverShortcutPill(
+                                label = "شراء/سحب مجزأ",
+                                icon = Icons.Outlined.AccountBalanceWallet,
+                                onClick = onOpenVault,
+                                modifier = Modifier.weight(1f).testTag("discover_shortcut_vault"),
+                            )
+                            DiscoverShortcutPill(
+                                label = "بيع ذهبك",
+                                icon = Icons.Outlined.Sell,
+                                onClick = onOpenSellGold,
+                                modifier = Modifier.weight(1f).testTag("discover_shortcut_sell"),
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            DiscoverShortcutPill(
+                                label = "بوابة التاجر",
+                                icon = Icons.Outlined.Storefront,
+                                onClick = onOpenMerchantPortal,
+                                modifier = Modifier.weight(1f).testTag("discover_shortcut_merchant"),
+                            )
+                            DiscoverShortcutPill(
+                                label = "الدعم",
+                                icon = Icons.Outlined.SupportAgent,
+                                onClick = onOpenSupport,
+                                modifier = Modifier.weight(1f).testTag("discover_shortcut_support"),
+                            )
+                            if (uiState.isAdmin) {
+                                DiscoverShortcutPill(
+                                    label = "الإدارة",
+                                    icon = Icons.Outlined.AdminPanelSettings,
+                                    onClick = onOpenAdminCenter,
+                                    highlight = true,
+                                    modifier = Modifier.weight(1f).testTag("discover_shortcut_admin"),
+                                )
+                            }
+                        }
+                    }
+                }
             }
 
             item {
@@ -350,7 +439,7 @@ fun DiscoverScreen(
                                 ),
                             )
                             Text(
-                                text = "اسأل عن أفضل عيار للشراء أو احسب التكلفة بالمصنعية",
+                                text = "اسأل عن أفضل عيار للشراء وقيمة السبائك بدون مصنعية إضافية",
                                 style = AppText.body.copy(
                                     color = AppColors.Muted,
                                     fontSize = 11.5.sp,
@@ -831,5 +920,42 @@ private fun ShopTile(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun DiscoverShortcutPill(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    highlight: Boolean = false,
+) {
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (highlight) AppColors.Brass else Color.White.copy(alpha = 0.12f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = if (highlight) AppColors.Ink else AppColors.BrassLight,
+            modifier = Modifier.size(15.dp),
+        )
+        Spacer(modifier = Modifier.width(5.dp))
+        Text(
+            text = label,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            style = AppText.body.copy(
+                color = if (highlight) AppColors.Ink else Color.White,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+            ),
+        )
     }
 }

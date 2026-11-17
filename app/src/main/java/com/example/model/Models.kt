@@ -32,6 +32,8 @@ data class Shop(
     val closesAt: String,
     val workingHours: String = "السبت – الخميس: 10:00 ص – $closesAt · الجمعة: 2:00 م – $closesAt",
     val makingFeePerGram: Double,
+    val ownerUid: String = "",
+    val isDynamicMerchant: Boolean = false,
 )
 
 data class Product(
@@ -43,6 +45,10 @@ data class Product(
     val weightGrams: Double,
     val stamped: Boolean,
     val availablePieces: Int,
+    val sellingPricePiasters: Long = 0L,
+    val description: String = "",
+    val imageThumbnails: List<String> = emptyList(),
+    val merchantOwnerUid: String = "",
 )
 
 data class CartItem(
@@ -69,8 +75,11 @@ data class GoldOrder(
     val status: OrderStatus = OrderStatus.PAID,
     val ratingGiven: Int? = null,
     val disputeReason: String? = null,
+    val totalPiasters: Long = 0L,
+    val paymentSource: String = "ESCROW_METHOD",
 ) {
-    val total: Double get() = goldValue + makingFee + serviceFee
+    val total: Double
+        get() = if (totalPiasters > 0L) MoneyUtils.piastersToEgp(totalPiasters) else goldValue + makingFee + serviceFee
 }
 
 enum class ShopSortOption(val label: String) {

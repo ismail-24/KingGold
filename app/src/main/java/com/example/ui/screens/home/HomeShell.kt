@@ -10,14 +10,16 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.ReceiptLong
-import androidx.compose.material.icons.filled.SupportAgent
+import androidx.compose.material.icons.filled.Sell
+import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.ReceiptLong
-import androidx.compose.material.icons.outlined.SupportAgent
+import androidx.compose.material.icons.outlined.Sell
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -33,11 +35,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.GoldOrder
+import com.example.model.SellGoldRequest
 import com.example.model.Shop
 import com.example.model.ShopSortOption
+import com.example.model.WithdrawalDeliveryType
+import com.example.ui.screens.sell.SellGoldScreen
+import com.example.ui.screens.vault.VaultWalletScreen
 import com.example.ui.state.KingGoldUiState
 import com.example.ui.theme.AppColors
 import com.example.ui.theme.AppText
@@ -49,8 +56,9 @@ enum class HomeTab(
     val tag: String,
 ) {
     DISCOVER("استكشف", Icons.Filled.Explore, Icons.Outlined.Explore, "tab_discover"),
+    VAULT("خزنتي", Icons.Filled.AccountBalanceWallet, Icons.Outlined.AccountBalanceWallet, "tab_vault"),
+    SELL_GOLD("بيع ذهبك", Icons.Filled.Sell, Icons.Outlined.Sell, "tab_sell_gold"),
     ORDERS("طلباتي", Icons.Filled.ReceiptLong, Icons.Outlined.ReceiptLong, "tab_orders"),
-    SUPPORT("الدعم", Icons.Filled.SupportAgent, Icons.Outlined.SupportAgent, "tab_support"),
     ACCOUNT("حسابي", Icons.Filled.Person, Icons.Outlined.Person, "tab_account"),
 }
 
@@ -70,6 +78,16 @@ fun HomeShell(
     onToggleFavoritesOnlyFilter: (Boolean) -> Unit,
     onOpenOrder: (GoldOrder) -> Unit,
     onOpenProfile: () -> Unit = {},
+    onOpenMerchantPortal: () -> Unit = {},
+    onOpenAdminCenter: () -> Unit = {},
+    onOpenSupport: () -> Unit = {},
+    onBuyFractionalGold: (karat: Int, weightMg: Long, payWithWallet: Boolean) -> Unit,
+    onRequestWithdrawal: (karat: Int, amountMg: Long, deliveryType: WithdrawalDeliveryType, address: String) -> Unit,
+    onSubmitDepositRequest: (amountPiasters: Long, channel: String, reference: String) -> Unit,
+    onSubmitSellGoldRequest: (itemTitle: String, category: String, karat: Int, estimatedWeightMg: Long, conditionNotes: String, photoThumbnails: List<String>) -> Unit,
+    onCancelSellGoldRequest: (String) -> Unit,
+    onAcceptSellGoldOffer: (SellGoldRequest) -> Unit,
+    onClearActionMessages: () -> Unit,
     onOpenKyc: () -> Unit,
     onSelectPaymentMethod: (String) -> Unit,
     onDismissSyncError: () -> Unit,
@@ -103,8 +121,10 @@ fun HomeShell(
                             label = {
                                 Text(
                                     text = tab.label,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                     style = AppText.body.copy(
-                                        fontSize = 11.sp,
+                                        fontSize = 10.5.sp,
                                         fontWeight = FontWeight.Bold,
                                     ),
                                 )
@@ -122,6 +142,7 @@ fun HomeShell(
                 Box(modifier = Modifier.weight(1f)) {
                     HomeTabContent(
                         selectedTab = selectedTab,
+                        onSelectTab = onSelectTab,
                         uiState = uiState,
                         onSearchChange = onSearchChange,
                         onApplyFilters = onApplyFilters,
@@ -134,6 +155,16 @@ fun HomeShell(
                         onToggleFavoritesOnlyFilter = onToggleFavoritesOnlyFilter,
                         onOpenOrder = onOpenOrder,
                         onOpenProfile = onOpenProfile,
+                        onOpenMerchantPortal = onOpenMerchantPortal,
+                        onOpenAdminCenter = onOpenAdminCenter,
+                        onOpenSupport = onOpenSupport,
+                        onBuyFractionalGold = onBuyFractionalGold,
+                        onRequestWithdrawal = onRequestWithdrawal,
+                        onSubmitDepositRequest = onSubmitDepositRequest,
+                        onSubmitSellGoldRequest = onSubmitSellGoldRequest,
+                        onCancelSellGoldRequest = onCancelSellGoldRequest,
+                        onAcceptSellGoldOffer = onAcceptSellGoldOffer,
+                        onClearActionMessages = onClearActionMessages,
                         onOpenKyc = onOpenKyc,
                         onSelectPaymentMethod = onSelectPaymentMethod,
                         onDismissSyncError = onDismissSyncError,
@@ -165,8 +196,10 @@ fun HomeShell(
                                 label = {
                                     Text(
                                         text = tab.label,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
                                         style = AppText.body.copy(
-                                            fontSize = 11.sp,
+                                            fontSize = 10.sp,
                                             fontWeight = FontWeight.Bold,
                                         ),
                                     )
@@ -190,6 +223,7 @@ fun HomeShell(
                 ) {
                     HomeTabContent(
                         selectedTab = selectedTab,
+                        onSelectTab = onSelectTab,
                         uiState = uiState,
                         onSearchChange = onSearchChange,
                         onApplyFilters = onApplyFilters,
@@ -202,6 +236,16 @@ fun HomeShell(
                         onToggleFavoritesOnlyFilter = onToggleFavoritesOnlyFilter,
                         onOpenOrder = onOpenOrder,
                         onOpenProfile = onOpenProfile,
+                        onOpenMerchantPortal = onOpenMerchantPortal,
+                        onOpenAdminCenter = onOpenAdminCenter,
+                        onOpenSupport = onOpenSupport,
+                        onBuyFractionalGold = onBuyFractionalGold,
+                        onRequestWithdrawal = onRequestWithdrawal,
+                        onSubmitDepositRequest = onSubmitDepositRequest,
+                        onSubmitSellGoldRequest = onSubmitSellGoldRequest,
+                        onCancelSellGoldRequest = onCancelSellGoldRequest,
+                        onAcceptSellGoldOffer = onAcceptSellGoldOffer,
+                        onClearActionMessages = onClearActionMessages,
                         onOpenKyc = onOpenKyc,
                         onSelectPaymentMethod = onSelectPaymentMethod,
                         onDismissSyncError = onDismissSyncError,
@@ -216,6 +260,7 @@ fun HomeShell(
 @Composable
 private fun HomeTabContent(
     selectedTab: HomeTab,
+    onSelectTab: (HomeTab) -> Unit,
     uiState: KingGoldUiState,
     onSearchChange: (String) -> Unit,
     onApplyFilters: (karat: Int?, verifiedOnly: Boolean, sort: ShopSortOption) -> Unit,
@@ -228,6 +273,16 @@ private fun HomeTabContent(
     onToggleFavoritesOnlyFilter: (Boolean) -> Unit,
     onOpenOrder: (GoldOrder) -> Unit,
     onOpenProfile: () -> Unit,
+    onOpenMerchantPortal: () -> Unit,
+    onOpenAdminCenter: () -> Unit,
+    onOpenSupport: () -> Unit,
+    onBuyFractionalGold: (karat: Int, weightMg: Long, payWithWallet: Boolean) -> Unit,
+    onRequestWithdrawal: (karat: Int, amountMg: Long, deliveryType: WithdrawalDeliveryType, address: String) -> Unit,
+    onSubmitDepositRequest: (amountPiasters: Long, channel: String, reference: String) -> Unit,
+    onSubmitSellGoldRequest: (itemTitle: String, category: String, karat: Int, estimatedWeightMg: Long, conditionNotes: String, photoThumbnails: List<String>) -> Unit,
+    onCancelSellGoldRequest: (String) -> Unit,
+    onAcceptSellGoldOffer: (SellGoldRequest) -> Unit,
+    onClearActionMessages: () -> Unit,
     onOpenKyc: () -> Unit,
     onSelectPaymentMethod: (String) -> Unit,
     onDismissSyncError: () -> Unit,
@@ -246,18 +301,39 @@ private fun HomeTabContent(
             onToggleFavoriteShop = onToggleFavoriteShop,
             onToggleFavoritesOnlyFilter = onToggleFavoritesOnlyFilter,
             onOpenProfile = onOpenProfile,
+            onOpenVault = { onSelectTab(HomeTab.VAULT) },
+            onOpenSellGold = { onSelectTab(HomeTab.SELL_GOLD) },
+            onOpenMerchantPortal = onOpenMerchantPortal,
+            onOpenAdminCenter = onOpenAdminCenter,
+            onOpenSupport = onOpenSupport,
             onDismissSyncError = onDismissSyncError,
+        )
+        HomeTab.VAULT -> VaultWalletScreen(
+            uiState = uiState,
+            onBuyFractionalGold = onBuyFractionalGold,
+            onRequestWithdrawal = onRequestWithdrawal,
+            onSubmitDepositRequest = onSubmitDepositRequest,
+            onClearMessages = onClearActionMessages,
+        )
+        HomeTab.SELL_GOLD -> SellGoldScreen(
+            uiState = uiState,
+            onSubmitRequest = onSubmitSellGoldRequest,
+            onCancelRequest = onCancelSellGoldRequest,
+            onAcceptOffer = onAcceptSellGoldOffer,
+            onClearMessages = onClearActionMessages,
         )
         HomeTab.ORDERS -> OrdersScreen(
             uiState = uiState,
             onOrderClick = onOpenOrder,
         )
-        HomeTab.SUPPORT -> SupportScreen(
-            onOpenAiAdvisor = { onOpenAiAdvisor(null) },
-        )
         HomeTab.ACCOUNT -> AccountScreen(
             uiState = uiState,
             onOpenProfile = onOpenProfile,
+            onOpenVault = { onSelectTab(HomeTab.VAULT) },
+            onOpenSellGold = { onSelectTab(HomeTab.SELL_GOLD) },
+            onOpenMerchantPortal = onOpenMerchantPortal,
+            onOpenAdminCenter = onOpenAdminCenter,
+            onOpenSupport = onOpenSupport,
             onOpenKyc = onOpenKyc,
             onOpenPriceAlerts = onOpenPriceInsight,
             onSelectPaymentMethod = onSelectPaymentMethod,

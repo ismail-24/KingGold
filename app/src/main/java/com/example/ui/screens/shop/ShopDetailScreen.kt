@@ -66,6 +66,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.KingGoldRepository
 import com.example.model.KaratPrice
+import com.example.model.MoneyUtils
 import com.example.model.Product
 import com.example.model.Shop
 import com.example.ui.components.LivePriceTicker
@@ -75,6 +76,7 @@ import com.example.ui.components.VerifiedStrip
 import com.example.ui.components.formatCurrency
 import com.example.ui.theme.AppColors
 import com.example.ui.theme.AppText
+import com.example.ui.util.Base64ThumbnailImage
 import com.example.ui.util.dialPhone
 import com.example.ui.util.openDirections
 import kotlinx.coroutines.launch
@@ -82,6 +84,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun ShopDetailScreen(
     shop: Shop,
+    products: List<Product> = KingGoldRepository.productsFor(shop.id),
     prices: List<KaratPrice>,
     isFavorite: Boolean = false,
     cartItemCount: Int = 0,
@@ -95,7 +98,6 @@ fun ShopDetailScreen(
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    val products = remember(shop.id) { KingGoldRepository.productsFor(shop.id) }
     val categories = remember(products) { products.map { it.category }.distinct() }
 
     Scaffold(
@@ -433,21 +435,41 @@ fun ShopDetailScreen(
                             }
                         }
 
-                        LazyRow(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("shop_collection_gallery"),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            items(products, key = { it.id }) { product ->
-                                val gramPrice = prices.firstOrNull { it.karat == product.karat }?.pricePerGram
-                                    ?: KingGoldRepository.gramPrice(product.karat)
-                                val estPrice = gramPrice * product.weightGrams
-                                GoldGalleryCard(
-                                    product = product,
-                                    estimatedPrice = estPrice,
-                                    onClick = { onOpenProduct(product) },
+                        if (products.isEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(Color.White)
+                                    .border(1.dp, AppColors.Line, RoundedCornerShape(14.dp))
+                                    .padding(16.dp),
+                            ) {
+                                Text(
+                                    text = "لم يقم التاجر بنشر منتجات متاحة حالياً.",
+                                    style = AppText.body.copy(color = AppColors.Muted),
                                 )
+                            }
+                        } else {
+                            LazyRow(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("shop_collection_gallery"),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                items(products, key = { it.id }) { product ->
+                                    val gramPrice = prices.firstOrNull { it.karat == product.karat }?.pricePerGram
+                                        ?: KingGoldRepository.gramPrice(product.karat)
+                                    val finalPrice = if (product.sellingPricePiasters > 0L) {
+                                        MoneyUtils.piastersToEgp(product.sellingPricePiasters)
+                                    } else {
+                                        gramPrice * product.weightGrams
+                                    }
+                                    GoldGalleryCard(
+                                        product = product,
+                                        finalPrice = finalPrice,
+                                        onClick = { onOpenProduct(product) },
+                                    )
+                                }
                             }
                         }
 
@@ -519,7 +541,7 @@ fun ShopDetailScreen(
 @Composable
 private fun GoldGalleryCard(
     product: Product,
-    estimatedPrice: Double,
+    finalPrice: Double,
     onClick: () -> Unit,
 ) {
     Card(
@@ -534,14 +556,26 @@ private fun GoldGalleryCard(
     ) {
         Column(modifier = Modifier.padding(10.dp)) {
             Box {
-                ProductGoldArtwork(
-                    category = product.category,
-                    karat = product.karat,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(104.dp),
-                    cornerRadius = 12.dp,
-                )
+                val thumb = product.imageThumbnails.firstOrNull()
+                if (!thumb.isNullOrBlank()) {
+                    Base64ThumbnailImage(
+                        encoded = thumb,
+                        contentDescription = product.name,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(104.dp)
+                            .clip(RoundedCornerShape(12.dp)),
+                    )
+                } else {
+                    ProductGoldArtwork(
+                        category = product.category,
+                        karat = product.karat,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(104.dp),
+                        cornerRadius = 12.dp,
+                    )
+                }
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopStart)
@@ -578,11 +612,19 @@ private fun GoldGalleryCard(
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "${formatCurrency(estimatedPrice, 0)} ج.م",
+                text = "${formatCurrency(finalPrice, 0)} ج.م",
                 style = AppText.body.copy(
                     color = AppColors.Brass,
                     fontWeight = FontWeight.ExtraBold,
                     fontSize = 13.5.sp,
+                ),
+            )
+            Text(
+                text = "بدون مصنعية إضافية",
+                style = AppText.body.copy(
+                    color = AppColors.Trust,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 10.sp,
                 ),
             )
         }

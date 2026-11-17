@@ -22,10 +22,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.outlined.Logout
+import androidx.compose.material.icons.outlined.AccountBalanceWallet
+import androidx.compose.material.icons.outlined.AdminPanelSettings
 import androidx.compose.material.icons.outlined.Badge
 import androidx.compose.material.icons.outlined.CreditCard
 import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Sell
+import androidx.compose.material.icons.outlined.Storefront
+import androidx.compose.material.icons.outlined.SupportAgent
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -50,6 +55,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.KingGoldRepository
 import com.example.model.KycStatus
+import com.example.model.MoneyUtils
 import com.example.ui.components.SealBadge
 import com.example.ui.state.KingGoldUiState
 import com.example.ui.theme.AppColors
@@ -60,6 +66,11 @@ import com.example.ui.theme.AppText
 fun AccountScreen(
     uiState: KingGoldUiState,
     onOpenProfile: () -> Unit = {},
+    onOpenVault: () -> Unit = {},
+    onOpenSellGold: () -> Unit = {},
+    onOpenMerchantPortal: () -> Unit = {},
+    onOpenAdminCenter: () -> Unit = {},
+    onOpenSupport: () -> Unit = {},
     onOpenKyc: () -> Unit,
     onOpenPriceAlerts: () -> Unit,
     onSelectPaymentMethod: (String) -> Unit,
@@ -146,11 +157,69 @@ fun AccountScreen(
 
             item {
                 AccountMenuTile(
+                    icon = Icons.Outlined.AccountBalanceWallet,
+                    title = "خزنتي ومحفظتي (الذهب والنقد)",
+                    subtitle = "${MoneyUtils.mgToGramsString(uiState.wallet.goldConfirmedMg)} جم ذهب · ${MoneyUtils.piastersToEgpString(uiState.wallet.cashAvailablePiasters)} ج.م متاح",
+                    onClick = onOpenVault,
+                    modifier = Modifier.testTag("account_vault_tile"),
+                )
+            }
+
+            item {
+                AccountMenuTile(
+                    icon = Icons.Outlined.Sell,
+                    title = "بيع ذهبك للمنصة",
+                    subtitle = "اعرض قطعك للتقييم الرسمي وسحب القيمة لمحفظتك (${uiState.sellRequests.size} طلب)",
+                    onClick = onOpenSellGold,
+                    modifier = Modifier.testTag("account_sell_gold_tile"),
+                )
+            }
+
+            item {
+                val ownMerchant = uiState.ownMerchants.firstOrNull()
+                val merchantSub = if (ownMerchant != null) {
+                    "${ownMerchant.shopName} · الحالة: ${ownMerchant.status.arabicLabel}"
+                } else {
+                    "سجّل متجرك واعرض منتجاتك بدون مصنعية إضافية للمشتري"
+                }
+                AccountMenuTile(
+                    icon = Icons.Outlined.Storefront,
+                    title = "بوابة التاجر (التجار المعتمدين)",
+                    subtitle = merchantSub,
+                    onClick = onOpenMerchantPortal,
+                    modifier = Modifier.testTag("account_merchant_tile"),
+                )
+            }
+
+            if (uiState.isAdmin) {
+                item {
+                    AccountMenuTile(
+                        icon = Icons.Outlined.AdminPanelSettings,
+                        title = "مركز إدارة المنصة (Admin)",
+                        subtitle = "اعتماد التجار، المنتجات، تقييم الذهب، التسويات، والتسعير",
+                        onClick = onOpenAdminCenter,
+                        modifier = Modifier.testTag("account_admin_tile"),
+                    )
+                }
+            }
+
+            item {
+                AccountMenuTile(
                     icon = Icons.Outlined.Person,
                     title = "الملف الشخصي وسجل الطلبات",
                     subtitle = "$accountSubtitle · ${uiState.orders.size} طلبات",
                     onClick = onOpenProfile,
                     modifier = Modifier.testTag("account_profile_tile"),
+                )
+            }
+
+            item {
+                AccountMenuTile(
+                    icon = Icons.Outlined.SupportAgent,
+                    title = "مركز الدعم والمساعدة",
+                    subtitle = "الأسئلة الشائعة ومستشار الملك الذكي",
+                    onClick = onOpenSupport,
+                    modifier = Modifier.testTag("account_support_tile"),
                 )
             }
 
@@ -217,7 +286,7 @@ fun AccountScreen(
                     style = AppText.display.copy(fontSize = 18.sp),
                 )
                 Spacer(modifier = Modifier.height(12.dp))
-                KingGoldRepository.paymentMethods.forEach { method ->
+                uiState.availablePaymentMethods.forEach { method ->
                     val selected = uiState.selectedPaymentMethodId == method.id
                     Row(
                         modifier = Modifier

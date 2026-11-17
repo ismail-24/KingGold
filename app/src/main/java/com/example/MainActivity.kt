@@ -20,6 +20,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.data.remote.FirestoreKingGoldRepository
+import com.example.data.remote.FirestoreMarketplaceRepository
+import com.example.data.remote.FirestoreVaultRepository
 import com.example.firebase.configureAppCheck
 import com.example.notifications.GoldPriceNotificationHelper
 import com.example.ui.auth.GoogleAuthHelper
@@ -94,6 +96,8 @@ private fun AppContent() {
                         val db = FirebaseFirestore.getInstance(databaseId)
                         KingGoldViewModel(
                             firestoreRepository = FirestoreKingGoldRepository(db, auth),
+                            marketplaceRepository = FirestoreMarketplaceRepository(db, auth),
+                            vaultRepository = FirestoreVaultRepository(db, auth),
                             currentUserId = user.uid,
                             userDisplayName = user.displayName,
                             userEmail = user.email,

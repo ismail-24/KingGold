@@ -7,7 +7,9 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // =====================================================================
     // Shared Hardened Primitives
+    // =====================================================================
     function isValidId(id) {
       return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
@@ -28,6 +30,23 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    function isBootstrapAdmin() {
+      return isSignedIn() &&
+             'email' in request.auth.token &&
+             request.auth.token.email == 'esmailtarek228@gmail.com' &&
+             'email_verified' in request.auth.token &&
+             request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return isBootstrapAdmin() ||
+             (isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)));
+    }
+
+    function isValidKarat(karat) {
+      return karat is int && karat in [18, 21, 24];
+    }
+
     function isValidOrderStatus(status) {
       return status in ['PAID', 'PREPARING', 'READY_FOR_PICKUP', 'COMPLETED', 'DISPUTED'];
     }
@@ -36,6 +55,41 @@ service cloud.firestore {
       return status in ['NOT_STARTED', 'PENDING_REVIEW', 'VERIFIED'];
     }
 
+    function isValidMerchantStatus(status) {
+      return status in ['PENDING', 'APPROVED', 'REJECTED', 'SUSPENDED'];
+    }
+
+    function isValidProductStatus(status) {
+      return status in ['PENDING_REVIEW', 'ACTIVE', 'PAUSED', 'REJECTED'];
+    }
+
+    function isValidSellStatus(status) {
+      return status in ['SUBMITTED', 'UNDER_REVIEW', 'OFFER_SENT', 'COMPLETED', 'REJECTED', 'CANCELLED'];
+    }
+
+    function isValidWithdrawalStatus(status) {
+      return status in ['PENDING', 'APPROVED', 'FULFILLED', 'REJECTED'];
+    }
+
+    function isValidDepositStatus(status) {
+      return status in ['PENDING', 'APPROVED', 'REJECTED'];
+    }
+
+    function isApprovedMerchant(merchantId) {
+      return isValidId(merchantId) &&
+             exists(/databases/$(database)/documents/merchants/$(merchantId)) &&
+             get(/databases/$(database)/documents/merchants/$(merchantId)).data.ownerUid == request.auth.uid &&
+             get(/databases/$(database)/documents/merchants/$(merchantId)).data.status == 'APPROVED';
+    }
+
+    function isBoundedStringList(arr, maxLen) {
+      return arr is list && arr.size() <= maxLen && (arr.size() == 0 || arr[0] is string);
+    }
+
+    // =====================================================================
+    // Validation Helpers
+    // =====================================================================
+
     function isValidOrderRecord(data, userId) {
       return data.keys().hasAll([
                'userId', 'shopId', 'shopName', 'items',
@@ -43,19 +97,24 @@ service cloud.firestore {
                'pickupWindow', 'status', 'createdAt', 'updatedAt'
              ]) &&
              data.keys().hasOnly([
-               'userId', 'shopId', 'shopName', 'items',
-               'goldValue', 'makingFee', 'serviceFee',
+               'userId', 'shopId', 'shopName', 'merchantOwnerUid', 'items',
+               'goldValue', 'makingFee', 'serviceFee', 'totalPiasters',
+               'paymentSource', 'idempotencyKey',
                'pickupWindow', 'status', 'ratingGiven', 'disputeReason',
                'createdAt', 'updatedAt'
              ]) &&
              data.userId is string && data.userId == userId && data.userId.size() <= 128 &&
              data.shopId is string && data.shopId.size() >= 1 && data.shopId.size() <= 64 &&
              data.shopName is string && data.shopName.size() >= 1 && data.shopName.size() <= 120 &&
+             (!('merchantOwnerUid' in data) || (data.merchantOwnerUid is string && data.merchantOwnerUid.size() <= 128)) &&
              data.items is list && data.items.size() <= 50 &&
              (data.items.size() == 0 || data.items[0] is map) &&
              data.goldValue is number && data.goldValue >= 0 &&
              data.makingFee is number && data.makingFee >= 0 &&
              data.serviceFee is number && data.serviceFee >= 0 &&
+             (!('totalPiasters' in data) || (data.totalPiasters is int && data.totalPiasters >= 0)) &&
+             (!('paymentSource' in data) || (data.paymentSource is string && data.paymentSource in ['CASH_WALLET', 'ESCROW_METHOD'])) &&
+             (!('idempotencyKey' in data) || (data.idempotencyKey is string && data.idempotencyKey.size() >= 1 && data.idempotencyKey.size() <= 128)) &&
              data.pickupWindow is string && data.pickupWindow.size() >= 1 && data.pickupWindow.size() <= 100 &&
              data.status is string && isValidOrderStatus(data.status) &&
              (!('ratingGiven' in data) || (data.ratingGiven is int && data.ratingGiven >= 1 && data.ratingGiven <= 5)) &&
@@ -88,15 +147,855 @@ service cloud.firestore {
              data.priceAlertKarat is int && data.priceAlertKarat in [18, 21, 24] &&
              data.priceAlertTarget is string && data.priceAlertTarget.size() <= 12 &&
              (!('fcmToken' in data) || (data.fcmToken is string && data.fcmToken.size() <= 512)) &&
-             data.favoriteShopIds is list && data.favoriteShopIds.size() <= 100 &&
-             (data.favoriteShopIds.size() == 0 || data.favoriteShopIds[0] is string) &&
+             isBoundedStringList(data.favoriteShopIds, 100) &&
              data.createdAt is timestamp && data.createdAt <= request.time &&
              data.updatedAt is timestamp && data.updatedAt <= request.time;
     }
 
+    function isValidUserCart(data, userId) {
+      return data.keys().hasAll([
+               'userId', 'shopId', 'shopName', 'items', 'pickupSlotIndex',
+               'priceLockExpiresAtMs', 'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'userId', 'shopId', 'shopName', 'merchantOwnerUid', 'items',
+               'pickupSlotIndex', 'priceLockExpiresAtMs', 'createdAt', 'updatedAt'
+             ]) &&
+             data.userId is string && data.userId == userId && data.userId.size() <= 128 &&
+             data.shopId is string && data.shopId.size() <= 64 &&
+             data.shopName is string && data.shopName.size() <= 120 &&
+             (!('merchantOwnerUid' in data) || (data.merchantOwnerUid is string && data.merchantOwnerUid.size() <= 128)) &&
+             data.items is list && data.items.size() <= 50 &&
+             (data.items.size() == 0 || data.items[0] is map) &&
+             data.pickupSlotIndex is int && data.pickupSlotIndex >= 0 && data.pickupSlotIndex <= 10 &&
+             data.priceLockExpiresAtMs is int && data.priceLockExpiresAtMs >= 0 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidMerchant(data) {
+      return data.keys().hasAll([
+               'ownerUid', 'shopName', 'area', 'address', 'contactPhone', 'verifiedEmail',
+               'description', 'rating', 'reviewsCount', 'status',
+               'prepaidMakingApproved', 'prepaidMakingBudgetPiasters', 'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'ownerUid', 'shopName', 'area', 'address', 'contactPhone', 'verifiedEmail',
+               'description', 'rating', 'reviewsCount', 'status', 'rejectionReason',
+               'prepaidMakingApproved', 'prepaidMakingBudgetPiasters', 'pricingPolicyNote',
+               'createdAt', 'updatedAt'
+             ]) &&
+             data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 &&
+             data.shopName is string && data.shopName.size() >= 2 && data.shopName.size() <= 120 &&
+             data.area is string && data.area.size() >= 2 && data.area.size() <= 80 &&
+             data.address is string && data.address.size() >= 4 && data.address.size() <= 240 &&
+             data.contactPhone is string && data.contactPhone.size() >= 6 && data.contactPhone.size() <= 32 &&
+             data.verifiedEmail is string && data.verifiedEmail.size() >= 3 && data.verifiedEmail.size() <= 160 &&
+             data.description is string && data.description.size() <= 1000 &&
+             data.rating is number && data.rating >= 0 && data.rating <= 5 &&
+             data.reviewsCount is int && data.reviewsCount >= 0 &&
+             data.status is string && isValidMerchantStatus(data.status) &&
+             (!('rejectionReason' in data) || (data.rejectionReason is string && data.rejectionReason.size() <= 500)) &&
+             data.prepaidMakingApproved is bool &&
+             data.prepaidMakingBudgetPiasters is int && data.prepaidMakingBudgetPiasters >= 0 &&
+             (!('pricingPolicyNote' in data) || (data.pricingPolicyNote is string && data.pricingPolicyNote.size() <= 500)) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidMerchantPrivateDocs(data) {
+      return data.keys().hasAll([
+               'ownerUid', 'legalFullName', 'nationalIdNumber', 'commercialRegNumber',
+               'taxCardNumber', 'authorizationNotes', 'documentThumbnails', 'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'ownerUid', 'legalFullName', 'nationalIdNumber', 'commercialRegNumber',
+               'taxCardNumber', 'authorizationNotes', 'documentThumbnails', 'createdAt', 'updatedAt'
+             ]) &&
+             data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 &&
+             data.legalFullName is string && data.legalFullName.size() >= 3 && data.legalFullName.size() <= 160 &&
+             data.nationalIdNumber is string && data.nationalIdNumber.size() >= 5 && data.nationalIdNumber.size() <= 64 &&
+             data.commercialRegNumber is string && data.commercialRegNumber.size() <= 64 &&
+             data.taxCardNumber is string && data.taxCardNumber.size() <= 64 &&
+             data.authorizationNotes is string && data.authorizationNotes.size() <= 1000 &&
+             isBoundedStringList(data.documentThumbnails, 4) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidMerchantAuditLog(data, merchantId) {
+      return data.keys().hasAll(['merchantId', 'merchantOwnerUid', 'actorUid', 'action', 'note', 'createdAt']) &&
+             data.keys().hasOnly(['merchantId', 'merchantOwnerUid', 'actorUid', 'action', 'note', 'createdAt']) &&
+             data.merchantId is string && data.merchantId == merchantId &&
+             data.merchantOwnerUid is string && data.merchantOwnerUid.size() >= 1 && data.merchantOwnerUid.size() <= 128 &&
+             data.actorUid is string && data.actorUid.size() >= 1 && data.actorUid.size() <= 128 &&
+             data.action is string && data.action.size() >= 2 && data.action.size() <= 64 &&
+             data.note is string && data.note.size() <= 600 &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidProduct(data) {
+      return data.keys().hasAll([
+               'merchantId', 'ownerUid', 'merchantName', 'name', 'description',
+               'category', 'karat', 'weightMg', 'weightGrams',
+               'sellingPricePiasters', 'stockQuantity', 'stamped', 'imageThumbnails',
+               'status', 'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'merchantId', 'ownerUid', 'merchantName', 'name', 'description',
+               'category', 'karat', 'weightMg', 'weightGrams',
+               'sellingPricePiasters', 'stockQuantity', 'stamped', 'imageThumbnails',
+               'status', 'rejectionReason', 'lastOrderId', 'createdAt', 'updatedAt'
+             ]) &&
+             data.merchantId is string && isValidId(data.merchantId) &&
+             data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 &&
+             data.merchantName is string && data.merchantName.size() >= 1 && data.merchantName.size() <= 120 &&
+             data.name is string && data.name.size() >= 2 && data.name.size() <= 140 &&
+             data.description is string && data.description.size() <= 1200 &&
+             data.category is string && data.category.size() >= 2 && data.category.size() <= 64 &&
+             isValidKarat(data.karat) &&
+             data.weightMg is int && data.weightMg > 0 && data.weightMg <= 10000000 &&
+             data.weightGrams is number && data.weightGrams > 0 &&
+             data.sellingPricePiasters is int && data.sellingPricePiasters > 0 &&
+             data.stockQuantity is int && data.stockQuantity >= 0 && data.stockQuantity <= 100000 &&
+             data.stamped is bool &&
+             isBoundedStringList(data.imageThumbnails, 4) &&
+             data.status is string && isValidProductStatus(data.status) &&
+             (!('rejectionReason' in data) || (data.rejectionReason is string && data.rejectionReason.size() <= 500)) &&
+             (!('lastOrderId' in data) || isValidId(data.lastOrderId)) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidMerchantOrder(data) {
+      return data.keys().hasAll([
+               'orderId', 'merchantId', 'merchantOwnerUid', 'buyerUid',
+               'items', 'totalPiasters', 'pickupWindow', 'status', 'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'orderId', 'merchantId', 'merchantOwnerUid', 'buyerUid',
+               'items', 'totalPiasters', 'pickupWindow', 'status', 'createdAt', 'updatedAt'
+             ]) &&
+             isValidId(data.orderId) &&
+             isValidId(data.merchantId) &&
+             data.merchantOwnerUid is string && data.merchantOwnerUid.size() >= 1 && data.merchantOwnerUid.size() <= 128 &&
+             data.buyerUid is string && data.buyerUid.size() >= 1 && data.buyerUid.size() <= 128 &&
+             data.items is list && data.items.size() <= 50 &&
+             data.totalPiasters is int && data.totalPiasters >= 0 &&
+             data.pickupWindow is string && data.pickupWindow.size() >= 1 && data.pickupWindow.size() <= 100 &&
+             data.status is string && isValidOrderStatus(data.status) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidSellRequest(data) {
+      return data.keys().hasAll([
+               'customerUid', 'customerEmail', 'itemTitle', 'category', 'karat',
+               'estimatedWeightMg', 'conditionNotes', 'photoThumbnails', 'status',
+               'verifiedWeightMg', 'confirmedKarat', 'referencePricePerGramPiasters',
+               'evaluatedGoldValuePiasters', 'makingChargeDeductionPiasters', 'finalOfferPiasters',
+               'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'customerUid', 'customerEmail', 'itemTitle', 'category', 'karat',
+               'estimatedWeightMg', 'conditionNotes', 'photoThumbnails', 'status',
+               'evaluatorAdminUid', 'verifiedWeightMg', 'confirmedKarat',
+               'referencePricePerGramPiasters', 'evaluatedGoldValuePiasters',
+               'makingChargeDeductionPiasters', 'finalOfferPiasters',
+               'inspectionNotes', 'rejectionReason', 'settlementTransactionId',
+               'createdAt', 'updatedAt'
+             ]) &&
+             data.customerUid is string && data.customerUid.size() >= 1 && data.customerUid.size() <= 128 &&
+             data.customerEmail is string && data.customerEmail.size() <= 160 &&
+             data.itemTitle is string && data.itemTitle.size() >= 2 && data.itemTitle.size() <= 140 &&
+             data.category is string && data.category.size() >= 2 && data.category.size() <= 64 &&
+             isValidKarat(data.karat) &&
+             data.estimatedWeightMg is int && data.estimatedWeightMg >= 10 && data.estimatedWeightMg <= 10000000 &&
+             data.conditionNotes is string && data.conditionNotes.size() <= 1000 &&
+             isBoundedStringList(data.photoThumbnails, 4) &&
+             data.status is string && isValidSellStatus(data.status) &&
+             (!('evaluatorAdminUid' in data) || (data.evaluatorAdminUid is string && data.evaluatorAdminUid.size() <= 128)) &&
+             data.verifiedWeightMg is int && data.verifiedWeightMg >= 0 &&
+             isValidKarat(data.confirmedKarat) &&
+             data.referencePricePerGramPiasters is int && data.referencePricePerGramPiasters >= 0 &&
+             data.evaluatedGoldValuePiasters is int && data.evaluatedGoldValuePiasters >= 0 &&
+             data.makingChargeDeductionPiasters is int && data.makingChargeDeductionPiasters >= 0 &&
+             data.finalOfferPiasters is int && data.finalOfferPiasters >= 0 &&
+             (!('inspectionNotes' in data) || (data.inspectionNotes is string && data.inspectionNotes.size() <= 1000)) &&
+             (!('rejectionReason' in data) || (data.rejectionReason is string && data.rejectionReason.size() <= 500)) &&
+             (!('settlementTransactionId' in data) || isValidId(data.settlementTransactionId)) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidWallet(data, userId) {
+      return data.keys().hasAll([
+               'userId', 'cashAvailablePiasters', 'cashPendingPiasters',
+               'cashTotalCreditedPiasters', 'cashTotalDebitedPiasters',
+               'goldConfirmedMg', 'goldReservedMg', 'goldPendingMg',
+               'gold24kMg', 'gold21kMg', 'gold18kMg', 'totalInvestedPiasters',
+               'lastSettlementRef', 'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'userId', 'cashAvailablePiasters', 'cashPendingPiasters',
+               'cashTotalCreditedPiasters', 'cashTotalDebitedPiasters',
+               'goldConfirmedMg', 'goldReservedMg', 'goldPendingMg',
+               'gold24kMg', 'gold21kMg', 'gold18kMg', 'totalInvestedPiasters',
+               'lastSettlementRef', 'createdAt', 'updatedAt'
+             ]) &&
+             data.userId is string && data.userId == userId && data.userId.size() <= 128 &&
+             data.cashAvailablePiasters is int && data.cashAvailablePiasters >= 0 &&
+             data.cashPendingPiasters is int && data.cashPendingPiasters >= 0 &&
+             data.cashTotalCreditedPiasters is int && data.cashTotalCreditedPiasters >= 0 &&
+             data.cashTotalDebitedPiasters is int && data.cashTotalDebitedPiasters >= 0 &&
+             data.goldConfirmedMg is int && data.goldConfirmedMg >= 0 &&
+             data.goldReservedMg is int && data.goldReservedMg >= 0 &&
+             data.goldReservedMg <= data.goldConfirmedMg &&
+             data.goldPendingMg is int && data.goldPendingMg >= 0 &&
+             data.gold24kMg is int && data.gold24kMg >= 0 &&
+             data.gold21kMg is int && data.gold21kMg >= 0 &&
+             data.gold18kMg is int && data.gold18kMg >= 0 &&
+             data.gold24kMg + data.gold21kMg + data.gold18kMg == data.goldConfirmedMg &&
+             data.totalInvestedPiasters is int && data.totalInvestedPiasters >= 0 &&
+             data.lastSettlementRef is string && data.lastSettlementRef.size() <= 128 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidLedgerEntry(data, userId) {
+      return data.keys().hasAll([
+               'userId', 'idempotencyKey', 'txType', 'referenceId', 'karat',
+               'cashDeltaPiasters', 'pendingCashDeltaPiasters',
+               'goldDeltaMg', 'reservedDeltaMg', 'pendingGoldDeltaMg',
+               'unitPricePerGramPiasters', 'notes', 'createdAt'
+             ]) &&
+             data.keys().hasOnly([
+               'userId', 'idempotencyKey', 'txType', 'referenceId', 'karat',
+               'cashDeltaPiasters', 'pendingCashDeltaPiasters',
+               'goldDeltaMg', 'reservedDeltaMg', 'pendingGoldDeltaMg',
+               'unitPricePerGramPiasters', 'notes', 'createdAt'
+             ]) &&
+             data.userId is string && data.userId == userId && data.userId.size() <= 128 &&
+             data.idempotencyKey is string && isValidId(data.idempotencyKey) &&
+             data.txType in [
+               'GOLD_SALE_PROCEEDS', 'CASH_DEPOSIT_PENDING', 'CASH_DEPOSIT',
+               'FRACTIONAL_GOLD_BUY', 'FRACTIONAL_GOLD_PENDING', 'MARKETPLACE_ORDER_PAID',
+               'GOLD_RESERVATION', 'GOLD_WITHDRAWAL_FULFILLED',
+               'GOLD_RESERVATION_RELEASED', 'ADMIN_ADJUSTMENT'
+             ] &&
+             data.referenceId is string && isValidId(data.referenceId) &&
+             data.karat is int && data.karat in [0, 18, 21, 24] &&
+             data.cashDeltaPiasters is int &&
+             data.pendingCashDeltaPiasters is int &&
+             data.goldDeltaMg is int &&
+             data.reservedDeltaMg is int &&
+             data.pendingGoldDeltaMg is int &&
+             data.unitPricePerGramPiasters is int && data.unitPricePerGramPiasters >= 0 &&
+             data.notes is string && data.notes.size() <= 500 &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function matchesPlatformPricingOrFloor(karat, unitPricePiasters, weightMg, totalPiasters) {
+      let pricingExists = exists(/databases/$(database)/documents/platform_config/pricing);
+      let pricing = pricingExists ? get(/databases/$(database)/documents/platform_config/pricing).data : {};
+      let expectedUnit = !pricingExists ? unitPricePiasters : (
+        karat == 24 ? pricing.reference24kPerGramPiasters :
+        karat == 21 ? pricing.reference21kPerGramPiasters :
+        pricing.reference18kPerGramPiasters
+      );
+      return unitPricePiasters >= 100000 &&
+             unitPricePiasters == expectedUnit &&
+             totalPiasters > 0 &&
+             totalPiasters * 1000 >= weightMg * unitPricePiasters - 500 &&
+             totalPiasters * 1000 <= weightMg * unitPricePiasters + 500;
+    }
+
+    function isGoldUnchanged(prev, next) {
+      return next.goldConfirmedMg == prev.goldConfirmedMg &&
+             next.goldReservedMg == prev.goldReservedMg &&
+             next.goldPendingMg == prev.goldPendingMg &&
+             next.gold24kMg == prev.gold24kMg &&
+             next.gold21kMg == prev.gold21kMg &&
+             next.gold18kMg == prev.gold18kMg &&
+             next.totalInvestedPiasters == prev.totalInvestedPiasters;
+    }
+
+    function isCashUnchanged(prev, next) {
+      return next.cashAvailablePiasters == prev.cashAvailablePiasters &&
+             next.cashPendingPiasters == prev.cashPendingPiasters &&
+             next.cashTotalCreditedPiasters == prev.cashTotalCreditedPiasters &&
+             next.cashTotalDebitedPiasters == prev.cashTotalDebitedPiasters;
+    }
+
+    function isGoldSaleSettlementChecked(userId, prev, next, ledger) {
+      let reqBefore = get(/databases/$(database)/documents/sell_requests/$(ledger.referenceId)).data;
+      return reqBefore.customerUid == userId &&
+             reqBefore.status == 'OFFER_SENT' &&
+             getAfter(/databases/$(database)/documents/sell_requests/$(ledger.referenceId)).data.status == 'COMPLETED' &&
+             ledger.cashDeltaPiasters > 0 &&
+             ledger.cashDeltaPiasters == reqBefore.finalOfferPiasters &&
+             next.cashAvailablePiasters == prev.cashAvailablePiasters + ledger.cashDeltaPiasters &&
+             next.cashTotalCreditedPiasters == prev.cashTotalCreditedPiasters + ledger.cashDeltaPiasters &&
+             next.cashPendingPiasters == prev.cashPendingPiasters &&
+             next.cashTotalDebitedPiasters == prev.cashTotalDebitedPiasters;
+    }
+
+    function isGoldSaleSettlementTx(userId, prev, next, ledger) {
+      return isGoldUnchanged(prev, next) &&
+             exists(/databases/$(database)/documents/sell_requests/$(ledger.referenceId)) &&
+             isGoldSaleSettlementChecked(userId, prev, next, ledger);
+    }
+
+    function isFractionalWalletBuyChecked(userId, prev, next, ledger) {
+      let ord = getAfter(/databases/$(database)/documents/fractional_orders/$(ledger.referenceId)).data;
+      return ord.customerUid == userId &&
+             ord.status == 'CONFIRMED' &&
+             ord.weightMg == ledger.goldDeltaMg &&
+             ord.karat == ledger.karat &&
+             ord.totalPiasters == -ledger.cashDeltaPiasters &&
+             matchesPlatformPricingOrFloor(ledger.karat, ledger.unitPricePerGramPiasters, ledger.goldDeltaMg, -ledger.cashDeltaPiasters) &&
+             next.cashAvailablePiasters == prev.cashAvailablePiasters + ledger.cashDeltaPiasters &&
+             next.cashAvailablePiasters >= 0 &&
+             next.cashTotalDebitedPiasters == prev.cashTotalDebitedPiasters - ledger.cashDeltaPiasters &&
+             next.cashPendingPiasters == prev.cashPendingPiasters &&
+             next.cashTotalCreditedPiasters == prev.cashTotalCreditedPiasters &&
+             next.goldConfirmedMg == prev.goldConfirmedMg + ledger.goldDeltaMg &&
+             next.totalInvestedPiasters == prev.totalInvestedPiasters - ledger.cashDeltaPiasters &&
+             next.goldReservedMg == prev.goldReservedMg &&
+             next.goldPendingMg == prev.goldPendingMg &&
+             (
+               (ledger.karat == 24 && next.gold24kMg == prev.gold24kMg + ledger.goldDeltaMg && next.gold21kMg == prev.gold21kMg && next.gold18kMg == prev.gold18kMg) ||
+               (ledger.karat == 21 && next.gold21kMg == prev.gold21kMg + ledger.goldDeltaMg && next.gold24kMg == prev.gold24kMg && next.gold18kMg == prev.gold18kMg) ||
+               (ledger.karat == 18 && next.gold18kMg == prev.gold18kMg + ledger.goldDeltaMg && next.gold24kMg == prev.gold24kMg && next.gold21kMg == prev.gold21kMg)
+             );
+    }
+
+    function isFractionalWalletBuyTx(userId, prev, next, ledger) {
+      return ledger.cashDeltaPiasters < 0 &&
+             ledger.goldDeltaMg > 0 &&
+             existsAfter(/databases/$(database)/documents/fractional_orders/$(ledger.referenceId)) &&
+             isFractionalWalletBuyChecked(userId, prev, next, ledger);
+    }
+
+    function isFractionalPendingBuyChecked(userId, prev, next, ledger) {
+      let ord = getAfter(/databases/$(database)/documents/fractional_orders/$(ledger.referenceId)).data;
+      return ord.customerUid == userId &&
+             ord.status == 'PENDING_PAYMENT' &&
+             ord.weightMg == ledger.pendingGoldDeltaMg &&
+             next.goldPendingMg == prev.goldPendingMg + ledger.pendingGoldDeltaMg &&
+             next.goldConfirmedMg == prev.goldConfirmedMg &&
+             next.goldReservedMg == prev.goldReservedMg &&
+             next.gold24kMg == prev.gold24kMg &&
+             next.gold21kMg == prev.gold21kMg &&
+             next.gold18kMg == prev.gold18kMg &&
+             next.totalInvestedPiasters == prev.totalInvestedPiasters;
+    }
+
+    function isFractionalPendingBuyTx(userId, prev, next, ledger) {
+      return isCashUnchanged(prev, next) &&
+             ledger.pendingGoldDeltaMg > 0 &&
+             ledger.goldDeltaMg == 0 &&
+             existsAfter(/databases/$(database)/documents/fractional_orders/$(ledger.referenceId)) &&
+             isFractionalPendingBuyChecked(userId, prev, next, ledger);
+    }
+
+    function isWithdrawalReservationChecked(userId, prev, next, ledger) {
+      let wd = getAfter(/databases/$(database)/documents/withdrawal_requests/$(ledger.referenceId)).data;
+      return wd.customerUid == userId &&
+             wd.amountMg == ledger.reservedDeltaMg &&
+             wd.status == 'PENDING' &&
+             next.goldReservedMg == prev.goldReservedMg + ledger.reservedDeltaMg &&
+             next.goldConfirmedMg == prev.goldConfirmedMg &&
+             next.goldConfirmedMg - next.goldReservedMg >= 0 &&
+             next.goldPendingMg == prev.goldPendingMg &&
+             next.gold24kMg == prev.gold24kMg &&
+             next.gold21kMg == prev.gold21kMg &&
+             next.gold18kMg == prev.gold18kMg &&
+             next.totalInvestedPiasters == prev.totalInvestedPiasters;
+    }
+
+    function isWithdrawalReservationTx(userId, prev, next, ledger) {
+      return isCashUnchanged(prev, next) &&
+             ledger.reservedDeltaMg >= 1000 &&
+             existsAfter(/databases/$(database)/documents/withdrawal_requests/$(ledger.referenceId)) &&
+             isWithdrawalReservationChecked(userId, prev, next, ledger);
+    }
+
+    function isMarketplaceWalletOrderTx(userId, prev, next, ledger) {
+      return isGoldUnchanged(prev, next) &&
+             ledger.cashDeltaPiasters < 0 &&
+             existsAfter(/databases/$(database)/documents/users/$(userId)/orders/$(ledger.referenceId)) &&
+             getAfter(/databases/$(database)/documents/users/$(userId)/orders/$(ledger.referenceId)).data.totalPiasters == -ledger.cashDeltaPiasters &&
+             next.cashAvailablePiasters == prev.cashAvailablePiasters + ledger.cashDeltaPiasters &&
+             next.cashAvailablePiasters >= 0 &&
+             next.cashTotalDebitedPiasters == prev.cashTotalDebitedPiasters - ledger.cashDeltaPiasters &&
+             next.cashPendingPiasters == prev.cashPendingPiasters &&
+             next.cashTotalCreditedPiasters == prev.cashTotalCreditedPiasters;
+    }
+
+    function isPendingDepositChecked(userId, prev, next, ledger) {
+      let dep = getAfter(/databases/$(database)/documents/deposit_requests/$(ledger.referenceId)).data;
+      return dep.customerUid == userId &&
+             dep.status == 'PENDING' &&
+             dep.amountPiasters == ledger.pendingCashDeltaPiasters &&
+             next.cashPendingPiasters == prev.cashPendingPiasters + ledger.pendingCashDeltaPiasters &&
+             next.cashAvailablePiasters == prev.cashAvailablePiasters &&
+             next.cashTotalCreditedPiasters == prev.cashTotalCreditedPiasters &&
+             next.cashTotalDebitedPiasters == prev.cashTotalDebitedPiasters;
+    }
+
+    function isPendingDepositTx(userId, prev, next, ledger) {
+      return isGoldUnchanged(prev, next) &&
+             ledger.pendingCashDeltaPiasters > 0 &&
+             ledger.cashDeltaPiasters == 0 &&
+             existsAfter(/databases/$(database)/documents/deposit_requests/$(ledger.referenceId)) &&
+             isPendingDepositChecked(userId, prev, next, ledger);
+    }
+
+    function isValidUserWalletTransition(userId, prev, next, ledger) {
+      return (ledger.txType == 'GOLD_SALE_PROCEEDS' && isGoldSaleSettlementTx(userId, prev, next, ledger)) ||
+             (ledger.txType == 'FRACTIONAL_GOLD_BUY' && isFractionalWalletBuyTx(userId, prev, next, ledger)) ||
+             (ledger.txType == 'FRACTIONAL_GOLD_PENDING' && isFractionalPendingBuyTx(userId, prev, next, ledger)) ||
+             (ledger.txType == 'GOLD_RESERVATION' && isWithdrawalReservationTx(userId, prev, next, ledger)) ||
+             (ledger.txType == 'MARKETPLACE_ORDER_PAID' && isMarketplaceWalletOrderTx(userId, prev, next, ledger)) ||
+             (ledger.txType == 'CASH_DEPOSIT_PENDING' && isPendingDepositTx(userId, prev, next, ledger));
+    }
+
+    function isValidFractionalOrder(data) {
+      return data.keys().hasAll([
+               'customerUid', 'karat', 'weightMg', 'pricePerGramPiasters',
+               'totalPiasters', 'paymentSource', 'status', 'ledgerEntryId',
+               'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'customerUid', 'karat', 'weightMg', 'pricePerGramPiasters',
+               'totalPiasters', 'paymentSource', 'status', 'ledgerEntryId',
+               'createdAt', 'updatedAt'
+             ]) &&
+             data.customerUid is string && data.customerUid.size() >= 1 && data.customerUid.size() <= 128 &&
+             isValidKarat(data.karat) &&
+             data.weightMg is int && data.weightMg >= 1 && data.weightMg <= 10000000 &&
+             data.pricePerGramPiasters is int && data.pricePerGramPiasters >= 100000 &&
+             data.totalPiasters is int && data.totalPiasters > 0 &&
+             data.paymentSource in ['CASH_WALLET', 'EXTERNAL_PENDING'] &&
+             data.status in ['CONFIRMED', 'PENDING_PAYMENT', 'REJECTED'] &&
+             isValidId(data.ledgerEntryId) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidWithdrawalRequest(data) {
+      return data.keys().hasAll([
+               'customerUid', 'customerEmail', 'karat', 'amountMg',
+               'deliveryType', 'deliveryAddress', 'withdrawalRef',
+               'status', 'ledgerEntryId', 'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'customerUid', 'customerEmail', 'karat', 'amountMg',
+               'deliveryType', 'deliveryAddress', 'withdrawalRef',
+               'status', 'proofNote', 'adminUid', 'ledgerEntryId',
+               'createdAt', 'updatedAt'
+             ]) &&
+             data.customerUid is string && data.customerUid.size() >= 1 && data.customerUid.size() <= 128 &&
+             data.customerEmail is string && data.customerEmail.size() <= 160 &&
+             isValidKarat(data.karat) &&
+             data.amountMg is int && data.amountMg >= 1000 && data.amountMg <= 10000000 &&
+             data.deliveryType in ['PICKUP_HUB', 'INSURED_COURIER'] &&
+             data.deliveryAddress is string && data.deliveryAddress.size() >= 4 && data.deliveryAddress.size() <= 300 &&
+             data.withdrawalRef is string && data.withdrawalRef.size() >= 4 && data.withdrawalRef.size() <= 64 &&
+             isValidWithdrawalStatus(data.status) &&
+             (!('proofNote' in data) || (data.proofNote is string && data.proofNote.size() <= 500)) &&
+             (!('adminUid' in data) || (data.adminUid is string && data.adminUid.size() <= 128)) &&
+             isValidId(data.ledgerEntryId) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidDepositRequest(data) {
+      return data.keys().hasAll([
+               'customerUid', 'customerEmail', 'amountPiasters', 'channel',
+               'paymentReference', 'status', 'ledgerEntryId', 'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'customerUid', 'customerEmail', 'amountPiasters', 'channel',
+               'paymentReference', 'status', 'adminUid', 'adminNote',
+               'ledgerEntryId', 'createdAt', 'updatedAt'
+             ]) &&
+             data.customerUid is string && data.customerUid.size() >= 1 && data.customerUid.size() <= 128 &&
+             data.customerEmail is string && data.customerEmail.size() <= 160 &&
+             data.amountPiasters is int && data.amountPiasters >= 1000 && data.amountPiasters <= 1000000000 &&
+             data.channel is string && data.channel.size() >= 2 && data.channel.size() <= 64 &&
+             data.paymentReference is string && data.paymentReference.size() >= 3 && data.paymentReference.size() <= 120 &&
+             isValidDepositStatus(data.status) &&
+             (!('adminUid' in data) || (data.adminUid is string && data.adminUid.size() <= 128)) &&
+             (!('adminNote' in data) || (data.adminNote is string && data.adminNote.size() <= 500)) &&
+             isValidId(data.ledgerEntryId) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidPricingConfig(data) {
+      return data.keys().hasAll([
+               'reference24kPerGramPiasters', 'reference21kPerGramPiasters', 'reference18kPerGramPiasters',
+               'valuation24kPerGramPiasters', 'valuation21kPerGramPiasters', 'valuation18kPerGramPiasters',
+               'merchantPolicyNote', 'updatedByAdminUid', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'reference24kPerGramPiasters', 'reference21kPerGramPiasters', 'reference18kPerGramPiasters',
+               'valuation24kPerGramPiasters', 'valuation21kPerGramPiasters', 'valuation18kPerGramPiasters',
+               'merchantPolicyNote', 'updatedByAdminUid', 'updatedAt'
+             ]) &&
+             data.reference24kPerGramPiasters is int && data.reference24kPerGramPiasters >= 100000 &&
+             data.reference21kPerGramPiasters is int && data.reference21kPerGramPiasters >= 100000 &&
+             data.reference18kPerGramPiasters is int && data.reference18kPerGramPiasters >= 100000 &&
+             data.valuation24kPerGramPiasters is int && data.valuation24kPerGramPiasters >= 100000 &&
+             data.valuation21kPerGramPiasters is int && data.valuation21kPerGramPiasters >= 100000 &&
+             data.valuation18kPerGramPiasters is int && data.valuation18kPerGramPiasters >= 100000 &&
+             data.merchantPolicyNote is string && data.merchantPolicyNote.size() <= 500 &&
+             data.updatedByAdminUid is string && data.updatedByAdminUid.size() >= 1 && data.updatedByAdminUid.size() <= 128 &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidAuditLog(data) {
+      return data.keys().hasAll(['actorUid', 'actorRole', 'action', 'targetPath', 'details', 'createdAt']) &&
+             data.keys().hasOnly(['actorUid', 'actorRole', 'action', 'targetPath', 'details', 'createdAt']) &&
+             data.actorUid is string && data.actorUid.size() >= 1 && data.actorUid.size() <= 128 &&
+             data.actorRole is string && data.actorRole in ['ADMIN', 'MERCHANT', 'CUSTOMER'] &&
+             data.action is string && data.action.size() >= 2 && data.action.size() <= 80 &&
+             data.targetPath is string && data.targetPath.size() >= 2 && data.targetPath.size() <= 200 &&
+             data.details is string && data.details.size() <= 800 &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    // =====================================================================
+    // Collection Match Blocks
+    // =====================================================================
+
+    match /admins/{adminUid} {
+      allow get: if isAdmin() && isValidId(adminUid);
+      allow list: if isBootstrapAdmin();
+      allow create, update: if isAdmin() && isValidId(adminUid);
+      allow delete: if isAdmin() && request.auth.uid != adminUid;
+    }
+
+    match /platform_config/{configId} {
+      allow get: if isSignedIn() && configId == 'pricing';
+      allow list: if false;
+      allow create, update: if isAdmin() && configId == 'pricing' && isValidPricingConfig(incoming());
+      allow delete: if false;
+
+      match /history/{entryId} {
+        allow get: if isSignedIn() && configId == 'pricing' && isValidId(entryId);
+        allow list: if isSignedIn() && configId == 'pricing';
+        allow create: if isAdmin() && configId == 'pricing' && isValidId(entryId) && isValidPricingConfig(incoming());
+        allow update, delete: if false;
+      }
+    }
+
+    match /merchants/{merchantId} {
+      allow get: if isValidId(merchantId) && (
+        isAdmin() ||
+        (isSignedIn() && (existing().status == 'APPROVED' || existing().ownerUid == request.auth.uid))
+      );
+      allow list: if isBootstrapAdmin() || (
+        isSignedIn() && (existing().status == 'APPROVED' || existing().ownerUid == request.auth.uid)
+      );
+      allow create: if isSignedIn() &&
+                       isValidId(merchantId) &&
+                       isValidMerchant(incoming()) &&
+                       incoming().ownerUid == request.auth.uid &&
+                       incoming().status == 'PENDING' &&
+                       incoming().prepaidMakingApproved == false &&
+                       incoming().prepaidMakingBudgetPiasters == 0 &&
+                       !('rejectionReason' in incoming());
+      allow update: if isSignedIn() &&
+                       isValidId(merchantId) &&
+                       isValidMerchant(incoming()) &&
+                       incoming().ownerUid == existing().ownerUid &&
+                       incoming().createdAt == existing().createdAt && (
+                         isAdmin() ||
+                         (
+                           existing().ownerUid == request.auth.uid &&
+                           existing().status != 'SUSPENDED' &&
+                           incoming().status == existing().status &&
+                           incoming().prepaidMakingApproved == existing().prepaidMakingApproved &&
+                           incoming().prepaidMakingBudgetPiasters == existing().prepaidMakingBudgetPiasters &&
+                           incoming().diff(existing()).affectedKeys().hasOnly([
+                             'shopName', 'area', 'address', 'contactPhone', 'description', 'updatedAt'
+                           ])
+                         )
+                       );
+      allow delete: if false;
+
+      match /private/{docId} {
+        allow get: if isValidId(merchantId) && docId == 'kyc' && (
+          isAdmin() || (isSignedIn() && existing().ownerUid == request.auth.uid)
+        );
+        allow list: if false;
+        allow create: if isSignedIn() &&
+                         isValidId(merchantId) &&
+                         docId == 'kyc' &&
+                         isValidMerchantPrivateDocs(incoming()) &&
+                         incoming().ownerUid == request.auth.uid &&
+                         get(/databases/$(database)/documents/merchants/$(merchantId)).data.ownerUid == request.auth.uid;
+        allow update: if isSignedIn() &&
+                         isValidId(merchantId) &&
+                         docId == 'kyc' &&
+                         isValidMerchantPrivateDocs(incoming()) &&
+                         incoming().ownerUid == existing().ownerUid &&
+                         incoming().createdAt == existing().createdAt && (
+                           isAdmin() ||
+                           (
+                             existing().ownerUid == request.auth.uid &&
+                             incoming().diff(existing()).affectedKeys().hasOnly([
+                               'legalFullName', 'nationalIdNumber', 'commercialRegNumber',
+                               'taxCardNumber', 'authorizationNotes', 'documentThumbnails', 'updatedAt'
+                             ])
+                           )
+                         );
+        allow delete: if false;
+      }
+
+      match /audit_logs/{logId} {
+        allow get: if isValidId(merchantId) && isValidId(logId) && (
+          isAdmin() || (isSignedIn() && existing().merchantOwnerUid == request.auth.uid)
+        );
+        allow list: if isBootstrapAdmin() || (isSignedIn() && existing().merchantOwnerUid == request.auth.uid);
+        allow create: if isSignedIn() &&
+                         isValidId(merchantId) &&
+                         isValidId(logId) &&
+                         isValidMerchantAuditLog(incoming(), merchantId) && (
+                           isAdmin() ||
+                           (
+                             incoming().actorUid == request.auth.uid &&
+                             incoming().merchantOwnerUid == request.auth.uid &&
+                             incoming().action == 'SUBMITTED'
+                           )
+                         );
+        allow update, delete: if false;
+      }
+    }
+
+    match /products/{productId} {
+      allow get: if isValidId(productId) && (
+        isAdmin() ||
+        (isSignedIn() && (existing().status == 'ACTIVE' || existing().ownerUid == request.auth.uid))
+      );
+      allow list: if isBootstrapAdmin() || (
+        isSignedIn() && (existing().status == 'ACTIVE' || existing().ownerUid == request.auth.uid)
+      );
+      allow create: if isSignedIn() &&
+                       isValidId(productId) &&
+                       isValidProduct(incoming()) && (
+                         isAdmin() ||
+                         (
+                           incoming().ownerUid == request.auth.uid &&
+                           incoming().status == 'PENDING_REVIEW' &&
+                           isApprovedMerchant(incoming().merchantId)
+                         )
+                       );
+      allow update: if isSignedIn() &&
+                       isValidId(productId) &&
+                       isValidProduct(incoming()) &&
+                       incoming().merchantId == existing().merchantId &&
+                       incoming().ownerUid == existing().ownerUid &&
+                       incoming().createdAt == existing().createdAt && (
+                         isAdmin() ||
+                         (
+                           existing().ownerUid == request.auth.uid &&
+                           isApprovedMerchant(existing().merchantId) &&
+                           (
+                             incoming().status == existing().status ||
+                             (existing().status == 'ACTIVE' && incoming().status == 'PAUSED') ||
+                             (existing().status in ['PAUSED', 'REJECTED'] && incoming().status == 'PENDING_REVIEW')
+                           ) &&
+                           incoming().diff(existing()).affectedKeys().hasOnly([
+                             'name', 'description', 'category', 'karat', 'weightMg', 'weightGrams',
+                             'sellingPricePiasters', 'stockQuantity', 'stamped', 'imageThumbnails',
+                             'status', 'updatedAt'
+                           ])
+                         ) ||
+                         (
+                           existing().status == 'ACTIVE' &&
+                           incoming().status == 'ACTIVE' &&
+                           incoming().stockQuantity >= 0 &&
+                           incoming().stockQuantity < existing().stockQuantity &&
+                           'lastOrderId' in incoming() &&
+                           existsAfter(/databases/$(database)/documents/users/$(request.auth.uid)/orders/$(incoming().lastOrderId)) &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['stockQuantity', 'lastOrderId', 'updatedAt'])
+                         )
+                       );
+      allow delete: if false;
+    }
+
+    match /merchant_orders/{orderId} {
+      allow get: if isValidId(orderId) && (
+        isAdmin() ||
+        (isSignedIn() && (existing().merchantOwnerUid == request.auth.uid || existing().buyerUid == request.auth.uid))
+      );
+      allow list: if isBootstrapAdmin() || (isSignedIn() && existing().merchantOwnerUid == request.auth.uid);
+      allow create: if isSignedIn() &&
+                       isValidId(orderId) &&
+                       isValidMerchantOrder(incoming()) &&
+                       incoming().buyerUid == request.auth.uid &&
+                       incoming().status in ['PAID', 'READY_FOR_PICKUP'] &&
+                       existsAfter(/databases/$(database)/documents/users/$(request.auth.uid)/orders/$(orderId));
+      allow update: if isSignedIn() &&
+                       isValidId(orderId) &&
+                       isValidMerchantOrder(incoming()) &&
+                       incoming().orderId == existing().orderId &&
+                       incoming().merchantId == existing().merchantId &&
+                       incoming().merchantOwnerUid == existing().merchantOwnerUid &&
+                       incoming().buyerUid == existing().buyerUid &&
+                       incoming().totalPiasters == existing().totalPiasters &&
+                       incoming().createdAt == existing().createdAt && (
+                         isAdmin() ||
+                         (
+                           existing().merchantOwnerUid == request.auth.uid &&
+                           existing().status in ['PAID', 'PREPARING'] &&
+                           incoming().status in ['PREPARING', 'READY_FOR_PICKUP'] &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+                         ) ||
+                         (
+                           existing().buyerUid == request.auth.uid &&
+                           existing().status != 'COMPLETED' &&
+                           existing().status != 'DISPUTED' &&
+                           incoming().status in ['COMPLETED', 'DISPUTED'] &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+                         )
+                       );
+      allow delete: if false;
+    }
+
+    match /sell_requests/{requestId} {
+      allow get: if isValidId(requestId) && (
+        isAdmin() || (isSignedIn() && existing().customerUid == request.auth.uid)
+      );
+      allow list: if isBootstrapAdmin() || (isSignedIn() && existing().customerUid == request.auth.uid);
+      allow create: if isSignedIn() &&
+                       isValidId(requestId) &&
+                       isValidSellRequest(incoming()) &&
+                       incoming().customerUid == request.auth.uid &&
+                       incoming().status == 'SUBMITTED' &&
+                       incoming().verifiedWeightMg == 0 &&
+                       incoming().evaluatedGoldValuePiasters == 0 &&
+                       incoming().makingChargeDeductionPiasters == 0 &&
+                       incoming().finalOfferPiasters == 0;
+      allow update: if isSignedIn() &&
+                       isValidId(requestId) &&
+                       isValidSellRequest(incoming()) &&
+                       incoming().customerUid == existing().customerUid &&
+                       incoming().createdAt == existing().createdAt && (
+                         isAdmin() ||
+                         (
+                           existing().customerUid == request.auth.uid &&
+                           (
+                             (
+                               existing().status == 'SUBMITTED' &&
+                               incoming().status == 'CANCELLED' &&
+                               incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+                             ) ||
+                             (
+                               existing().status == 'OFFER_SENT' &&
+                               incoming().status == 'COMPLETED' &&
+                               'settlementTransactionId' in incoming() &&
+                               incoming().finalOfferPiasters == existing().finalOfferPiasters &&
+                               incoming().finalOfferPiasters > 0 &&
+                               existsAfter(/databases/$(database)/documents/users/$(request.auth.uid)/ledger/$(incoming().settlementTransactionId)) &&
+                               existsAfter(/databases/$(database)/documents/users/$(request.auth.uid)/wallet/summary) &&
+                               getAfter(/databases/$(database)/documents/users/$(request.auth.uid)/wallet/summary).data.lastSettlementRef == incoming().settlementTransactionId &&
+                               incoming().diff(existing()).affectedKeys().hasOnly(['status', 'settlementTransactionId', 'updatedAt'])
+                             )
+                           )
+                         )
+                       );
+      allow delete: if false;
+    }
+
+    match /fractional_orders/{txId} {
+      allow get: if isValidId(txId) && (
+        isAdmin() || (isSignedIn() && existing().customerUid == request.auth.uid)
+      );
+      allow list: if isBootstrapAdmin() || (isSignedIn() && existing().customerUid == request.auth.uid);
+      allow create: if isSignedIn() &&
+                       isValidId(txId) &&
+                       isValidFractionalOrder(incoming()) &&
+                       incoming().customerUid == request.auth.uid &&
+                       matchesPlatformPricingOrFloor(
+                         incoming().karat,
+                         incoming().pricePerGramPiasters,
+                         incoming().weightMg,
+                         incoming().totalPiasters
+                       ) &&
+                       (
+                         (incoming().paymentSource == 'CASH_WALLET' && incoming().status == 'CONFIRMED') ||
+                         (incoming().paymentSource == 'EXTERNAL_PENDING' && incoming().status == 'PENDING_PAYMENT')
+                       ) &&
+                       existsAfter(/databases/$(database)/documents/users/$(request.auth.uid)/ledger/$(incoming().ledgerEntryId)) &&
+                       existsAfter(/databases/$(database)/documents/users/$(request.auth.uid)/wallet/summary) &&
+                       getAfter(/databases/$(database)/documents/users/$(request.auth.uid)/wallet/summary).data.lastSettlementRef == incoming().ledgerEntryId;
+      allow update: if isAdmin() && isValidId(txId) && isValidFractionalOrder(incoming());
+      allow delete: if false;
+    }
+
+    match /withdrawal_requests/{requestId} {
+      allow get: if isValidId(requestId) && (
+        isAdmin() || (isSignedIn() && existing().customerUid == request.auth.uid)
+      );
+      allow list: if isBootstrapAdmin() || (isSignedIn() && existing().customerUid == request.auth.uid);
+      allow create: if isSignedIn() &&
+                       isValidId(requestId) &&
+                       isValidWithdrawalRequest(incoming()) &&
+                       incoming().customerUid == request.auth.uid &&
+                       incoming().amountMg >= 1000 &&
+                       incoming().status == 'PENDING' &&
+                       !('adminUid' in incoming()) &&
+                       existsAfter(/databases/$(database)/documents/users/$(request.auth.uid)/ledger/$(incoming().ledgerEntryId)) &&
+                       existsAfter(/databases/$(database)/documents/users/$(request.auth.uid)/wallet/summary) &&
+                       getAfter(/databases/$(database)/documents/users/$(request.auth.uid)/wallet/summary).data.lastSettlementRef == incoming().ledgerEntryId;
+      allow update: if isAdmin() && isValidId(requestId) && isValidWithdrawalRequest(incoming()) &&
+                       incoming().customerUid == existing().customerUid &&
+                       incoming().amountMg == existing().amountMg &&
+                       incoming().createdAt == existing().createdAt;
+      allow delete: if false;
+    }
+
+    match /deposit_requests/{requestId} {
+      allow get: if isValidId(requestId) && (
+        isAdmin() || (isSignedIn() && existing().customerUid == request.auth.uid)
+      );
+      allow list: if isBootstrapAdmin() || (isSignedIn() && existing().customerUid == request.auth.uid);
+      allow create: if isSignedIn() &&
+                       isValidId(requestId) &&
+                       isValidDepositRequest(incoming()) &&
+                       incoming().customerUid == request.auth.uid &&
+                       incoming().status == 'PENDING' &&
+                       !('adminUid' in incoming()) &&
+                       existsAfter(/databases/$(database)/documents/users/$(request.auth.uid)/ledger/$(incoming().ledgerEntryId)) &&
+                       existsAfter(/databases/$(database)/documents/users/$(request.auth.uid)/wallet/summary) &&
+                       getAfter(/databases/$(database)/documents/users/$(request.auth.uid)/wallet/summary).data.lastSettlementRef == incoming().ledgerEntryId;
+      allow update: if isAdmin() && isValidId(requestId) && isValidDepositRequest(incoming()) &&
+                       incoming().customerUid == existing().customerUid &&
+                       incoming().amountPiasters == existing().amountPiasters &&
+                       incoming().createdAt == existing().createdAt;
+      allow delete: if false;
+    }
+
+    match /audit_logs/{logId} {
+      allow get: if isAdmin() && isValidId(logId);
+      allow list: if isBootstrapAdmin();
+      allow create: if isSignedIn() &&
+                       isValidId(logId) &&
+                       isValidAuditLog(incoming()) && (
+                         isAdmin() ||
+                         (incoming().actorUid == request.auth.uid && incoming().actorRole in ['CUSTOMER', 'MERCHANT'])
+                       );
+      allow update, delete: if false;
+    }
+
     match /users/{userId}/orders/{orderId} {
-      allow get: if isOwner(userId) && isValidId(orderId);
-      allow list: if isOwner(userId);
+      allow get: if (isOwner(userId) || isAdmin()) && isValidId(orderId);
+      allow list: if isOwner(userId) || isBootstrapAdmin();
 
       allow create: if isOwner(userId) &&
                        isValidId(orderId) &&
@@ -104,7 +1003,7 @@ service cloud.firestore {
                        incoming().status in ['PAID', 'PREPARING', 'READY_FOR_PICKUP', 'COMPLETED'] &&
                        !('disputeReason' in incoming());
 
-      allow update: if isOwner(userId) &&
+      allow update: if (isOwner(userId) || isAdmin()) &&
                        isValidId(orderId) &&
                        isValidOrderRecord(incoming(), userId) &&
                        incoming().userId == existing().userId &&
@@ -115,28 +1014,29 @@ service cloud.firestore {
                        incoming().makingFee == existing().makingFee &&
                        incoming().serviceFee == existing().serviceFee &&
                        incoming().pickupWindow == existing().pickupWindow &&
-                       incoming().createdAt == existing().createdAt &&
-                       existing().status != 'DISPUTED' && (
-                         // Action 1: Complete pickup verification
+                       incoming().createdAt == existing().createdAt && (
+                         isAdmin() ||
                          (
-                           existing().status != 'COMPLETED' &&
-                           incoming().status == 'COMPLETED' &&
-                           incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
-                         ) ||
-                         // Action 2: Submit one-time order rating after completion
-                         (
-                           existing().status == 'COMPLETED' &&
-                           !('ratingGiven' in existing()) &&
-                           incoming().status == 'COMPLETED' &&
-                           'ratingGiven' in incoming() &&
-                           incoming().diff(existing()).affectedKeys().hasOnly(['ratingGiven', 'updatedAt'])
-                         ) ||
-                         // Action 3: File an escrow dispute before completion
-                         (
-                           existing().status != 'COMPLETED' &&
-                           incoming().status == 'DISPUTED' &&
-                           'disputeReason' in incoming() &&
-                           incoming().diff(existing()).affectedKeys().hasOnly(['status', 'disputeReason', 'updatedAt'])
+                           existing().status != 'DISPUTED' && (
+                             (
+                               existing().status != 'COMPLETED' &&
+                               incoming().status == 'COMPLETED' &&
+                               incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+                             ) ||
+                             (
+                               existing().status == 'COMPLETED' &&
+                               !('ratingGiven' in existing()) &&
+                               incoming().status == 'COMPLETED' &&
+                               'ratingGiven' in incoming() &&
+                               incoming().diff(existing()).affectedKeys().hasOnly(['ratingGiven', 'updatedAt'])
+                             ) ||
+                             (
+                               existing().status != 'COMPLETED' &&
+                               incoming().status == 'DISPUTED' &&
+                               'disputeReason' in incoming() &&
+                               incoming().diff(existing()).affectedKeys().hasOnly(['status', 'disputeReason', 'updatedAt'])
+                             )
+                           )
                          )
                        );
 
@@ -144,8 +1044,8 @@ service cloud.firestore {
     }
 
     match /users/{userId}/preferences/{prefId} {
-      allow get: if isOwner(userId) && isValidId(prefId) && prefId == 'settings';
-      allow list: if isOwner(userId);
+      allow get: if (isOwner(userId) || isAdmin()) && isValidId(prefId) && prefId == 'settings';
+      allow list: if isOwner(userId) || isBootstrapAdmin();
 
       allow create: if isOwner(userId) &&
                        isValidId(prefId) &&
@@ -166,6 +1066,69 @@ service cloud.firestore {
                        ]);
 
       allow delete: if false;
+    }
+
+    match /users/{userId}/cart/{cartId} {
+      allow get: if isOwner(userId) && cartId == 'current';
+      allow list: if isOwner(userId);
+      allow create: if isOwner(userId) && cartId == 'current' && isValidUserCart(incoming(), userId);
+      allow update: if isOwner(userId) && cartId == 'current' && isValidUserCart(incoming(), userId) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt;
+      allow delete: if isOwner(userId) && cartId == 'current';
+    }
+
+    match /users/{userId}/wallet/{walletId} {
+      allow get: if walletId == 'summary' && (isOwner(userId) || isAdmin());
+      allow list: if false;
+      allow create: if isOwner(userId) &&
+                       walletId == 'summary' &&
+                       isValidWallet(incoming(), userId) &&
+                       incoming().cashAvailablePiasters == 0 &&
+                       incoming().cashPendingPiasters == 0 &&
+                       incoming().cashTotalCreditedPiasters == 0 &&
+                       incoming().cashTotalDebitedPiasters == 0 &&
+                       incoming().goldConfirmedMg == 0 &&
+                       incoming().goldReservedMg == 0 &&
+                       incoming().goldPendingMg == 0 &&
+                       incoming().gold24kMg == 0 &&
+                       incoming().gold21kMg == 0 &&
+                       incoming().gold18kMg == 0 &&
+                       incoming().totalInvestedPiasters == 0;
+      allow update: if walletId == 'summary' &&
+                       isValidWallet(incoming(), userId) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt && (
+                         isAdmin() ||
+                         (
+                           isOwner(userId) &&
+                           incoming().lastSettlementRef is string &&
+                           isValidId(incoming().lastSettlementRef) &&
+                           incoming().lastSettlementRef != existing().lastSettlementRef &&
+                           existsAfter(/databases/$(database)/documents/users/$(userId)/ledger/$(incoming().lastSettlementRef)) &&
+                           isValidUserWalletTransition(
+                             userId,
+                             existing(),
+                             incoming(),
+                             getAfter(/databases/$(database)/documents/users/$(userId)/ledger/$(incoming().lastSettlementRef)).data
+                           )
+                         )
+                       );
+      allow delete: if false;
+    }
+
+    match /users/{userId}/ledger/{entryId} {
+      allow get: if isValidId(entryId) && (isOwner(userId) || isAdmin());
+      allow list: if isOwner(userId) || isBootstrapAdmin();
+      allow create: if isValidId(entryId) && isValidLedgerEntry(incoming(), userId) && (
+        isAdmin() ||
+        (
+          isOwner(userId) &&
+          existsAfter(/databases/$(database)/documents/users/$(userId)/wallet/summary) &&
+          getAfter(/databases/$(database)/documents/users/$(userId)/wallet/summary).data.lastSettlementRef == entryId
+        )
+      );
+      allow update, delete: if false;
     }
   }
 }

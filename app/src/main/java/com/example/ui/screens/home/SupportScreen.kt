@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.ExpandLess
@@ -29,6 +30,7 @@ import androidx.compose.material.icons.outlined.SupportAgent
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -51,6 +53,7 @@ import com.example.ui.theme.AppText
 @Composable
 fun SupportScreen(
     onOpenAiAdvisor: () -> Unit = {},
+    onBack: (() -> Unit)? = null,
 ) {
     var expandedIndex by remember { mutableStateOf<Int?>(0) }
 
@@ -69,10 +72,27 @@ fun SupportScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item {
-                Text(
-                    text = "الدعم",
-                    style = AppText.display.copy(fontSize = 22.sp),
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (onBack != null) {
+                        IconButton(
+                            onClick = onBack,
+                            modifier = Modifier.testTag("support_back_button"),
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "رجوع",
+                                tint = AppColors.Ink,
+                            )
+                        }
+                    }
+                    Text(
+                        text = "مركز الدعم والمساعدة",
+                        style = AppText.display.copy(fontSize = 22.sp),
+                    )
+                }
             }
 
             item {

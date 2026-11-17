@@ -230,7 +230,7 @@ fun CartScreen(
                         }
                     }
 
-                    items(uiState.cart, key = { it.product.id }) { item ->
+                    items(uiState.cart, key = { "${it.product.shopId}:${it.product.id}" }) { item ->
                         val shape = RoundedCornerShape(14.dp)
                         Row(
                             modifier = Modifier
@@ -330,10 +330,9 @@ fun CartScreen(
                     item {
                         LedgerCard(
                             lines = listOf(
-                                LedgerLine("قيمة الذهب", formatCurrency(uiState.cartGoldValue)),
-                                LedgerLine("مصنعية المحل", formatCurrency(uiState.cartMakingFee)),
-                                LedgerLine("رسوم خدمة King Gold (1%)", formatCurrency(uiState.cartServiceFee)),
-                                LedgerLine("الإجمالي", "${formatCurrency(uiState.cartTotal)} ج.م", isTotal = true),
+                                LedgerLine("إجمالي سعر القطع", formatCurrency(uiState.cartGoldValue)),
+                                LedgerLine("المصنعية الإضافية", "0.00 ج.م (مشمولة)"),
+                                LedgerLine("السعر النهائي", "${formatCurrency(uiState.cartTotal)} ج.م", isTotal = true),
                             ),
                         )
                     }
