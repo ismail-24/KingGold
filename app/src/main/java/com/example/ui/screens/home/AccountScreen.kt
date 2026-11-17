@@ -69,6 +69,7 @@ fun AccountScreen(
     onOpenVault: () -> Unit = {},
     onOpenSellGold: () -> Unit = {},
     onOpenMerchantPortal: () -> Unit = {},
+    onOpenMerchantRegistration: () -> Unit = {},
     onOpenAdminCenter: () -> Unit = {},
     onOpenSupport: () -> Unit = {},
     onOpenKyc: () -> Unit,
@@ -188,6 +189,16 @@ fun AccountScreen(
                     subtitle = merchantSub,
                     onClick = onOpenMerchantPortal,
                     modifier = Modifier.testTag("account_merchant_tile"),
+                )
+            }
+
+            item {
+                AccountMenuTile(
+                    icon = Icons.Outlined.Badge,
+                    title = "تسجيل متجر جديد (طلب اعتماد تاجر)",
+                    subtitle = "نموذج مخصص لتسجيل التاجر وحفظه في merchants بحالة قيد المراجعة",
+                    onClick = onOpenMerchantRegistration,
+                    modifier = Modifier.testTag("account_merchant_register_tile"),
                 )
             }
 

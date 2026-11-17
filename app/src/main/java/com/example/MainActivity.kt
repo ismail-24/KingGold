@@ -30,6 +30,7 @@ import com.example.ui.navigation.KingGoldNavHost
 import com.example.ui.screens.SplashScreen
 import com.example.ui.screens.auth.LoginScreen
 import com.example.ui.state.KingGoldViewModel
+import com.example.ui.state.MerchantRegistrationViewModel
 import com.example.ui.theme.KingGoldTheme
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
@@ -112,8 +113,26 @@ private fun AppContent() {
                     }
                 },
             )
+            val merchantRegistrationViewModel: MerchantRegistrationViewModel = viewModel(
+                key = "merchant_reg_${user.uid}",
+                factory = viewModelFactory {
+                    initializer {
+                        val app = checkNotNull(this[APPLICATION_KEY]) {
+                            "APPLICATION_KEY missing from CreationExtras"
+                        }
+                        val databaseId = app.getString(R.string.firestore_database_id)
+                        val db = FirebaseFirestore.getInstance(databaseId)
+                        MerchantRegistrationViewModel(
+                            marketplaceRepository = FirestoreMarketplaceRepository(db, auth),
+                            currentUserId = user.uid,
+                            initialEmail = user.email.orEmpty(),
+                        )
+                    }
+                },
+            )
             KingGoldNavHost(
                 viewModel = kingGoldViewModel,
+                merchantRegistrationViewModel = merchantRegistrationViewModel,
                 onSignOut = {
                     GoogleAuthHelper.signOut(
                         credentialManager = credentialManager,

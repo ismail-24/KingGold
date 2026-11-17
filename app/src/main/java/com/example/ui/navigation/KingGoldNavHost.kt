@@ -46,6 +46,7 @@ import com.example.ui.screens.home.HomeTab
 import com.example.ui.screens.home.ProfileScreen
 import com.example.ui.screens.home.SupportScreen
 import com.example.ui.screens.merchant.MerchantPortalScreen
+import com.example.ui.screens.merchant.MerchantRegistrationScreen
 import com.example.ui.screens.orders.OrderDetailScreen
 import com.example.ui.screens.orders.RatingScreen
 import com.example.ui.screens.orders.ReportIssueScreen
@@ -55,6 +56,7 @@ import com.example.ui.screens.shop.ProductDetailScreen
 import com.example.ui.screens.shop.ProductListScreen
 import com.example.ui.screens.shop.ShopDetailScreen
 import com.example.ui.state.KingGoldViewModel
+import com.example.ui.state.MerchantRegistrationViewModel
 import com.example.ui.theme.AppColors
 import com.example.ui.theme.AppText
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -66,6 +68,7 @@ object Routes {
     const val KYC = "kyc"
     const val SUPPORT = "support"
     const val MERCHANT_PORTAL = "merchant_portal"
+    const val MERCHANT_REGISTRATION = "merchant_registration"
     const val ADMIN_CENTER = "admin_center"
     const val PRICE_INSIGHT = "price_insight"
     const val AI_ADVISOR = "ai_advisor?prompt={prompt}"
@@ -116,6 +119,7 @@ private fun NavController.popBackSafely() {
 fun KingGoldNavHost(
     viewModel: KingGoldViewModel,
     onSignOut: () -> Unit,
+    merchantRegistrationViewModel: MerchantRegistrationViewModel? = null,
 ) {
     val context = LocalContext.current
     val navController = rememberNavController()
@@ -159,6 +163,7 @@ fun KingGoldNavHost(
                 onOpenOrder = { order -> navController.navigateSingleTop(Routes.orderDetail(order.id)) },
                 onOpenProfile = { navController.navigateSingleTop(Routes.PROFILE) },
                 onOpenMerchantPortal = { navController.navigateSingleTop(Routes.MERCHANT_PORTAL) },
+                onOpenMerchantRegistration = { navController.navigateSingleTop(Routes.MERCHANT_REGISTRATION) },
                 onOpenAdminCenter = { navController.navigateSingleTop(Routes.ADMIN_CENTER) },
                 onOpenSupport = { navController.navigateSingleTop(Routes.SUPPORT) },
                 onBuyFractionalGold = viewModel::buyFractionalGold,
@@ -193,6 +198,21 @@ fun KingGoldNavHost(
                 onToggleProductPause = viewModel::toggleMerchantProductPause,
                 onUpdateOrderStatus = viewModel::updateMerchantOrderStatus,
                 onClearMessages = viewModel::clearActionMessages,
+                onOpenDedicatedRegistration = { navController.navigateSingleTop(Routes.MERCHANT_REGISTRATION) },
+            )
+        }
+
+        composable(Routes.MERCHANT_REGISTRATION) {
+            val regViewModel = merchantRegistrationViewModel ?: remember { MerchantRegistrationViewModel() }
+            MerchantRegistrationScreen(
+                viewModel = regViewModel,
+                onBack = { navController.popBackSafely() },
+                onOpenMerchantPortal = {
+                    navController.navigate(Routes.MERCHANT_PORTAL) {
+                        popUpTo(Routes.MERCHANT_REGISTRATION) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                },
             )
         }
 

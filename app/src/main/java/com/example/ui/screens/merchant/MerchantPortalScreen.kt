@@ -119,6 +119,7 @@ fun MerchantPortalScreen(
     onToggleProductPause: (MerchantProduct) -> Unit,
     onUpdateOrderStatus: (orderId: String, nextStatus: OrderStatus) -> Unit,
     onClearMessages: () -> Unit,
+    onOpenDedicatedRegistration: (() -> Unit)? = null,
 ) {
     val activeMerchant = remember(uiState.ownMerchants) {
         uiState.ownMerchants.firstOrNull { it.status == MerchantStatus.APPROVED }
@@ -170,7 +171,13 @@ fun MerchantPortalScreen(
                     MerchantVerificationStatusView(
                         merchant = activeMerchant,
                         uiState = uiState,
-                        onReapply = { forceNewApplication = true },
+                        onReapply = {
+                            if (onOpenDedicatedRegistration != null) {
+                                onOpenDedicatedRegistration()
+                            } else {
+                                forceNewApplication = true
+                            }
+                        },
                     )
                 }
                 else -> {
