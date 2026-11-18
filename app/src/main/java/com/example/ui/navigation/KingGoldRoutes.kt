@@ -33,6 +33,11 @@ object Routes {
     const val RATING = "rating/{orderId}"
     const val REPORT_ISSUE = "report_issue/{orderId}"
 
+    val publicRoutes = setOf(
+        SPLASH,
+        LOGIN,
+    )
+
     fun aiAdvisor(prompt: String? = null): String =
         if (prompt.isNullOrBlank()) "ai_advisor" else "ai_advisor?prompt=${Uri.encode(prompt)}"
 
@@ -67,12 +72,17 @@ object Routes {
         "ai_advisor",
     )
 
+    fun isPublicRoute(route: String?): Boolean = route != null && route in publicRoutes
+
+    fun isProtectedRoute(route: String?): Boolean = !route.isNullOrBlank() && !isPublicRoute(route)
+
     fun isSupportedInternalRoute(route: String): Boolean {
         if (route in staticInternalRoutes) return true
         return route.startsWith("ai_advisor?prompt=") ||
             route.startsWith("shop_detail/") ||
             route.startsWith("product_list/") ||
             route.startsWith("product_detail/") ||
+            route.startsWith("success/") ||
             route.startsWith("order_detail/") ||
             route.startsWith("verify_pickup/") ||
             route.startsWith("rating/") ||
@@ -80,9 +90,24 @@ object Routes {
     }
 }
 
-internal fun NavController.navigateSingleTop(route: String) {
+internal fun NavController.redirectToLogin() {
+    if (currentDestination?.route == Routes.LOGIN) return
+    navigate(Routes.LOGIN) {
+        popUpTo(graph.id) { inclusive = true }
+        launchSingleTop = true
+    }
+}
+
+internal fun NavController.navigateSingleTop(
+    route: String,
+    isAuthenticated: Boolean = true,
+) {
     val canNavigate = currentBackStackEntry?.lifecycle?.currentState?.isAtLeast(Lifecycle.State.STARTED) ?: true
     if (!canNavigate) return
+    if (Routes.isProtectedRoute(route) && !isAuthenticated) {
+        redirectToLogin()
+        return
+    }
     if (currentDestination?.route == route) return
     navigate(route) {
         launchSingleTop = true
@@ -91,10 +116,15 @@ internal fun NavController.navigateSingleTop(route: String) {
 
 internal fun NavController.navigateToHomeTab(
     tab: HomeTab,
+    isAuthenticated: Boolean = true,
     clearBackToHome: Boolean = false,
 ) {
     val canNavigate = currentBackStackEntry?.lifecycle?.currentState?.isAtLeast(Lifecycle.State.STARTED) ?: true
     if (!canNavigate) return
+    if (Routes.isProtectedRoute(tab.route) && !isAuthenticated) {
+        redirectToLogin()
+        return
+    }
     if (!clearBackToHome && currentDestination?.route == tab.route) return
     navigate(tab.route) {
         popUpTo(Routes.HOME) {
@@ -105,12 +135,19 @@ internal fun NavController.navigateToHomeTab(
     }
 }
 
-internal fun NavController.navigateInternalRoute(route: String) {
+internal fun NavController.navigateInternalRoute(
+    route: String,
+    isAuthenticated: Boolean = true,
+) {
+    if (Routes.isProtectedRoute(route) && !isAuthenticated) {
+        redirectToLogin()
+        return
+    }
     val tab = HomeTab.fromRoute(route)
     if (tab != null) {
-        navigateToHomeTab(tab)
+        navigateToHomeTab(tab, isAuthenticated = isAuthenticated)
     } else if (Routes.isSupportedInternalRoute(route)) {
-        navigateSingleTop(route)
+        navigateSingleTop(route, isAuthenticated = isAuthenticated)
     }
 }
 

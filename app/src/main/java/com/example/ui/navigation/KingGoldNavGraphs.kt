@@ -56,20 +56,33 @@ import com.example.ui.theme.AppText
 
 internal fun NavGraphBuilder.registerSecondaryDestinations(
     navController: NavHostController,
+    isAuthenticatedProvider: () -> Boolean,
     viewModelProvider: () -> KingGoldViewModel?,
     merchantRegistrationViewModel: MerchantRegistrationViewModel?,
     adminApprovalViewModel: AdminApprovalViewModel?,
     onSignOut: () -> Unit,
 ) {
     composable(Routes.SUPPORT) {
-        SupportScreen(
-            onOpenAiAdvisor = { navController.navigateSingleTop(Routes.aiAdvisor(null)) },
-            onBack = { navController.popBackSafely() },
-        )
+        val isAuthorized = isAuthenticatedProvider()
+        AuthenticatedRoute(
+            isAuthenticated = isAuthorized,
+            viewModel = viewModelProvider(),
+            onUnauthorized = { navController.redirectToLogin() },
+        ) {
+            SupportScreen(
+                onOpenAiAdvisor = { navController.navigateSingleTop(Routes.aiAdvisor(null), isAuthorized) },
+                onBack = { navController.popBackSafely() },
+            )
+        }
     }
 
     composable(Routes.MERCHANT_PORTAL) {
-        AuthenticatedRoute(viewModel = viewModelProvider()) { vm ->
+        val isAuthorized = isAuthenticatedProvider()
+        AuthenticatedRoute(
+            isAuthenticated = isAuthorized,
+            viewModel = viewModelProvider(),
+            onUnauthorized = { navController.redirectToLogin() },
+        ) { vm ->
             val uiState by vm.uiState.collectAsStateWithLifecycle()
             DisposableEffect(vm) {
                 onDispose { vm.clearActionMessages() }
@@ -98,13 +111,18 @@ internal fun NavGraphBuilder.registerSecondaryDestinations(
                 onToggleProductPause = vm::toggleMerchantProductPause,
                 onUpdateOrderStatus = vm::updateMerchantOrderStatus,
                 onClearMessages = vm::clearActionMessages,
-                onOpenDedicatedRegistration = { navController.navigateSingleTop(Routes.MERCHANT_REGISTRATION) },
+                onOpenDedicatedRegistration = { navController.navigateSingleTop(Routes.MERCHANT_REGISTRATION, isAuthorized) },
             )
         }
     }
 
     composable(Routes.MERCHANT_REGISTRATION) {
-        AuthenticatedRoute(viewModel = viewModelProvider()) {
+        val isAuthorized = isAuthenticatedProvider()
+        AuthenticatedRoute(
+            isAuthenticated = isAuthorized,
+            viewModel = viewModelProvider(),
+            onUnauthorized = { navController.redirectToLogin() },
+        ) {
             val regViewModel = merchantRegistrationViewModel ?: viewModel {
                 MerchantRegistrationViewModel()
             }
@@ -112,7 +130,9 @@ internal fun NavGraphBuilder.registerSecondaryDestinations(
                 viewModel = regViewModel,
                 onBack = { navController.popBackSafely() },
                 onOpenMerchantPortal = {
-                    if (!navController.popBackStack(Routes.MERCHANT_PORTAL, inclusive = false)) {
+                    if (!isAuthorized) {
+                        navController.redirectToLogin()
+                    } else if (!navController.popBackStack(Routes.MERCHANT_PORTAL, inclusive = false)) {
                         navController.navigate(Routes.MERCHANT_PORTAL) {
                             popUpTo(Routes.MERCHANT_REGISTRATION) { inclusive = true }
                             launchSingleTop = true
@@ -124,7 +144,12 @@ internal fun NavGraphBuilder.registerSecondaryDestinations(
     }
 
     composable(Routes.ADMIN_CENTER) {
-        AuthenticatedRoute(viewModel = viewModelProvider()) { vm ->
+        val isAuthorized = isAuthenticatedProvider()
+        AuthenticatedRoute(
+            isAuthenticated = isAuthorized,
+            viewModel = viewModelProvider(),
+            onUnauthorized = { navController.redirectToLogin() },
+        ) { vm ->
             val uiState by vm.uiState.collectAsStateWithLifecycle()
             DisposableEffect(vm) {
                 onDispose { vm.clearActionMessages() }
@@ -142,13 +167,18 @@ internal fun NavGraphBuilder.registerSecondaryDestinations(
                 onProcessFractional = vm::adminConfirmOrRejectFractional,
                 onUpdatePricing = vm::adminUpdatePricingConfig,
                 onClearMessages = vm::clearActionMessages,
-                onOpenPendingApprovalScreen = { navController.navigateSingleTop(Routes.ADMIN_APPROVAL) },
+                onOpenPendingApprovalScreen = { navController.navigateSingleTop(Routes.ADMIN_APPROVAL, isAuthorized) },
             )
         }
     }
 
     composable(Routes.ADMIN_APPROVAL) {
-        AuthenticatedRoute(viewModel = viewModelProvider()) { vm ->
+        val isAuthorized = isAuthenticatedProvider()
+        AuthenticatedRoute(
+            isAuthenticated = isAuthorized,
+            viewModel = viewModelProvider(),
+            onUnauthorized = { navController.redirectToLogin() },
+        ) { vm ->
             val uiState by vm.uiState.collectAsStateWithLifecycle()
             val approvalVm = adminApprovalViewModel ?: viewModel(
                 key = "admin_approval_${uiState.isAdmin}",
@@ -163,12 +193,17 @@ internal fun NavGraphBuilder.registerSecondaryDestinations(
     }
 
     composable(Routes.PROFILE) {
-        AuthenticatedRoute(viewModel = viewModelProvider()) { vm ->
+        val isAuthorized = isAuthenticatedProvider()
+        AuthenticatedRoute(
+            isAuthenticated = isAuthorized,
+            viewModel = viewModelProvider(),
+            onUnauthorized = { navController.redirectToLogin() },
+        ) { vm ->
             val uiState by vm.uiState.collectAsStateWithLifecycle()
             ProfileScreen(
                 uiState = uiState,
                 onBack = { navController.popBackSafely() },
-                onOrderClick = { order -> navController.navigateSingleTop(Routes.orderDetail(order.id)) },
+                onOrderClick = { order -> navController.navigateSingleTop(Routes.orderDetail(order.id), isAuthorized) },
                 onSignOut = onSignOut,
             )
         }
@@ -184,7 +219,12 @@ internal fun NavGraphBuilder.registerSecondaryDestinations(
             },
         ),
     ) { backStackEntry ->
-        AuthenticatedRoute(viewModel = viewModelProvider()) { vm ->
+        val isAuthorized = isAuthenticatedProvider()
+        AuthenticatedRoute(
+            isAuthenticated = isAuthorized,
+            viewModel = viewModelProvider(),
+            onUnauthorized = { navController.redirectToLogin() },
+        ) { vm ->
             val uiState by vm.uiState.collectAsStateWithLifecycle()
             val initialPrompt = backStackEntry.arguments?.getString("prompt")
             AiAdvisorScreen(
@@ -196,7 +236,12 @@ internal fun NavGraphBuilder.registerSecondaryDestinations(
     }
 
     composable(Routes.KYC) {
-        AuthenticatedRoute(viewModel = viewModelProvider()) { vm ->
+        val isAuthorized = isAuthenticatedProvider()
+        AuthenticatedRoute(
+            isAuthenticated = isAuthorized,
+            viewModel = viewModelProvider(),
+            onUnauthorized = { navController.redirectToLogin() },
+        ) { vm ->
             val uiState by vm.uiState.collectAsStateWithLifecycle()
             KycScreen(
                 frontDone = uiState.kycFrontDone,
@@ -210,12 +255,17 @@ internal fun NavGraphBuilder.registerSecondaryDestinations(
     }
 
     composable(Routes.PRICE_INSIGHT) {
-        AuthenticatedRoute(viewModel = viewModelProvider()) { vm ->
+        val isAuthorized = isAuthenticatedProvider()
+        AuthenticatedRoute(
+            isAuthenticated = isAuthorized,
+            viewModel = viewModelProvider(),
+            onUnauthorized = { navController.redirectToLogin() },
+        ) { vm ->
             val uiState by vm.uiState.collectAsStateWithLifecycle()
             PriceInsightScreen(
                 uiState = uiState,
                 onSaveAlert = vm::updatePriceAlert,
-                onOpenAiAdvisor = { prompt -> navController.navigateSingleTop(Routes.aiAdvisor(prompt)) },
+                onOpenAiAdvisor = { prompt -> navController.navigateSingleTop(Routes.aiAdvisor(prompt), isAuthorized) },
                 onBack = { navController.popBackSafely() },
             )
         }
@@ -225,7 +275,12 @@ internal fun NavGraphBuilder.registerSecondaryDestinations(
         route = Routes.SHOP_DETAIL,
         arguments = listOf(navArgument("shopId") { type = NavType.StringType }),
     ) { backStackEntry ->
-        AuthenticatedRoute(viewModel = viewModelProvider()) { vm ->
+        val isAuthorized = isAuthenticatedProvider()
+        AuthenticatedRoute(
+            isAuthenticated = isAuthorized,
+            viewModel = viewModelProvider(),
+            onUnauthorized = { navController.redirectToLogin() },
+        ) { vm ->
             val uiState by vm.uiState.collectAsStateWithLifecycle()
             val shopId = backStackEntry.arguments?.getString("shopId").orEmpty()
             val shop = vm.findShop(shopId)
@@ -243,15 +298,15 @@ internal fun NavGraphBuilder.registerSecondaryDestinations(
                 isFavorite = uiState.favoriteShopIds.contains(shop.id),
                 cartItemCount = uiState.cartItemCount,
                 onToggleFavorite = { vm.toggleFavoriteShop(shop.id) },
-                onOpenCart = { navController.navigateSingleTop(Routes.CART) },
+                onOpenCart = { navController.navigateSingleTop(Routes.CART, isAuthorized) },
                 onBack = { navController.popBackSafely() },
                 onBrowseProducts = { category ->
-                    navController.navigateSingleTop(Routes.productList(shop.id, category))
+                    navController.navigateSingleTop(Routes.productList(shop.id, category), isAuthorized)
                 },
                 onOpenProduct = { product ->
-                    navController.navigateSingleTop(Routes.productDetail(shop.id, product.id))
+                    navController.navigateSingleTop(Routes.productDetail(shop.id, product.id), isAuthorized)
                 },
-                onOpenPriceInsight = { navController.navigateSingleTop(Routes.PRICE_INSIGHT) },
+                onOpenPriceInsight = { navController.navigateSingleTop(Routes.PRICE_INSIGHT, isAuthorized) },
             )
         }
     }
@@ -267,7 +322,12 @@ internal fun NavGraphBuilder.registerSecondaryDestinations(
             },
         ),
     ) { backStackEntry ->
-        AuthenticatedRoute(viewModel = viewModelProvider()) { vm ->
+        val isAuthorized = isAuthenticatedProvider()
+        AuthenticatedRoute(
+            isAuthenticated = isAuthorized,
+            viewModel = viewModelProvider(),
+            onUnauthorized = { navController.redirectToLogin() },
+        ) { vm ->
             val uiState by vm.uiState.collectAsStateWithLifecycle()
             val shopId = backStackEntry.arguments?.getString("shopId").orEmpty()
             val category = backStackEntry.arguments?.getString("category")
@@ -285,10 +345,10 @@ internal fun NavGraphBuilder.registerSecondaryDestinations(
                 uiState = uiState,
                 onBack = { navController.popBackSafely() },
                 onOpenProduct = { product ->
-                    navController.navigateSingleTop(Routes.productDetail(shop.id, product.id))
+                    navController.navigateSingleTop(Routes.productDetail(shop.id, product.id), isAuthorized)
                 },
                 onAddToCart = { product -> vm.addToCart(shop, product) },
-                onOpenCart = { navController.navigateSingleTop(Routes.CART) },
+                onOpenCart = { navController.navigateSingleTop(Routes.CART, isAuthorized) },
             )
         }
     }
@@ -300,7 +360,12 @@ internal fun NavGraphBuilder.registerSecondaryDestinations(
             navArgument("productId") { type = NavType.StringType },
         ),
     ) { backStackEntry ->
-        AuthenticatedRoute(viewModel = viewModelProvider()) { vm ->
+        val isAuthorized = isAuthenticatedProvider()
+        AuthenticatedRoute(
+            isAuthenticated = isAuthorized,
+            viewModel = viewModelProvider(),
+            onUnauthorized = { navController.redirectToLogin() },
+        ) { vm ->
             val uiState by vm.uiState.collectAsStateWithLifecycle()
             val shopId = backStackEntry.arguments?.getString("shopId").orEmpty()
             val productId = backStackEntry.arguments?.getString("productId").orEmpty()
@@ -323,17 +388,22 @@ internal fun NavGraphBuilder.registerSecondaryDestinations(
                 cartItemCount = uiState.cartItemCount,
                 onBack = { navController.popBackSafely() },
                 onAddToCart = { vm.addToCart(shop, product) },
-                onOpenCart = { navController.navigateSingleTop(Routes.CART) },
+                onOpenCart = { navController.navigateSingleTop(Routes.CART, isAuthorized) },
                 onAskAiAboutProduct = {
                     val prompt = "هل قطعة ${product.name} (${product.weightGrams} جم عيار ${product.karat}) من محل ${shop.name} بالسعر الشامل بدون مصنعية إضافية مناسبة للشراء الآن؟"
-                    navController.navigateSingleTop(Routes.aiAdvisor(prompt))
+                    navController.navigateSingleTop(Routes.aiAdvisor(prompt), isAuthorized)
                 },
             )
         }
     }
 
     composable(Routes.CART) {
-        AuthenticatedRoute(viewModel = viewModelProvider()) { vm ->
+        val isAuthorized = isAuthenticatedProvider()
+        AuthenticatedRoute(
+            isAuthenticated = isAuthorized,
+            viewModel = viewModelProvider(),
+            onUnauthorized = { navController.redirectToLogin() },
+        ) { vm ->
             val uiState by vm.uiState.collectAsStateWithLifecycle()
             CartScreen(
                 uiState = uiState,
@@ -343,16 +413,21 @@ internal fun NavGraphBuilder.registerSecondaryDestinations(
                 onRemove = vm::removeFromCart,
                 onSelectPickupSlot = vm::selectPickupSlot,
                 onRefreshPriceLock = vm::refreshPriceLock,
-                onProceedToCheckout = { navController.navigateSingleTop(Routes.CHECKOUT) },
+                onProceedToCheckout = { navController.navigateSingleTop(Routes.CHECKOUT, isAuthorized) },
                 onBrowseShops = {
-                    navController.navigateToHomeTab(HomeTab.DISCOVER, clearBackToHome = true)
+                    navController.navigateToHomeTab(HomeTab.DISCOVER, isAuthenticated = isAuthorized, clearBackToHome = true)
                 },
             )
         }
     }
 
     composable(Routes.CHECKOUT) {
-        AuthenticatedRoute(viewModel = viewModelProvider()) { vm ->
+        val isAuthorized = isAuthenticatedProvider()
+        AuthenticatedRoute(
+            isAuthenticated = isAuthorized,
+            viewModel = viewModelProvider(),
+            onUnauthorized = { navController.redirectToLogin() },
+        ) { vm ->
             val uiState by vm.uiState.collectAsStateWithLifecycle()
             DisposableEffect(vm) {
                 onDispose { vm.clearActionMessages() }
@@ -365,11 +440,15 @@ internal fun NavGraphBuilder.registerSecondaryDestinations(
                 },
                 onSelectPaymentMethod = vm::selectPaymentMethod,
                 onConfirmPay = {
-                    val created = vm.placeOrder()
-                    if (created != null) {
-                        navController.navigate(Routes.success(created.id)) {
-                            popUpTo(Routes.HOME) { inclusive = false }
-                            launchSingleTop = true
+                    if (!isAuthorized) {
+                        navController.redirectToLogin()
+                    } else {
+                        val created = vm.placeOrder()
+                        if (created != null) {
+                            navController.navigate(Routes.success(created.id)) {
+                                popUpTo(Routes.HOME) { inclusive = false }
+                                launchSingleTop = true
+                            }
                         }
                     }
                 },
@@ -381,7 +460,12 @@ internal fun NavGraphBuilder.registerSecondaryDestinations(
         route = Routes.SUCCESS,
         arguments = listOf(navArgument("orderId") { type = NavType.StringType }),
     ) { backStackEntry ->
-        AuthenticatedRoute(viewModel = viewModelProvider()) { vm ->
+        val isAuthorized = isAuthenticatedProvider()
+        AuthenticatedRoute(
+            isAuthenticated = isAuthorized,
+            viewModel = viewModelProvider(),
+            onUnauthorized = { navController.redirectToLogin() },
+        ) { vm ->
             val orderId = backStackEntry.arguments?.getString("orderId").orEmpty()
             val order = vm.findOrder(orderId)
             if (order == null) {
@@ -394,7 +478,7 @@ internal fun NavGraphBuilder.registerSecondaryDestinations(
             SuccessScreen(
                 order = order,
                 onViewAllOrders = {
-                    navController.navigateToHomeTab(HomeTab.ORDERS, clearBackToHome = true)
+                    navController.navigateToHomeTab(HomeTab.ORDERS, isAuthenticated = isAuthorized, clearBackToHome = true)
                 },
             )
         }
@@ -404,7 +488,12 @@ internal fun NavGraphBuilder.registerSecondaryDestinations(
         route = Routes.ORDER_DETAIL,
         arguments = listOf(navArgument("orderId") { type = NavType.StringType }),
     ) { backStackEntry ->
-        AuthenticatedRoute(viewModel = viewModelProvider()) { vm ->
+        val isAuthorized = isAuthenticatedProvider()
+        AuthenticatedRoute(
+            isAuthenticated = isAuthorized,
+            viewModel = viewModelProvider(),
+            onUnauthorized = { navController.redirectToLogin() },
+        ) { vm ->
             val orderId = backStackEntry.arguments?.getString("orderId").orEmpty()
             val order = vm.findOrder(orderId)
             if (order == null) {
@@ -417,8 +506,8 @@ internal fun NavGraphBuilder.registerSecondaryDestinations(
             OrderDetailScreen(
                 order = order,
                 onBack = { navController.popBackSafely() },
-                onStartVerifyPickup = { navController.navigateSingleTop(Routes.verifyPickup(order.id)) },
-                onReportIssue = { navController.navigateSingleTop(Routes.reportIssue(order.id)) },
+                onStartVerifyPickup = { navController.navigateSingleTop(Routes.verifyPickup(order.id), isAuthorized) },
+                onReportIssue = { navController.navigateSingleTop(Routes.reportIssue(order.id), isAuthorized) },
             )
         }
     }
@@ -427,7 +516,12 @@ internal fun NavGraphBuilder.registerSecondaryDestinations(
         route = Routes.VERIFY_PICKUP,
         arguments = listOf(navArgument("orderId") { type = NavType.StringType }),
     ) { backStackEntry ->
-        AuthenticatedRoute(viewModel = viewModelProvider()) { vm ->
+        val isAuthorized = isAuthenticatedProvider()
+        AuthenticatedRoute(
+            isAuthenticated = isAuthorized,
+            viewModel = viewModelProvider(),
+            onUnauthorized = { navController.redirectToLogin() },
+        ) { vm ->
             val orderId = backStackEntry.arguments?.getString("orderId").orEmpty()
             val order = vm.findOrder(orderId)
             if (order == null) {
@@ -442,9 +536,13 @@ internal fun NavGraphBuilder.registerSecondaryDestinations(
                 onBack = { navController.popBackSafely() },
                 onConfirmRelease = {
                     vm.completePickup(order.id)
-                    navController.navigate(Routes.rating(order.id)) {
-                        popUpTo(Routes.VERIFY_PICKUP) { inclusive = true }
-                        launchSingleTop = true
+                    if (!isAuthorized) {
+                        navController.redirectToLogin()
+                    } else {
+                        navController.navigate(Routes.rating(order.id)) {
+                            popUpTo(Routes.VERIFY_PICKUP) { inclusive = true }
+                            launchSingleTop = true
+                        }
                     }
                 },
             )
@@ -455,7 +553,12 @@ internal fun NavGraphBuilder.registerSecondaryDestinations(
         route = Routes.RATING,
         arguments = listOf(navArgument("orderId") { type = NavType.StringType }),
     ) { backStackEntry ->
-        AuthenticatedRoute(viewModel = viewModelProvider()) { vm ->
+        val isAuthorized = isAuthenticatedProvider()
+        AuthenticatedRoute(
+            isAuthenticated = isAuthorized,
+            viewModel = viewModelProvider(),
+            onUnauthorized = { navController.redirectToLogin() },
+        ) { vm ->
             val orderId = backStackEntry.arguments?.getString("orderId").orEmpty()
             val order = vm.findOrder(orderId)
             if (order == null) {
@@ -469,10 +572,10 @@ internal fun NavGraphBuilder.registerSecondaryDestinations(
                 order = order,
                 onSubmitRating = { stars ->
                     vm.submitRating(order.id, stars)
-                    navController.navigateToHomeTab(HomeTab.ORDERS, clearBackToHome = true)
+                    navController.navigateToHomeTab(HomeTab.ORDERS, isAuthenticated = isAuthorized, clearBackToHome = true)
                 },
                 onSkip = {
-                    navController.navigateToHomeTab(HomeTab.ORDERS, clearBackToHome = true)
+                    navController.navigateToHomeTab(HomeTab.ORDERS, isAuthenticated = isAuthorized, clearBackToHome = true)
                 },
             )
         }
@@ -482,7 +585,12 @@ internal fun NavGraphBuilder.registerSecondaryDestinations(
         route = Routes.REPORT_ISSUE,
         arguments = listOf(navArgument("orderId") { type = NavType.StringType }),
     ) { backStackEntry ->
-        AuthenticatedRoute(viewModel = viewModelProvider()) { vm ->
+        val isAuthorized = isAuthenticatedProvider()
+        AuthenticatedRoute(
+            isAuthenticated = isAuthorized,
+            viewModel = viewModelProvider(),
+            onUnauthorized = { navController.redirectToLogin() },
+        ) { vm ->
             val orderId = backStackEntry.arguments?.getString("orderId").orEmpty()
             val order = vm.findOrder(orderId)
             if (order == null) {

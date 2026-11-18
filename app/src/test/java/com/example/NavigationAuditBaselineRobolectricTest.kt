@@ -474,4 +474,102 @@ class NavigationAuditBaselineRobolectricTest {
         composeRule.waitForIdle()
         assertTrue(composeRule.activity.isFinishing)
     }
+
+    @Test
+    fun navigationGuard_blocksUnauthorizedVaultAndCart_redirectsToLogin() {
+        val vm = KingGoldViewModel(autoFetchPrices = false)
+        var isAuthenticated by mutableStateOf(false)
+        var pendingRoute by mutableStateOf<String?>(null)
+        lateinit var controller: NavHostController
+
+        composeRule.setContent {
+            KingGoldTheme {
+                controller = rememberNavController()
+                KingGoldNavHost(
+                    viewModel = vm,
+                    onSignOut = { isAuthenticated = false },
+                    navController = controller,
+                    startDestination = com.example.ui.navigation.Routes.LOGIN,
+                    isAuthenticated = isAuthenticated,
+                    pendingRoute = pendingRoute,
+                    onPendingRouteConsumed = { pendingRoute = null },
+                    loginContent = { onAuthSuccess ->
+                        Button(
+                            onClick = {
+                                isAuthenticated = true
+                                onAuthSuccess()
+                            },
+                            modifier = Modifier.testTag("guard_test_login_button"),
+                        ) {
+                            Text("Sign In")
+                        }
+                    },
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        assertEquals(com.example.ui.navigation.Routes.LOGIN, controller.currentDestination?.route)
+
+        // Direct navigation to GoldVault while unauthenticated is intercepted and redirected to LOGIN
+        composeRule.runOnUiThread {
+            controller.navigate(com.example.ui.navigation.Routes.VAULT)
+        }
+        composeRule.waitForIdle()
+        assertEquals(com.example.ui.navigation.Routes.LOGIN, controller.currentDestination?.route)
+        composeRule.onNodeWithTag("vault_hero_card").assertDoesNotExist()
+        composeRule.onNodeWithTag("guard_test_login_button").assertIsDisplayed()
+
+        // Direct navigation to Cart while unauthenticated is intercepted and redirected to LOGIN
+        composeRule.runOnUiThread {
+            controller.navigate(com.example.ui.navigation.Routes.CART)
+        }
+        composeRule.waitForIdle()
+        assertEquals(com.example.ui.navigation.Routes.LOGIN, controller.currentDestination?.route)
+        composeRule.onNodeWithTag("cart_browse_shops_button").assertDoesNotExist()
+        composeRule.onNodeWithTag("guard_test_login_button").assertIsDisplayed()
+
+        // Deep-link pendingRoute to Cart while unauthenticated redirects to LOGIN first, then opens CART after sign-in
+        pendingRoute = com.example.ui.navigation.Routes.CART
+        composeRule.waitForIdle()
+        assertEquals(com.example.ui.navigation.Routes.LOGIN, controller.currentDestination?.route)
+        assertEquals(null, pendingRoute)
+        composeRule.onNodeWithTag("cart_browse_shops_button").assertDoesNotExist()
+
+        // Completing login transitions through HOME and fulfills deferred Cart route safely
+        composeRule.onNodeWithTag("guard_test_login_button").performClick()
+        composeRule.waitForIdle()
+        assertEquals(com.example.ui.navigation.Routes.CART, controller.currentDestination?.route)
+        composeRule.onNodeWithTag("cart_browse_shops_button").assertIsDisplayed()
+    }
+
+    @Test
+    fun navigationGuard_protectedStartDestinationWhileUnauthenticated_redirectsToLogin() {
+        lateinit var controller: NavHostController
+
+        composeRule.setContent {
+            KingGoldTheme {
+                controller = rememberNavController()
+                KingGoldNavHost(
+                    viewModel = null,
+                    onSignOut = {},
+                    navController = controller,
+                    startDestination = com.example.ui.navigation.Routes.VAULT,
+                    isAuthenticated = false,
+                    loginContent = {
+                        Button(
+                            onClick = {},
+                            modifier = Modifier.testTag("guard_start_login_button"),
+                        ) {
+                            Text("Sign In Required")
+                        }
+                    },
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        assertEquals(com.example.ui.navigation.Routes.LOGIN, controller.currentDestination?.route)
+        composeRule.onNodeWithTag("vault_hero_card").assertDoesNotExist()
+        composeRule.onNodeWithTag("guard_start_login_button").assertIsDisplayed()
+    }
 }
