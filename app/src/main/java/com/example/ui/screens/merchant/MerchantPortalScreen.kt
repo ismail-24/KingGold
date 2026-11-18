@@ -22,8 +22,10 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -115,6 +117,7 @@ fun MerchantPortalScreen(
         stockQuantity: Int,
         stamped: Boolean,
         imageThumbnails: List<String>,
+        onSuccess: () -> Unit,
     ) -> Unit,
     onToggleProductPause: (MerchantProduct) -> Unit,
     onUpdateOrderStatus: (orderId: String, nextStatus: OrderStatus) -> Unit,
@@ -184,7 +187,9 @@ fun MerchantPortalScreen(
                     ApprovedMerchantDashboard(
                         merchant = activeMerchant,
                         uiState = uiState,
-                        onSaveProduct = onSaveProduct,
+                        onSaveProduct = { m, existing, name, desc, cat, karat, w, pricePiasters, stock, stamped, thumbs, onSaved ->
+                    onSaveProduct(m, existing, name, desc, cat, karat, w, pricePiasters, stock, stamped, thumbs, onSaved)
+                },
                         onToggleProductPause = onToggleProductPause,
                         onUpdateOrderStatus = onUpdateOrderStatus,
                         onClearMessages = onClearMessages,
@@ -425,6 +430,7 @@ private fun ApprovedMerchantDashboard(
         stockQuantity: Int,
         stamped: Boolean,
         imageThumbnails: List<String>,
+        onSuccess: () -> Unit,
     ) -> Unit,
     onToggleProductPause: (MerchantProduct) -> Unit,
     onUpdateOrderStatus: (orderId: String, nextStatus: OrderStatus) -> Unit,
@@ -656,6 +662,7 @@ private fun ApprovedMerchantDashboard(
         var pStock by remember(editingProduct) { mutableStateOf(editingProduct?.stockQuantity?.toString() ?: "5") }
         var pStamped by remember(editingProduct) { mutableStateOf(editingProduct?.stamped ?: true) }
         var pThumbs by remember(editingProduct) { mutableStateOf(editingProduct?.imageThumbnails ?: emptyList()) }
+        var sheetError by remember { mutableStateOf<String?>(null) }
 
         val imgPicker = rememberLauncherForActivityResult(
             contract = ActivityResultContracts.PickMultipleVisualMedia(4),
@@ -667,16 +674,37 @@ private fun ApprovedMerchantDashboard(
             }
         }
 
-        ModalBottomSheet(onDismissRequest = { showProductSheet = false }, sheetState = sheetState, containerColor = Color.White) {
+        ModalBottomSheet(
+            onDismissRequest = {
+                sheetError = null
+                onClearMessages()
+                showProductSheet = false
+            },
+            sheetState = sheetState,
+            containerColor = Color.White,
+        ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = 20.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text(if (editingProduct == null) "إضافة منتج ذهبي جديد" else "تعديل المنتج", style = AppText.display.copy(fontSize = 18.sp))
-                OutlinedTextField(value = pName, onValueChange = { pName = it }, label = { Text("اسم القطعة") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                OutlinedTextField(value = pDesc, onValueChange = { pDesc = it }, label = { Text("الوصف والمواصفات") }, modifier = Modifier.fillMaxWidth())
+                val visibleError = sheetError ?: uiState.actionErrorMessage
+                if (visibleError != null) {
+                    Text(
+                        text = visibleError,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(AppColors.AlertSoft)
+                            .padding(10.dp),
+                        style = AppText.body.copy(color = AppColors.Alert, fontWeight = FontWeight.Bold, fontSize = 12.sp),
+                    )
+                }
+                OutlinedTextField(value = pName, onValueChange = { pName = it; sheetError = null }, label = { Text("اسم القطعة") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                OutlinedTextField(value = pDesc, onValueChange = { pDesc = it; sheetError = null }, label = { Text("الوصف والمواصفات") }, modifier = Modifier.fillMaxWidth())
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf("خواتم", "أساور", "سلاسل", "جنيهات وسبائك").forEach { c ->
                         FilterChip(selected = pCategory == c, onClick = { pCategory = c }, label = { Text(c, fontSize = 11.sp) })
@@ -688,12 +716,12 @@ private fun ApprovedMerchantDashboard(
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(value = pWeight, onValueChange = { pWeight = it }, label = { Text("الوزن (جم)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f), singleLine = true)
-                    OutlinedTextField(value = pStock, onValueChange = { pStock = it.filter { ch -> ch.isDigit() } }, label = { Text("الكمية المتاحة") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f), singleLine = true)
+                    OutlinedTextField(value = pWeight, onValueChange = { pWeight = it; sheetError = null }, label = { Text("الوزن (جم)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f), singleLine = true)
+                    OutlinedTextField(value = pStock, onValueChange = { pStock = it.filter { ch -> ch.isDigit() }; sheetError = null }, label = { Text("الكمية المتاحة") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f), singleLine = true)
                 }
                 OutlinedTextField(
                     value = pPriceEgp,
-                    onValueChange = { pPriceEgp = it },
+                    onValueChange = { pPriceEgp = it; sheetError = null },
                     label = { Text("السعر النهائي للعميل بالجنيه (بدون مصنعية إضافية)") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth(),
@@ -716,9 +744,16 @@ private fun ApprovedMerchantDashboard(
                         val w = pWeight.toDoubleOrNull() ?: 0.0
                         val pricePiasters = MoneyUtils.egpStringToPiasters(pPriceEgp) ?: 0L
                         val stock = pStock.toIntOrNull() ?: 0
-                        onSaveProduct(merchant, editingProduct, pName, pDesc, pCategory, pKarat, w, pricePiasters, stock, pStamped, pThumbs)
-                        showProductSheet = false
+                        if (pName.trim().length < 2 || w <= 0.0 || pricePiasters <= 0L) {
+                            sheetError = "يرجى إدخال اسم المنتج والوزن والسعر النهائي بشكل صحيح."
+                        } else {
+                            sheetError = null
+                            onSaveProduct(merchant, editingProduct, pName, pDesc, pCategory, pKarat, w, pricePiasters, stock, pStamped, pThumbs) {
+                                showProductSheet = false
+                            }
+                        }
                     },
+                    enabled = !uiState.isActionBusy,
                     modifier = Modifier.fillMaxWidth().height(50.dp),
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = AppColors.Brass),

@@ -1,5 +1,6 @@
 package com.example.ui.screens.checkout
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -65,6 +66,7 @@ fun SuccessScreen(
     order: GoldOrder,
     onViewAllOrders: () -> Unit,
 ) {
+    BackHandler(onBack = onViewAllOrders)
     val scale = remember { Animatable(0.4f) }
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }

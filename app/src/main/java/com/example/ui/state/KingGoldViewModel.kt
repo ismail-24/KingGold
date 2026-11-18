@@ -15,6 +15,7 @@ import com.example.data.remote.UserPreferencesRecord
 import com.example.model.AuditLogRecord
 import com.example.model.CartItem
 import com.example.model.DepositRequest
+import com.example.model.DepositStatus
 import com.example.model.FractionalGoldOrder
 import com.example.model.GoldOrder
 import com.example.model.KaratPrice
@@ -33,6 +34,7 @@ import com.example.model.PaymentMethod
 import com.example.model.PlatformPricingConfig
 import com.example.model.Product
 import com.example.model.SellGoldRequest
+import com.example.model.SellRequestStatus
 import com.example.model.Shop
 import com.example.model.ShopSortOption
 import com.example.model.WalletSummary
@@ -1003,7 +1005,30 @@ class KingGoldViewModel(
             _uiState.update { it.copy(actionErrorMessage = "يرجى إدخال مرجع التحويل المالي.") }
             return
         }
-        val repo = vaultRepository ?: return
+        val repo = vaultRepository
+        if (repo == null) {
+            val localId = "DEP-LOCAL-${System.currentTimeMillis()}"
+            _uiState.update { s ->
+                val newReq = DepositRequest(
+                    id = localId,
+                    customerUid = s.userId,
+                    customerEmail = s.userEmail,
+                    amountPiasters = amountPiasters,
+                    channel = channel,
+                    paymentReference = paymentReference.trim(),
+                    status = DepositStatus.PENDING,
+                    createdAtMs = System.currentTimeMillis(),
+                )
+                s.copy(
+                    depositRequests = listOf(newReq) + s.depositRequests,
+                    wallet = s.wallet.copy(cashPendingPiasters = s.wallet.cashPendingPiasters + amountPiasters),
+                    actionBannerMessage = "تم تسجيل طلب إيداع قيد المراجعة بمبلغ ${MoneyUtils.piastersToEgpString(amountPiasters)} ج.م",
+                    actionErrorMessage = null,
+                )
+            }
+            onSuccess()
+            return
+        }
         viewModelScope.launch {
             _uiState.update { it.copy(isActionBusy = true, actionErrorMessage = null) }
             repo.submitDepositRequestAtomic(amountPiasters, channel, paymentReference)
@@ -1048,7 +1073,31 @@ class KingGoldViewModel(
             _uiState.update { it.copy(actionErrorMessage = "الوزن التقديري يجب أن لا يقل عن 0.01 جم.") }
             return
         }
-        val repo = vaultRepository ?: return
+        val repo = vaultRepository
+        if (repo == null) {
+            val localReq = SellGoldRequest(
+                id = "SELL-LOCAL-${System.currentTimeMillis()}",
+                customerUid = _uiState.value.userId,
+                customerEmail = _uiState.value.userEmail,
+                itemTitle = itemTitle.trim(),
+                category = category,
+                karat = karat,
+                estimatedWeightMg = estimatedWeightMg,
+                conditionNotes = conditionNotes.trim(),
+                photoThumbnails = photoThumbnails,
+                status = SellRequestStatus.SUBMITTED,
+                createdAtMs = System.currentTimeMillis(),
+            )
+            _uiState.update { s ->
+                s.copy(
+                    sellRequests = listOf(localReq) + s.sellRequests,
+                    actionBannerMessage = "تم إرسال طلب بيع الذهب للمنصة وهو قيد الفحص الآن",
+                    actionErrorMessage = null,
+                )
+            }
+            onSuccess()
+            return
+        }
         viewModelScope.launch {
             _uiState.update { it.copy(isActionBusy = true, actionErrorMessage = null) }
             repo.submitSellGoldRequest(
@@ -1078,7 +1127,19 @@ class KingGoldViewModel(
     }
 
     fun cancelSellGoldRequest(requestId: String) {
-        val repo = vaultRepository ?: return
+        val repo = vaultRepository
+        if (repo == null) {
+            _uiState.update { s ->
+                s.copy(
+                    sellRequests = s.sellRequests.map { r ->
+                        if (r.id == requestId) r.copy(status = SellRequestStatus.CANCELLED) else r
+                    },
+                    actionBannerMessage = "تم إلغاء طلب البيع",
+                    actionErrorMessage = null,
+                )
+            }
+            return
+        }
         viewModelScope.launch {
             _uiState.update { it.copy(isActionBusy = true, actionErrorMessage = null) }
             repo.cancelSellGoldRequest(requestId).onSuccess {
@@ -1094,7 +1155,23 @@ class KingGoldViewModel(
     }
 
     fun acceptSellGoldOffer(request: SellGoldRequest) {
-        val repo = vaultRepository ?: return
+        val repo = vaultRepository
+        if (repo == null) {
+            _uiState.update { s ->
+                s.copy(
+                    sellRequests = s.sellRequests.map { r ->
+                        if (r.id == request.id) r.copy(status = SellRequestStatus.COMPLETED) else r
+                    },
+                    wallet = s.wallet.copy(
+                        cashAvailablePiasters = s.wallet.cashAvailablePiasters + request.finalOfferPiasters,
+                        cashTotalCreditedPiasters = s.wallet.cashTotalCreditedPiasters + request.finalOfferPiasters,
+                    ),
+                    actionBannerMessage = "تم قبول العرض وإضافة ${MoneyUtils.piastersToEgpString(request.finalOfferPiasters)} ج.م إلى محفظتك النقدية",
+                    actionErrorMessage = null,
+                )
+            }
+            return
+        }
         viewModelScope.launch {
             _uiState.update { it.copy(isActionBusy = true, actionErrorMessage = null) }
             repo.acceptSellGoldOfferAtomic(request).onSuccess {
@@ -1158,7 +1235,10 @@ class KingGoldViewModel(
             }
             return
         }
-        val repo = marketplaceRepository ?: return
+        val repo = marketplaceRepository ?: run {
+            _uiState.update { it.copy(actionErrorMessage = "خدمة السحابة غير متصلة حالياً — يرجى إعادة تسجيل الدخول.") }
+            return
+        }
         viewModelScope.launch {
             _uiState.update { it.copy(isActionBusy = true, actionErrorMessage = null) }
             repo.submitMerchantRegistration(
@@ -1212,7 +1292,10 @@ class KingGoldViewModel(
             _uiState.update { it.copy(actionErrorMessage = "يرجى إدخال اسم المنتج والوزن والسعر النهائي بشكل صحيح.") }
             return
         }
-        val repo = marketplaceRepository ?: return
+        val repo = marketplaceRepository ?: run {
+            _uiState.update { it.copy(actionErrorMessage = "خدمة السحابة غير متصلة حالياً — تعذّر حفظ المنتج.") }
+            return
+        }
         val resubmit = existingProduct != null &&
             (existingProduct.status == MerchantProductStatus.PAUSED || existingProduct.status == MerchantProductStatus.REJECTED)
         viewModelScope.launch {
@@ -1251,7 +1334,10 @@ class KingGoldViewModel(
     }
 
     fun toggleMerchantProductPause(product: MerchantProduct) {
-        val repo = marketplaceRepository ?: return
+        val repo = marketplaceRepository ?: run {
+            _uiState.update { it.copy(actionErrorMessage = "خدمة السحابة غير متصلة حالياً.") }
+            return
+        }
         viewModelScope.launch {
             repo.toggleMerchantProductPause(product).onSuccess {
                 _uiState.update { it.copy(actionBannerMessage = "تم تحديث حالة عرض المنتج") }
@@ -1262,7 +1348,10 @@ class KingGoldViewModel(
     }
 
     fun updateMerchantOrderStatus(orderId: String, nextStatus: OrderStatus) {
-        val repo = marketplaceRepository ?: return
+        val repo = marketplaceRepository ?: run {
+            _uiState.update { it.copy(actionErrorMessage = "خدمة السحابة غير متصلة حالياً.") }
+            return
+        }
         viewModelScope.launch {
             repo.updateMerchantOrderStatus(orderId, nextStatus).onSuccess {
                 _uiState.update { it.copy(actionBannerMessage = "تم تحديث حالة الطلب إلى ${nextStatus.arabicLabel}") }

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -147,11 +148,11 @@ fun DiscoverScreen(
                     }
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (uiState.cartItemCount > 0) {
-                            IconButton(
-                                onClick = onOpenCart,
-                                modifier = Modifier.testTag("discover_cart_button"),
-                            ) {
+                        IconButton(
+                            onClick = onOpenCart,
+                            modifier = Modifier.testTag("discover_cart_button"),
+                        ) {
+                            if (uiState.cartItemCount > 0) {
                                 BadgedBox(
                                     badge = {
                                         Badge(containerColor = AppColors.Brass) {
@@ -169,6 +170,12 @@ fun DiscoverScreen(
                                         tint = AppColors.Ink,
                                     )
                                 }
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Outlined.ShoppingBag,
+                                    contentDescription = "عرض السلة",
+                                    tint = AppColors.Ink,
+                                )
                             }
                         }
                         IconButton(
@@ -933,10 +940,11 @@ private fun DiscoverShortcutPill(
 ) {
     Row(
         modifier = modifier
+            .heightIn(min = 48.dp)
             .clip(RoundedCornerShape(10.dp))
             .background(if (highlight) AppColors.Brass else Color.White.copy(alpha = 0.12f))
             .clickable(onClick = onClick)
-            .padding(horizontal = 8.dp, vertical = 8.dp),
+            .padding(horizontal = 8.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {

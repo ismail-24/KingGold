@@ -1,5 +1,6 @@
 package com.example.ui.screens.checkout
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -63,6 +64,8 @@ fun CheckoutScreen(
     onSelectPaymentMethod: (String) -> Unit,
     onConfirmPay: () -> Unit,
 ) {
+    BackHandler(onBack = onBack)
+
     Scaffold(
         containerColor = AppColors.Parchment,
         topBar = {
@@ -141,32 +144,63 @@ fun CheckoutScreen(
                 .padding(padding),
             contentAlignment = Alignment.TopCenter,
         ) {
-            LazyColumn(
-                modifier = Modifier
-                    .widthIn(max = 640.dp)
-                    .fillMaxSize(),
-                contentPadding = PaddingValues(18.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                if (uiState.actionErrorMessage != null) {
-                    item {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(AppColors.AlertSoft)
-                                .border(1.dp, AppColors.Alert.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
-                                .padding(12.dp),
-                        ) {
-                            Text(
-                                text = uiState.actionErrorMessage,
-                                style = AppText.body.copy(color = AppColors.Alert, fontSize = 13.sp, fontWeight = FontWeight.Bold),
-                            )
-                        }
+            if (uiState.cart.isEmpty()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(24.dp),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        text = "لا توجد منتجات في السلة لإتمام الدفع",
+                        style = AppText.display.copy(fontSize = 18.sp),
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Button(
+                        onClick = onBack,
+                        modifier = Modifier
+                            .height(48.dp)
+                            .testTag("checkout_empty_back_button"),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = AppColors.Ink,
+                            contentColor = AppColors.BrassLight,
+                        ),
+                    ) {
+                        Text(
+                            text = "العودة للسلة",
+                            style = AppText.body.copy(color = AppColors.BrassLight, fontWeight = FontWeight.Bold),
+                        )
                     }
                 }
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .widthIn(max = 640.dp)
+                        .fillMaxSize(),
+                    contentPadding = PaddingValues(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    if (uiState.actionErrorMessage != null) {
+                        item {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(AppColors.AlertSoft)
+                                    .border(1.dp, AppColors.Alert.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                                    .padding(12.dp),
+                            ) {
+                                Text(
+                                    text = uiState.actionErrorMessage,
+                                    style = AppText.body.copy(color = AppColors.Alert, fontSize = 13.sp, fontWeight = FontWeight.Bold),
+                                )
+                            }
+                        }
+                    }
 
-                item {
+                    item {
                     LedgerCard(
                         lines = listOf(
                             LedgerLine("إجمالي سعر القطع", formatCurrency(uiState.cartGoldValue)),
@@ -233,6 +267,7 @@ fun CheckoutScreen(
                         )
                     }
                 }
+            }
             }
         }
     }

@@ -1,5 +1,6 @@
 package com.example.ui.screens.orders
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -27,6 +28,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -34,6 +36,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -55,17 +60,39 @@ import com.example.ui.theme.AppText
 
 private val ReviewTags = listOf("دقة الوزن", "حسن التعامل", "سرعة التجهيز", "وضوح الفاتورة")
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun RatingScreen(
     order: GoldOrder,
     onSubmitRating: (stars: Int) -> Unit,
+    onSkip: () -> Unit = {},
 ) {
+    BackHandler(onBack = onSkip)
     var stars by remember { mutableIntStateOf(4) }
     val selectedTags = remember { mutableStateListOf("دقة الوزن", "حسن التعامل") }
 
     Scaffold(
         containerColor = AppColors.Parchment,
+        topBar = {
+            TopAppBar(
+                title = {},
+                actions = {
+                    TextButton(
+                        onClick = onSkip,
+                        modifier = Modifier.testTag("skip_rating_button"),
+                    ) {
+                        Text(
+                            text = "تخطي",
+                            style = AppText.body.copy(
+                                color = AppColors.Ink,
+                                fontWeight = FontWeight.Bold,
+                            ),
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = AppColors.Parchment),
+            )
+        },
         bottomBar = {
             Surface(
                 color = AppColors.Parchment,

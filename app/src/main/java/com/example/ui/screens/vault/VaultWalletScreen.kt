@@ -22,7 +22,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
@@ -88,9 +90,9 @@ private enum class LedgerFilter(val label: String) {
 @Composable
 fun VaultWalletScreen(
     uiState: KingGoldUiState,
-    onBuyFractionalGold: (karat: Int, weightMg: Long, payWithWallet: Boolean) -> Unit,
-    onRequestWithdrawal: (karat: Int, amountMg: Long, deliveryType: WithdrawalDeliveryType, address: String) -> Unit,
-    onSubmitDepositRequest: (amountPiasters: Long, channel: String, reference: String) -> Unit,
+    onBuyFractionalGold: (karat: Int, weightMg: Long, payWithWallet: Boolean, onSuccess: () -> Unit) -> Unit,
+    onRequestWithdrawal: (karat: Int, amountMg: Long, deliveryType: WithdrawalDeliveryType, address: String, onSuccess: () -> Unit) -> Unit,
+    onSubmitDepositRequest: (amountPiasters: Long, channel: String, reference: String, onSuccess: () -> Unit) -> Unit,
     onClearMessages: () -> Unit,
 ) {
     var showBuySheet by remember { mutableStateOf(false) }
@@ -300,7 +302,10 @@ fun VaultWalletScreen(
 
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(
-                                onClick = { showBuySheet = true },
+                                onClick = {
+                                    onClearMessages()
+                                    showBuySheet = true
+                                },
                                 modifier = Modifier
                                     .weight(1f)
                                     .height(48.dp)
@@ -316,7 +321,10 @@ fun VaultWalletScreen(
                                 Text("شراء ذهب مجزأ", style = AppText.body.copy(color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.5.sp))
                             }
                             OutlinedButton(
-                                onClick = { showWithdrawSheet = true },
+                                onClick = {
+                                    onClearMessages()
+                                    showWithdrawSheet = true
+                                },
                                 enabled = canWithdrawPhysical,
                                 modifier = Modifier
                                     .weight(1f)
@@ -380,7 +388,10 @@ fun VaultWalletScreen(
                                 Text("المحفظة النقدية (EGP)", style = AppText.display.copy(fontSize = 17.sp))
                             }
                             OutlinedButton(
-                                onClick = { showDepositSheet = true },
+                                onClick = {
+                                    onClearMessages()
+                                    showDepositSheet = true
+                                },
                                 modifier = Modifier.testTag("open_deposit_sheet_button"),
                                 shape = RoundedCornerShape(10.dp),
                             ) {
@@ -578,14 +589,21 @@ fun VaultWalletScreen(
         val unitPricePiasters = uiState.effectivePurchaseGramPiasters(selectedKarat)
         val estimatedTotalPiasters = MoneyUtils.computeFractionalCostPiasters(selectedMg, unitPricePiasters)
 
+        var sheetError by remember { mutableStateOf<String?>(null) }
+
         ModalBottomSheet(
-            onDismissRequest = { showBuySheet = false },
+            onDismissRequest = {
+                sheetError = null
+                onClearMessages()
+                showBuySheet = false
+            },
             sheetState = sheetState,
             containerColor = Color.White,
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = 20.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
@@ -595,11 +613,28 @@ fun VaultWalletScreen(
                     style = AppText.body.copy(color = AppColors.Muted, fontSize = 12.5.sp),
                 )
 
+                val visibleBuyError = sheetError ?: uiState.actionErrorMessage
+                if (visibleBuyError != null) {
+                    Text(
+                        text = visibleBuyError,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(AppColors.AlertSoft)
+                            .padding(10.dp)
+                            .testTag("vault_buy_sheet_error"),
+                        style = AppText.body.copy(color = AppColors.Alert, fontWeight = FontWeight.Bold, fontSize = 12.sp),
+                    )
+                }
+
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(24, 21, 18).forEach { k ->
                         FilterChip(
                             selected = selectedKarat == k,
-                            onClick = { selectedKarat = k },
+                            onClick = {
+                                selectedKarat = k
+                                sheetError = null
+                            },
                             label = {
                                 Text(
                                     "عيار $k (${MoneyUtils.piastersToEgpString(uiState.effectivePurchaseGramPiasters(k))} ج.م/جم)",
@@ -621,6 +656,7 @@ fun VaultWalletScreen(
                             onClick = {
                                 selectedMg = mg
                                 customMgInput = mg.toString()
+                                sheetError = null
                             },
                             label = { Text(lbl, style = AppText.body.copy(fontSize = 12.sp, fontWeight = FontWeight.Bold)) },
                         )
@@ -632,6 +668,7 @@ fun VaultWalletScreen(
                     onValueChange = { txt ->
                         customMgInput = txt.filter { it.isDigit() }
                         selectedMg = customMgInput.toLongOrNull() ?: 0L
+                        sheetError = null
                     },
                     label = { Text("الوزن المطلوب بالملليجرام (1000 ملجم = 1 جم)") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -643,7 +680,10 @@ fun VaultWalletScreen(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
                         selected = payWithWallet,
-                        onClick = { payWithWallet = true },
+                        onClick = {
+                            payWithWallet = true
+                            sheetError = null
+                        },
                         label = {
                             Text(
                                 "دفع فوري بالمحفظة (${MoneyUtils.piastersToEgpString(wallet.cashAvailablePiasters)} ج.م)",
@@ -653,7 +693,10 @@ fun VaultWalletScreen(
                     )
                     FilterChip(
                         selected = !payWithWallet,
-                        onClick = { payWithWallet = false },
+                        onClick = {
+                            payWithWallet = false
+                            sheetError = null
+                        },
                         label = { Text("طلب معلق لمراجعة الإدارة", style = AppText.body.copy(fontSize = 11.5.sp)) },
                     )
                 }
@@ -676,8 +719,17 @@ fun VaultWalletScreen(
 
                 Button(
                     onClick = {
-                        onBuyFractionalGold(selectedKarat, selectedMg, payWithWallet)
-                        showBuySheet = false
+                        when {
+                            selectedMg <= 0L -> sheetError = "الرجاء إدخال وزن صحيح أكبر من 0 ملجم."
+                            payWithWallet && wallet.cashAvailablePiasters < estimatedTotalPiasters ->
+                                sheetError = "رصيد المحفظة النقدية غير كافٍ (${MoneyUtils.piastersToEgpString(estimatedTotalPiasters)} ج.م مطلوب)."
+                            else -> {
+                                sheetError = null
+                                onBuyFractionalGold(selectedKarat, selectedMg, payWithWallet) {
+                                    showBuySheet = false
+                                }
+                            }
+                        }
                     },
                     enabled = selectedMg > 0L && !uiState.isActionBusy,
                     modifier = Modifier
@@ -705,25 +757,49 @@ fun VaultWalletScreen(
         var mgInput by remember { mutableStateOf("1000") }
         var deliveryType by remember { mutableStateOf(WithdrawalDeliveryType.PICKUP_HUB) }
         var addressInput by remember { mutableStateOf("فرع King Gold الرئيسي — المعادي") }
+        var sheetError by remember { mutableStateOf<String?>(null) }
 
         ModalBottomSheet(
-            onDismissRequest = { showWithdrawSheet = false },
+            onDismissRequest = {
+                sheetError = null
+                onClearMessages()
+                showWithdrawSheet = false
+            },
             sheetState = sheetState,
             containerColor = Color.White,
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = 20.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Text("طلب سحب ذهب فعلي (بحد أدنى 1000 ملجم)", style = AppText.display.copy(fontSize = 18.sp))
+
+                val visibleWithdrawError = sheetError ?: uiState.actionErrorMessage
+                if (visibleWithdrawError != null) {
+                    Text(
+                        text = visibleWithdrawError,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(AppColors.AlertSoft)
+                            .padding(10.dp)
+                            .testTag("vault_withdraw_sheet_error"),
+                        style = AppText.body.copy(color = AppColors.Alert, fontWeight = FontWeight.Bold, fontSize = 12.sp),
+                    )
+                }
+
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(24, 21, 18).forEach { k ->
                         val held = wallet.confirmedMgForKarat(k)
                         FilterChip(
                             selected = selectedKarat == k,
-                            onClick = { selectedKarat = k },
+                            onClick = {
+                                selectedKarat = k
+                                sheetError = null
+                            },
                             enabled = held >= MoneyUtils.MIN_PHYSICAL_WITHDRAWAL_MG,
                             label = { Text("عيار $k ($held ملجم)") },
                         )
@@ -731,7 +807,10 @@ fun VaultWalletScreen(
                 }
                 OutlinedTextField(
                     value = mgInput,
-                    onValueChange = { mgInput = it.filter { ch -> ch.isDigit() } },
+                    onValueChange = {
+                        mgInput = it.filter { ch -> ch.isDigit() }
+                        sheetError = null
+                    },
                     label = { Text("الوزن بالملليجرام (الحد الأدنى 1000)") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
@@ -748,15 +827,31 @@ fun VaultWalletScreen(
                 }
                 OutlinedTextField(
                     value = addressInput,
-                    onValueChange = { addressInput = it },
+                    onValueChange = {
+                        addressInput = it
+                        sheetError = null
+                    },
                     label = { Text("الفرع أو عنوان التوصيل المؤمّن") },
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Button(
                     onClick = {
                         val amt = mgInput.toLongOrNull() ?: 0L
-                        onRequestWithdrawal(selectedKarat, amt, deliveryType, addressInput)
-                        showWithdrawSheet = false
+                        val karatHeld = wallet.confirmedMgForKarat(selectedKarat)
+                        when {
+                            amt < MoneyUtils.MIN_PHYSICAL_WITHDRAWAL_MG ->
+                                sheetError = "الحد الأدنى لاستلام الذهب الفعلي هو 1.000 جرام (1000 ملجم)."
+                            wallet.goldAvailableMg < amt || karatHeld < amt ->
+                                sheetError = "رصيد عيار $selectedKarat المتاح غير كافٍ لسحب ${MoneyUtils.mgToGramsString(amt)}."
+                            addressInput.trim().length < 4 ->
+                                sheetError = "يرجى إدخال عنوان التوصيل أو اسم فرع الاستلام بوضوح."
+                            else -> {
+                                sheetError = null
+                                onRequestWithdrawal(selectedKarat, amt, deliveryType, addressInput) {
+                                    showWithdrawSheet = false
+                                }
+                            }
+                        }
                     },
                     enabled = (mgInput.toLongOrNull() ?: 0L) >= MoneyUtils.MIN_PHYSICAL_WITHDRAWAL_MG && !uiState.isActionBusy,
                     modifier = Modifier
@@ -778,15 +873,21 @@ fun VaultWalletScreen(
         var amountEgpText by remember { mutableStateOf("5000") }
         var selectedChannel by remember { mutableStateOf("InstaPay") }
         var refText by remember { mutableStateOf("") }
+        var sheetError by remember { mutableStateOf<String?>(null) }
 
         ModalBottomSheet(
-            onDismissRequest = { showDepositSheet = false },
+            onDismissRequest = {
+                sheetError = null
+                onClearMessages()
+                showDepositSheet = false
+            },
             sheetState = sheetState,
             containerColor = Color.White,
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = 20.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
@@ -795,6 +896,21 @@ fun VaultWalletScreen(
                     "أدخل بيانات التحويل ليتم اعتماد المبلغ من إدارة المنصة وإضافته لمحفظتك.",
                     style = AppText.body.copy(color = AppColors.Muted, fontSize = 12.sp),
                 )
+
+                val visibleDepositError = sheetError ?: uiState.actionErrorMessage
+                if (visibleDepositError != null) {
+                    Text(
+                        text = visibleDepositError,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(AppColors.AlertSoft)
+                            .padding(10.dp)
+                            .testTag("vault_deposit_sheet_error"),
+                        style = AppText.body.copy(color = AppColors.Alert, fontWeight = FontWeight.Bold, fontSize = 12.sp),
+                    )
+                }
+
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf("InstaPay", "تحويل بنكي", "Vodafone Cash").forEach { ch ->
                         FilterChip(
@@ -806,24 +922,44 @@ fun VaultWalletScreen(
                 }
                 OutlinedTextField(
                     value = amountEgpText,
-                    onValueChange = { amountEgpText = it },
+                    onValueChange = {
+                        amountEgpText = it
+                        sheetError = null
+                    },
                     label = { Text("المبلغ بالجنيه المصري (بحد أدنى 10 ج.م)") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("deposit_amount_input"),
                     singleLine = true,
                 )
                 OutlinedTextField(
                     value = refText,
-                    onValueChange = { refText = it },
+                    onValueChange = {
+                        refText = it
+                        sheetError = null
+                    },
                     label = { Text("رقم المرجع / العملية") },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("deposit_reference_input"),
                     singleLine = true,
                 )
                 Button(
                     onClick = {
                         val piasters = MoneyUtils.egpStringToPiasters(amountEgpText) ?: 0L
-                        onSubmitDepositRequest(piasters, selectedChannel, refText)
-                        showDepositSheet = false
+                        when {
+                            piasters < 1000L ->
+                                sheetError = "الحد الأدنى لطلب الإيداع هو 10.00 ج.م."
+                            refText.trim().length < 3 ->
+                                sheetError = "يرجى إدخال مرجع التحويل المالي."
+                            else -> {
+                                sheetError = null
+                                onSubmitDepositRequest(piasters, selectedChannel, refText) {
+                                    showDepositSheet = false
+                                }
+                            }
+                        }
                     },
                     enabled = !uiState.isActionBusy,
                     modifier = Modifier

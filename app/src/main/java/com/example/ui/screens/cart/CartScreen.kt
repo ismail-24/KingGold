@@ -69,6 +69,7 @@ fun CartScreen(
     onSelectPickupSlot: (Int) -> Unit,
     onRefreshPriceLock: () -> Unit,
     onProceedToCheckout: () -> Unit,
+    onBrowseShops: () -> Unit = onBack,
 ) {
     val mm = (uiState.priceLockSecondsRemaining / 60).toString().padStart(2, '0')
     val ss = (uiState.priceLockSecondsRemaining % 60).toString().padStart(2, '0')
@@ -170,6 +171,27 @@ fun CartScreen(
                         text = "اختار قطعة ذهب من أي محل موثّق عشان تثبّت سعرها.",
                         style = AppText.body.copy(color = AppColors.Muted),
                     )
+                    Spacer(modifier = Modifier.height(18.dp))
+                    Button(
+                        onClick = onBrowseShops,
+                        modifier = Modifier
+                            .height(48.dp)
+                            .testTag("cart_browse_shops_button"),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = AppColors.Ink,
+                            contentColor = AppColors.BrassLight,
+                        ),
+                    ) {
+                        Text(
+                            text = "استكشف المحلات",
+                            style = AppText.body.copy(
+                                color = AppColors.BrassLight,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.5.sp,
+                            ),
+                        )
+                    }
                 }
             } else {
                 LazyColumn(

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -173,11 +174,13 @@ private fun OrderTabChip(
 ) {
     Box(
         modifier = Modifier
+            .heightIn(min = 48.dp)
             .clip(RoundedCornerShape(20.dp))
             .background(if (selected) AppColors.Ink else Color.White)
             .border(1.dp, if (selected) AppColors.Ink else AppColors.Line, RoundedCornerShape(20.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 9.dp),
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center,
     ) {
         Text(
             text = label,

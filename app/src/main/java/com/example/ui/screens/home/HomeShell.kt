@@ -38,62 +38,33 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.model.GoldOrder
-import com.example.model.SellGoldRequest
-import com.example.model.Shop
-import com.example.model.ShopSortOption
-import com.example.model.WithdrawalDeliveryType
-import com.example.ui.screens.sell.SellGoldScreen
-import com.example.ui.screens.vault.VaultWalletScreen
-import com.example.ui.state.KingGoldUiState
 import com.example.ui.theme.AppColors
 import com.example.ui.theme.AppText
 
 enum class HomeTab(
+    val route: String,
     val label: String,
     val selectedIcon: ImageVector,
     val unselectedIcon: ImageVector,
     val tag: String,
 ) {
-    DISCOVER("استكشف", Icons.Filled.Explore, Icons.Outlined.Explore, "tab_discover"),
-    VAULT("خزنتي", Icons.Filled.AccountBalanceWallet, Icons.Outlined.AccountBalanceWallet, "tab_vault"),
-    SELL_GOLD("بيع ذهبك", Icons.Filled.Sell, Icons.Outlined.Sell, "tab_sell_gold"),
-    ORDERS("طلباتي", Icons.Filled.ReceiptLong, Icons.Outlined.ReceiptLong, "tab_orders"),
-    ACCOUNT("حسابي", Icons.Filled.Person, Icons.Outlined.Person, "tab_account"),
+    DISCOVER("home", "استكشف", Icons.Filled.Explore, Icons.Outlined.Explore, "tab_discover"),
+    VAULT("vault", "خزنتي", Icons.Filled.AccountBalanceWallet, Icons.Outlined.AccountBalanceWallet, "tab_vault"),
+    SELL_GOLD("sell_gold", "بيع ذهبك", Icons.Filled.Sell, Icons.Outlined.Sell, "tab_sell_gold"),
+    ORDERS("orders", "طلباتي", Icons.Filled.ReceiptLong, Icons.Outlined.ReceiptLong, "tab_orders"),
+    ACCOUNT("account", "حسابي", Icons.Filled.Person, Icons.Outlined.Person, "tab_account"),
+    ;
+
+    companion object {
+        fun fromRoute(route: String?): HomeTab? = entries.firstOrNull { it.route == route }
+    }
 }
 
 @Composable
-fun HomeShell(
-    selectedTab: HomeTab,
+fun HomeNavigationShell(
+    selectedTab: HomeTab?,
     onSelectTab: (HomeTab) -> Unit,
-    uiState: KingGoldUiState,
-    onSearchChange: (String) -> Unit,
-    onApplyFilters: (karat: Int?, verifiedOnly: Boolean, sort: ShopSortOption) -> Unit,
-    onOpenPriceInsight: () -> Unit,
-    onOpenAiAdvisor: (String?) -> Unit,
-    onRefreshGlobalGoldPrices: () -> Unit,
-    onOpenCart: () -> Unit,
-    onOpenShop: (Shop) -> Unit,
-    onToggleFavoriteShop: (String) -> Unit,
-    onToggleFavoritesOnlyFilter: (Boolean) -> Unit,
-    onOpenOrder: (GoldOrder) -> Unit,
-    onOpenProfile: () -> Unit = {},
-    onOpenMerchantPortal: () -> Unit = {},
-    onOpenMerchantRegistration: () -> Unit = {},
-    onOpenAdminCenter: () -> Unit = {},
-    onOpenAdminApproval: () -> Unit = {},
-    onOpenSupport: () -> Unit = {},
-    onBuyFractionalGold: (karat: Int, weightMg: Long, payWithWallet: Boolean) -> Unit,
-    onRequestWithdrawal: (karat: Int, amountMg: Long, deliveryType: WithdrawalDeliveryType, address: String) -> Unit,
-    onSubmitDepositRequest: (amountPiasters: Long, channel: String, reference: String) -> Unit,
-    onSubmitSellGoldRequest: (itemTitle: String, category: String, karat: Int, estimatedWeightMg: Long, conditionNotes: String, photoThumbnails: List<String>) -> Unit,
-    onCancelSellGoldRequest: (String) -> Unit,
-    onAcceptSellGoldOffer: (SellGoldRequest) -> Unit,
-    onClearActionMessages: () -> Unit,
-    onOpenKyc: () -> Unit,
-    onSelectPaymentMethod: (String) -> Unit,
-    onDismissSyncError: () -> Unit,
-    onLogout: () -> Unit,
+    content: @Composable () -> Unit,
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val useRail = maxWidth >= 600.dp
@@ -104,90 +75,14 @@ fun HomeShell(
                     .fillMaxSize()
                     .background(AppColors.Parchment),
             ) {
-                NavigationRail(
-                    containerColor = Color.White,
-                    modifier = Modifier.fillMaxHeight(),
-                ) {
-                    HomeTab.entries.forEach { tab ->
-                        val selected = tab == selectedTab
-                        NavigationRailItem(
-                            selected = selected,
-                            onClick = { onSelectTab(tab) },
-                            modifier = Modifier.testTag(tab.tag),
-                            icon = {
-                                Icon(
-                                    imageVector = if (selected) tab.selectedIcon else tab.unselectedIcon,
-                                    contentDescription = tab.label,
-                                )
-                            },
-                            label = {
-                                Text(
-                                    text = tab.label,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    style = AppText.body.copy(
-                                        fontSize = 10.5.sp,
-                                        fontWeight = FontWeight.Bold,
-                                    ),
-                                )
-                            },
-                            colors = NavigationRailItemDefaults.colors(
-                                selectedIconColor = AppColors.Brass,
-                                selectedTextColor = AppColors.Brass,
-                                unselectedIconColor = AppColors.Muted,
-                                unselectedTextColor = AppColors.Muted,
-                                indicatorColor = AppColors.Brass.copy(alpha = 0.15f),
-                            ),
-                        )
-                    }
-                }
-                Box(modifier = Modifier.weight(1f)) {
-                    HomeTabContent(
-                        selectedTab = selectedTab,
-                        onSelectTab = onSelectTab,
-                        uiState = uiState,
-                        onSearchChange = onSearchChange,
-                        onApplyFilters = onApplyFilters,
-                        onOpenPriceInsight = onOpenPriceInsight,
-                        onOpenAiAdvisor = onOpenAiAdvisor,
-                        onRefreshGlobalGoldPrices = onRefreshGlobalGoldPrices,
-                        onOpenCart = onOpenCart,
-                        onOpenShop = onOpenShop,
-                        onToggleFavoriteShop = onToggleFavoriteShop,
-                        onToggleFavoritesOnlyFilter = onToggleFavoritesOnlyFilter,
-                        onOpenOrder = onOpenOrder,
-                        onOpenProfile = onOpenProfile,
-                        onOpenMerchantPortal = onOpenMerchantPortal,
-                        onOpenMerchantRegistration = onOpenMerchantRegistration,
-                        onOpenAdminCenter = onOpenAdminCenter,
-                        onOpenAdminApproval = onOpenAdminApproval,
-                        onOpenSupport = onOpenSupport,
-                        onBuyFractionalGold = onBuyFractionalGold,
-                        onRequestWithdrawal = onRequestWithdrawal,
-                        onSubmitDepositRequest = onSubmitDepositRequest,
-                        onSubmitSellGoldRequest = onSubmitSellGoldRequest,
-                        onCancelSellGoldRequest = onCancelSellGoldRequest,
-                        onAcceptSellGoldOffer = onAcceptSellGoldOffer,
-                        onClearActionMessages = onClearActionMessages,
-                        onOpenKyc = onOpenKyc,
-                        onSelectPaymentMethod = onSelectPaymentMethod,
-                        onDismissSyncError = onDismissSyncError,
-                        onLogout = onLogout,
-                    )
-                }
-            }
-        } else {
-            Scaffold(
-                containerColor = AppColors.Parchment,
-                contentWindowInsets = WindowInsets(0, 0, 0, 0),
-                bottomBar = {
-                    NavigationBar(
+                if (selectedTab != null) {
+                    NavigationRail(
                         containerColor = Color.White,
-                        windowInsets = WindowInsets.navigationBars,
+                        modifier = Modifier.fillMaxHeight(),
                     ) {
                         HomeTab.entries.forEach { tab ->
                             val selected = tab == selectedTab
-                            NavigationBarItem(
+                            NavigationRailItem(
                                 selected = selected,
                                 onClick = { onSelectTab(tab) },
                                 modifier = Modifier.testTag(tab.tag),
@@ -203,12 +98,12 @@ fun HomeShell(
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                         style = AppText.body.copy(
-                                            fontSize = 10.sp,
+                                            fontSize = 10.5.sp,
                                             fontWeight = FontWeight.Bold,
                                         ),
                                     )
                                 },
-                                colors = NavigationBarItemDefaults.colors(
+                                colors = NavigationRailItemDefaults.colors(
                                     selectedIconColor = AppColors.Brass,
                                     selectedTextColor = AppColors.Brass,
                                     unselectedIconColor = AppColors.Muted,
@@ -218,6 +113,55 @@ fun HomeShell(
                             )
                         }
                     }
+                }
+                Box(modifier = Modifier.weight(1f)) {
+                    content()
+                }
+            }
+        } else {
+            Scaffold(
+                containerColor = AppColors.Parchment,
+                contentWindowInsets = WindowInsets(0, 0, 0, 0),
+                bottomBar = {
+                    if (selectedTab != null) {
+                        NavigationBar(
+                            containerColor = Color.White,
+                            windowInsets = WindowInsets.navigationBars,
+                        ) {
+                            HomeTab.entries.forEach { tab ->
+                                val selected = tab == selectedTab
+                                NavigationBarItem(
+                                    selected = selected,
+                                    onClick = { onSelectTab(tab) },
+                                    modifier = Modifier.testTag(tab.tag),
+                                    icon = {
+                                        Icon(
+                                            imageVector = if (selected) tab.selectedIcon else tab.unselectedIcon,
+                                            contentDescription = tab.label,
+                                        )
+                                    },
+                                    label = {
+                                        Text(
+                                            text = tab.label,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            style = AppText.body.copy(
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                            ),
+                                        )
+                                    },
+                                    colors = NavigationBarItemDefaults.colors(
+                                        selectedIconColor = AppColors.Brass,
+                                        selectedTextColor = AppColors.Brass,
+                                        unselectedIconColor = AppColors.Muted,
+                                        unselectedTextColor = AppColors.Muted,
+                                        indicatorColor = AppColors.Brass.copy(alpha = 0.15f),
+                                    ),
+                                )
+                            }
+                        }
+                    }
                 },
             ) { padding ->
                 Box(
@@ -225,129 +169,9 @@ fun HomeShell(
                         .fillMaxSize()
                         .padding(padding),
                 ) {
-                    HomeTabContent(
-                        selectedTab = selectedTab,
-                        onSelectTab = onSelectTab,
-                        uiState = uiState,
-                        onSearchChange = onSearchChange,
-                        onApplyFilters = onApplyFilters,
-                        onOpenPriceInsight = onOpenPriceInsight,
-                        onOpenAiAdvisor = onOpenAiAdvisor,
-                        onRefreshGlobalGoldPrices = onRefreshGlobalGoldPrices,
-                        onOpenCart = onOpenCart,
-                        onOpenShop = onOpenShop,
-                        onToggleFavoriteShop = onToggleFavoriteShop,
-                        onToggleFavoritesOnlyFilter = onToggleFavoritesOnlyFilter,
-                        onOpenOrder = onOpenOrder,
-                        onOpenProfile = onOpenProfile,
-                        onOpenMerchantPortal = onOpenMerchantPortal,
-                        onOpenMerchantRegistration = onOpenMerchantRegistration,
-                        onOpenAdminCenter = onOpenAdminCenter,
-                        onOpenAdminApproval = onOpenAdminApproval,
-                        onOpenSupport = onOpenSupport,
-                        onBuyFractionalGold = onBuyFractionalGold,
-                        onRequestWithdrawal = onRequestWithdrawal,
-                        onSubmitDepositRequest = onSubmitDepositRequest,
-                        onSubmitSellGoldRequest = onSubmitSellGoldRequest,
-                        onCancelSellGoldRequest = onCancelSellGoldRequest,
-                        onAcceptSellGoldOffer = onAcceptSellGoldOffer,
-                        onClearActionMessages = onClearActionMessages,
-                        onOpenKyc = onOpenKyc,
-                        onSelectPaymentMethod = onSelectPaymentMethod,
-                        onDismissSyncError = onDismissSyncError,
-                        onLogout = onLogout,
-                    )
+                    content()
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun HomeTabContent(
-    selectedTab: HomeTab,
-    onSelectTab: (HomeTab) -> Unit,
-    uiState: KingGoldUiState,
-    onSearchChange: (String) -> Unit,
-    onApplyFilters: (karat: Int?, verifiedOnly: Boolean, sort: ShopSortOption) -> Unit,
-    onOpenPriceInsight: () -> Unit,
-    onOpenAiAdvisor: (String?) -> Unit,
-    onRefreshGlobalGoldPrices: () -> Unit,
-    onOpenCart: () -> Unit,
-    onOpenShop: (Shop) -> Unit,
-    onToggleFavoriteShop: (String) -> Unit,
-    onToggleFavoritesOnlyFilter: (Boolean) -> Unit,
-    onOpenOrder: (GoldOrder) -> Unit,
-    onOpenProfile: () -> Unit,
-    onOpenMerchantPortal: () -> Unit,
-    onOpenMerchantRegistration: () -> Unit,
-    onOpenAdminCenter: () -> Unit,
-    onOpenAdminApproval: () -> Unit,
-    onOpenSupport: () -> Unit,
-    onBuyFractionalGold: (karat: Int, weightMg: Long, payWithWallet: Boolean) -> Unit,
-    onRequestWithdrawal: (karat: Int, amountMg: Long, deliveryType: WithdrawalDeliveryType, address: String) -> Unit,
-    onSubmitDepositRequest: (amountPiasters: Long, channel: String, reference: String) -> Unit,
-    onSubmitSellGoldRequest: (itemTitle: String, category: String, karat: Int, estimatedWeightMg: Long, conditionNotes: String, photoThumbnails: List<String>) -> Unit,
-    onCancelSellGoldRequest: (String) -> Unit,
-    onAcceptSellGoldOffer: (SellGoldRequest) -> Unit,
-    onClearActionMessages: () -> Unit,
-    onOpenKyc: () -> Unit,
-    onSelectPaymentMethod: (String) -> Unit,
-    onDismissSyncError: () -> Unit,
-    onLogout: () -> Unit,
-) {
-    when (selectedTab) {
-        HomeTab.DISCOVER -> DiscoverScreen(
-            uiState = uiState,
-            onSearchChange = onSearchChange,
-            onApplyFilters = onApplyFilters,
-            onOpenPriceInsight = onOpenPriceInsight,
-            onOpenAiAdvisor = onOpenAiAdvisor,
-            onRefreshGlobalGoldPrices = onRefreshGlobalGoldPrices,
-            onOpenCart = onOpenCart,
-            onOpenShop = onOpenShop,
-            onToggleFavoriteShop = onToggleFavoriteShop,
-            onToggleFavoritesOnlyFilter = onToggleFavoritesOnlyFilter,
-            onOpenProfile = onOpenProfile,
-            onOpenVault = { onSelectTab(HomeTab.VAULT) },
-            onOpenSellGold = { onSelectTab(HomeTab.SELL_GOLD) },
-            onOpenMerchantPortal = onOpenMerchantPortal,
-            onOpenAdminCenter = onOpenAdminCenter,
-            onOpenSupport = onOpenSupport,
-            onDismissSyncError = onDismissSyncError,
-        )
-        HomeTab.VAULT -> VaultWalletScreen(
-            uiState = uiState,
-            onBuyFractionalGold = onBuyFractionalGold,
-            onRequestWithdrawal = onRequestWithdrawal,
-            onSubmitDepositRequest = onSubmitDepositRequest,
-            onClearMessages = onClearActionMessages,
-        )
-        HomeTab.SELL_GOLD -> SellGoldScreen(
-            uiState = uiState,
-            onSubmitRequest = onSubmitSellGoldRequest,
-            onCancelRequest = onCancelSellGoldRequest,
-            onAcceptOffer = onAcceptSellGoldOffer,
-            onClearMessages = onClearActionMessages,
-        )
-        HomeTab.ORDERS -> OrdersScreen(
-            uiState = uiState,
-            onOrderClick = onOpenOrder,
-        )
-        HomeTab.ACCOUNT -> AccountScreen(
-            uiState = uiState,
-            onOpenProfile = onOpenProfile,
-            onOpenVault = { onSelectTab(HomeTab.VAULT) },
-            onOpenSellGold = { onSelectTab(HomeTab.SELL_GOLD) },
-            onOpenMerchantPortal = onOpenMerchantPortal,
-            onOpenMerchantRegistration = onOpenMerchantRegistration,
-            onOpenAdminCenter = onOpenAdminCenter,
-            onOpenAdminApproval = onOpenAdminApproval,
-            onOpenSupport = onOpenSupport,
-            onOpenKyc = onOpenKyc,
-            onOpenPriceAlerts = onOpenPriceInsight,
-            onSelectPaymentMethod = onSelectPaymentMethod,
-            onLogout = onLogout,
-        )
     }
 }

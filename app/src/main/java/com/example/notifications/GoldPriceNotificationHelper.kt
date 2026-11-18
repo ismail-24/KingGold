@@ -17,6 +17,7 @@ import java.util.Locale
 
 object GoldPriceNotificationHelper {
 
+    const val EXTRA_TARGET_ROUTE = "extra_target_route"
     private const val NOTIFICATION_ID_24K_DROP = 2401
 
     fun hasNotificationPermission(context: Context): Boolean {
@@ -80,7 +81,10 @@ object GoldPriceNotificationHelper {
             ?: "وصل عيار 24 إلى $formattedPrice ج.م/جم (أقل من الحد المحدد $formattedThreshold ج.م)."
 
         val launchIntent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra(EXTRA_TARGET_ROUTE, "price_insight")
         }
         val contentIntent = PendingIntent.getActivity(
             context,

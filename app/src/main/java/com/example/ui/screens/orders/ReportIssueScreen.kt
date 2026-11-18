@@ -107,7 +107,15 @@ fun ReportIssueScreen(
                     contentAlignment = Alignment.Center,
                 ) {
                     Button(
-                        onClick = { onSubmitReport(selectedReason) },
+                        onClick = {
+                            val trimmedDetails = details.trim()
+                            val combinedReason = if (trimmedDetails.isNotEmpty()) {
+                                "$selectedReason — $trimmedDetails"
+                            } else {
+                                selectedReason
+                            }
+                            onSubmitReport(combinedReason)
+                        },
                         modifier = Modifier
                             .widthIn(max = 560.dp)
                             .fillMaxWidth()
@@ -214,7 +222,9 @@ fun ReportIssueScreen(
                     OutlinedTextField(
                         value = details,
                         onValueChange = { details = it },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("report_details_input"),
                         minLines = 3,
                         placeholder = {
                             Text(
