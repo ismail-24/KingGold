@@ -68,6 +68,9 @@ object KingGoldRepository {
             closesAt = "9:00 م",
             workingHours = "السبت – الخميس: 10:00 ص – 9:00 م\nالجمعة: 2:00 م – 9:00 م",
             makingFeePerGram = 90.0,
+            city = "القاهرة",
+            latitude = 29.9602,
+            longitude = 31.2569,
         ),
         Shop(
             id = "s2",
@@ -82,6 +85,9 @@ object KingGoldRepository {
             closesAt = "10:00 م",
             workingHours = "يومياً: 11:00 ص – 10:00 م",
             makingFeePerGram = 95.0,
+            city = "القاهرة",
+            latitude = 29.9631,
+            longitude = 31.2612,
         ),
         Shop(
             id = "s3",
@@ -96,6 +102,9 @@ object KingGoldRepository {
             closesAt = "8:00 م",
             workingHours = "السبت – الخميس: 10:30 ص – 8:00 م\nالجمعة: مغلق",
             makingFeePerGram = 100.0,
+            city = "القاهرة",
+            latitude = 29.9565,
+            longitude = 31.2495,
         ),
     )
 

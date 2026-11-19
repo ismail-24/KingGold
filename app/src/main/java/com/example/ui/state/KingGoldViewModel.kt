@@ -142,6 +142,7 @@ data class KingGoldUiState(
                     shopProducts.any { it.karat == selectedKaratFilter }
                 val matchesQuery = q.isEmpty() ||
                     shop.name.lowercase().contains(q) ||
+                    shop.city.lowercase().contains(q) ||
                     shop.area.lowercase().contains(q) ||
                     shop.address.lowercase().contains(q) ||
                     shopProducts.any { it.name.lowercase().contains(q) }

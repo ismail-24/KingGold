@@ -34,6 +34,9 @@ data class Shop(
     val makingFeePerGram: Double,
     val ownerUid: String = "",
     val isDynamicMerchant: Boolean = false,
+    val city: String = "القاهرة",
+    val latitude: Double = 0.0,
+    val longitude: Double = 0.0,
 )
 
 data class Product(

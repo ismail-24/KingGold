@@ -13,12 +13,16 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.example.MainActivity
 import com.example.R
+import com.example.ui.navigation.Routes
 import java.util.Locale
+import kotlin.math.abs
 
 object GoldPriceNotificationHelper {
 
     const val EXTRA_TARGET_ROUTE = "extra_target_route"
     private const val NOTIFICATION_ID_24K_DROP = 2401
+    private const val NOTIFICATION_ID_FLUCTUATION = 2402
+    private const val NOTIFICATION_ID_SHOP_OFFER_BASE = 2500
 
     fun hasNotificationPermission(context: Context): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return true
@@ -29,21 +33,32 @@ object GoldPriceNotificationHelper {
     }
 
     fun ensureNotificationChannel(context: Context) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        val channelId = context.getString(R.string.fcm_price_alert_channel_id)
-        val channelName = context.getString(R.string.fcm_price_alert_channel_name)
-        val channelDesc = context.getString(R.string.fcm_price_alert_channel_desc)
+        ensureAllNotificationChannels(context)
+    }
 
-        val channel = NotificationChannel(
-            channelId,
-            channelName,
+    fun ensureAllNotificationChannels(context: Context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val manager = context.getSystemService(NotificationManager::class.java) ?: return
+
+        val priceChannel = NotificationChannel(
+            context.getString(R.string.fcm_price_alert_channel_id),
+            context.getString(R.string.fcm_price_alert_channel_name),
             NotificationManager.IMPORTANCE_HIGH,
         ).apply {
-            description = channelDesc
+            description = context.getString(R.string.fcm_price_alert_channel_desc)
             enableVibration(true)
         }
-        val manager = context.getSystemService(NotificationManager::class.java)
-        manager?.createNotificationChannel(channel)
+
+        val offerChannel = NotificationChannel(
+            context.getString(R.string.fcm_shop_offer_channel_id),
+            context.getString(R.string.fcm_shop_offer_channel_name),
+            NotificationManager.IMPORTANCE_HIGH,
+        ).apply {
+            description = context.getString(R.string.fcm_shop_offer_channel_desc)
+            enableVibration(true)
+        }
+
+        manager.createNotificationChannels(listOf(priceChannel, offerChannel))
     }
 
     fun shouldTrigger24KDropAlert(
@@ -61,6 +76,16 @@ object GoldPriceNotificationHelper {
         return if (current24KPrice < threshold) threshold else null
     }
 
+    fun buildLaunchIntent(context: Context, targetRoute: String): Intent {
+        val safeRoute = targetRoute.takeIf { Routes.isSupportedInternalRoute(it) } ?: Routes.HOME
+        return Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra(EXTRA_TARGET_ROUTE, safeRoute)
+        }
+    }
+
     fun show24KPriceDropAlert(
         context: Context,
         currentPriceEgp: Double,
@@ -68,7 +93,7 @@ object GoldPriceNotificationHelper {
         customTitle: String? = null,
         customBody: String? = null,
     ): Boolean {
-        ensureNotificationChannel(context)
+        ensureAllNotificationChannels(context)
         if (!hasNotificationPermission(context)) return false
 
         val channelId = context.getString(R.string.fcm_price_alert_channel_id)
@@ -80,15 +105,88 @@ object GoldPriceNotificationHelper {
         val body = customBody?.takeIf { it.isNotBlank() }
             ?: "وصل عيار 24 إلى $formattedPrice ج.م/جم (أقل من الحد المحدد $formattedThreshold ج.م)."
 
-        val launchIntent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
-                Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                Intent.FLAG_ACTIVITY_SINGLE_TOP
-            putExtra(EXTRA_TARGET_ROUTE, "price_insight")
-        }
+        return postNotification(
+            context = context,
+            channelId = channelId,
+            notificationId = NOTIFICATION_ID_24K_DROP,
+            title = title,
+            body = body,
+            targetRoute = Routes.PRICE_INSIGHT,
+        )
+    }
+
+    fun showPriceFluctuationAlert(
+        context: Context,
+        karat: Int,
+        currentPriceEgp: Double,
+        changePercent: Double,
+        customTitle: String? = null,
+        customBody: String? = null,
+    ): Boolean {
+        ensureAllNotificationChannels(context)
+        if (!hasNotificationPermission(context)) return false
+
+        val channelId = context.getString(R.string.fcm_price_alert_channel_id)
+        val direction = if (changePercent >= 0) "ارتفع" else "انخفض"
+        val formattedPrice = String.format(Locale.US, "%,.0f", currentPriceEgp)
+        val formattedChange = String.format(Locale.US, "%.2f", abs(changePercent))
+
+        val title = customTitle?.takeIf { it.isNotBlank() }
+            ?: "تحرك ملحوظ في سعر الذهب عيار $karat"
+        val body = customBody?.takeIf { it.isNotBlank() }
+            ?: "$direction سعر عيار $karat بنسبة $formattedChange% ليصل إلى $formattedPrice ج.م/جم."
+
+        return postNotification(
+            context = context,
+            channelId = channelId,
+            notificationId = NOTIFICATION_ID_FLUCTUATION,
+            title = title,
+            body = body,
+            targetRoute = Routes.PRICE_INSIGHT,
+        )
+    }
+
+    fun showNearbyShopOfferAlert(
+        context: Context,
+        shopId: String,
+        shopName: String,
+        offerTitle: String? = null,
+        offerBody: String? = null,
+    ): Boolean {
+        ensureAllNotificationChannels(context)
+        if (!hasNotificationPermission(context)) return false
+
+        val channelId = context.getString(R.string.fcm_shop_offer_channel_id)
+        val cleanShopName = shopName.ifBlank { "محل ذهب قريب" }
+        val title = offerTitle?.takeIf { it.isNotBlank() }
+            ?: "عرض خاص من $cleanShopName"
+        val body = offerBody?.takeIf { it.isNotBlank() }
+            ?: "خصم حصري على المصنعية لفترة محدودة لدى $cleanShopName القريب منك."
+        val targetRoute = if (shopId.isNotBlank()) Routes.shopDetail(shopId) else Routes.HOME
+        val notificationId = NOTIFICATION_ID_SHOP_OFFER_BASE + (shopId.hashCode() and 0x0FFF)
+
+        return postNotification(
+            context = context,
+            channelId = channelId,
+            notificationId = notificationId,
+            title = title,
+            body = body,
+            targetRoute = targetRoute,
+        )
+    }
+
+    private fun postNotification(
+        context: Context,
+        channelId: String,
+        notificationId: Int,
+        title: String,
+        body: String,
+        targetRoute: String,
+    ): Boolean {
+        val launchIntent = buildLaunchIntent(context, targetRoute)
         val contentIntent = PendingIntent.getActivity(
             context,
-            NOTIFICATION_ID_24K_DROP,
+            notificationId,
             launchIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
@@ -104,7 +202,7 @@ object GoldPriceNotificationHelper {
             .build()
 
         return try {
-            NotificationManagerCompat.from(context).notify(NOTIFICATION_ID_24K_DROP, notification)
+            NotificationManagerCompat.from(context).notify(notificationId, notification)
             true
         } catch (_: SecurityException) {
             false

@@ -30,6 +30,9 @@ data class MerchantStore(
     val prepaidMakingApproved: Boolean = false,
     val prepaidMakingBudgetPiasters: Long = 0L,
     val pricingPolicyNote: String? = null,
+    val city: String = "القاهرة",
+    val latitude: Double = 0.0,
+    val longitude: Double = 0.0,
 ) {
     fun toShop(): Shop = Shop(
         id = id,
@@ -45,6 +48,9 @@ data class MerchantStore(
         makingFeePerGram = 0.0,
         ownerUid = ownerUid,
         isDynamicMerchant = true,
+        city = city,
+        latitude = latitude,
+        longitude = longitude,
     )
 }
 

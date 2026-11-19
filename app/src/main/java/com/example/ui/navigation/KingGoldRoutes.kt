@@ -21,6 +21,7 @@ object Routes {
     const val ADMIN_CENTER = "admin_center"
     const val ADMIN_APPROVAL = "admin_approval"
     const val PRICE_INSIGHT = "price_insight"
+    const val GOLD_CALCULATOR = "gold_calculator"
     const val AI_ADVISOR = "ai_advisor?prompt={prompt}"
     const val CART = "cart"
     const val CHECKOUT = "checkout"
@@ -67,6 +68,7 @@ object Routes {
         ADMIN_CENTER,
         ADMIN_APPROVAL,
         PRICE_INSIGHT,
+        GOLD_CALCULATOR,
         CART,
         CHECKOUT,
         "ai_advisor",

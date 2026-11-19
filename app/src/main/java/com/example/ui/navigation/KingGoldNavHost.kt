@@ -225,6 +225,7 @@ fun KingGoldNavHost(
                             vm.clearActionMessages()
                             navController.navigateToHomeTab(HomeTab.SELL_GOLD, isAuthorized)
                         },
+                        onOpenGoldCalculator = { navController.navigateSingleTop(Routes.GOLD_CALCULATOR, isAuthorized) },
                         onOpenMerchantPortal = { navController.navigateSingleTop(Routes.MERCHANT_PORTAL, isAuthorized) },
                         onOpenAdminCenter = { navController.navigateSingleTop(Routes.ADMIN_CENTER, isAuthorized) },
                         onOpenSupport = { navController.navigateSingleTop(Routes.SUPPORT, isAuthorized) },

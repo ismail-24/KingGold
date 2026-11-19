@@ -123,6 +123,7 @@ dependencies {
   // implementation(libs.logging.interceptor)
   // implementation(libs.moshi.kotlin)
   implementation(libs.okhttp)
+  implementation(libs.osmdroid.android)
   implementation(libs.vico.compose.m3)
   // implementation(libs.play.services.location)
   // implementation(libs.retrofit)

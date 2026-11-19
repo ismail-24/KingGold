@@ -27,9 +27,12 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.AdminPanelSettings
 import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.Calculate
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.FormatListBulleted
 import androidx.compose.material.icons.outlined.LocationOn
+import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material.icons.outlined.NearMe
 import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.Person
@@ -68,6 +71,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -81,6 +85,7 @@ import com.example.model.MoneyUtils
 import com.example.model.Shop
 import com.example.model.ShopSortOption
 import com.example.ui.components.Gold24KHistoryChartCard
+import com.example.ui.components.GoldShopsMapView
 import com.example.ui.components.RealTimeGlobalGoldPriceBanner
 import com.example.ui.components.SealBadge
 import com.example.ui.components.ShopGoldMedallion
@@ -105,12 +110,14 @@ fun DiscoverScreen(
     onOpenProfile: () -> Unit = {},
     onOpenVault: () -> Unit = {},
     onOpenSellGold: () -> Unit = {},
+    onOpenGoldCalculator: () -> Unit = {},
     onOpenMerchantPortal: () -> Unit = {},
     onOpenAdminCenter: () -> Unit = {},
     onOpenSupport: () -> Unit = {},
     onDismissSyncError: () -> Unit,
 ) {
     var showFilterSheet by remember { mutableStateOf(false) }
+    var isMapView by rememberSaveable { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
@@ -216,6 +223,76 @@ fun DiscoverScreen(
             }
 
             item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    OutlinedTextField(
+                        value = uiState.searchQuery,
+                        onValueChange = onSearchChange,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("discover_search_input"),
+                        placeholder = {
+                            Text(
+                                text = "ابحث عن محل ذهب بالاسم أو المدينة...",
+                                style = AppText.body.copy(color = AppColors.Muted, fontSize = 13.sp),
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Outlined.Search,
+                                contentDescription = "بحث",
+                                tint = AppColors.Muted,
+                            )
+                        },
+                        trailingIcon = if (uiState.searchQuery.isNotEmpty()) {
+                            {
+                                IconButton(
+                                    onClick = { onSearchChange("") },
+                                    modifier = Modifier.testTag("discover_search_clear"),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Close,
+                                        contentDescription = "مسح البحث",
+                                        tint = AppColors.Muted,
+                                    )
+                                }
+                            }
+                        } else {
+                            null
+                        },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color.White,
+                            focusedBorderColor = AppColors.Brass,
+                            unfocusedBorderColor = AppColors.Line,
+                        ),
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(54.dp)
+                            .minimumInteractiveComponentSize()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(AppColors.Ink)
+                            .clickable { showFilterSheet = true }
+                            .testTag("discover_filter_button"),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Tune,
+                            contentDescription = "تصفية النتائج",
+                            tint = AppColors.BrassLight,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
+                }
+            }
+
+            item {
                 RealTimeGlobalGoldPriceBanner(
                     prices = uiState.prices,
                     feedStatus = uiState.goldFeedStatus,
@@ -276,6 +353,12 @@ fun DiscoverScreen(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
+                            DiscoverShortcutPill(
+                                label = "حاسبة الذهب",
+                                icon = Icons.Outlined.Calculate,
+                                onClick = onOpenGoldCalculator,
+                                modifier = Modifier.weight(1f).testTag("discover_shortcut_calculator"),
+                            )
                             DiscoverShortcutPill(
                                 label = "بوابة التاجر",
                                 icon = Icons.Outlined.Storefront,
@@ -463,60 +546,6 @@ fun DiscoverScreen(
             }
 
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    OutlinedTextField(
-                        value = uiState.searchQuery,
-                        onValueChange = onSearchChange,
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("discover_search_input"),
-                        placeholder = {
-                            Text(
-                                text = "ابحث عن محل أو منطقة أو منتج",
-                                style = AppText.body.copy(color = AppColors.Muted, fontSize = 13.sp),
-                            )
-                        },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Outlined.Search,
-                                contentDescription = "بحث",
-                                tint = AppColors.Muted,
-                            )
-                        },
-                        singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = Color.White,
-                            unfocusedContainerColor = Color.White,
-                            focusedBorderColor = AppColors.Brass,
-                            unfocusedBorderColor = AppColors.Line,
-                        ),
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Box(
-                        modifier = Modifier
-                            .size(54.dp)
-                            .minimumInteractiveComponentSize()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(AppColors.Ink)
-                            .clickable { showFilterSheet = true }
-                            .testTag("discover_filter_button"),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Tune,
-                            contentDescription = "تصفية النتائج",
-                            tint = AppColors.BrassLight,
-                            modifier = Modifier.size(22.dp),
-                        )
-                    }
-                }
-            }
-
-            item {
                 val count = uiState.filteredShops.size
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(
@@ -547,54 +576,109 @@ fun DiscoverScreen(
                         }
                     }
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(
-                            selected = !uiState.favoritesOnlyFilter,
-                            onClick = { onToggleFavoritesOnlyFilter(false) },
-                            modifier = Modifier.testTag("all_shops_filter_chip"),
-                            label = {
-                                Text(
-                                    text = "كل المحلات (${uiState.shops.size})",
-                                    style = AppText.body.copy(fontSize = 12.sp, fontWeight = FontWeight.Bold),
-                                )
-                            },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = AppColors.Ink,
-                                selectedLabelColor = AppColors.BrassLight,
-                                containerColor = Color.White,
-                                labelColor = AppColors.Ink,
-                            ),
-                        )
-                        FilterChip(
-                            selected = uiState.favoritesOnlyFilter,
-                            onClick = { onToggleFavoritesOnlyFilter(!uiState.favoritesOnlyFilter) },
-                            modifier = Modifier.testTag("favorites_filter_chip"),
-                            leadingIcon = {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(
+                                selected = !uiState.favoritesOnlyFilter,
+                                onClick = { onToggleFavoritesOnlyFilter(false) },
+                                modifier = Modifier.testTag("all_shops_filter_chip"),
+                                label = {
+                                    Text(
+                                        text = "كل المحلات (${uiState.shops.size})",
+                                        style = AppText.body.copy(fontSize = 12.sp, fontWeight = FontWeight.Bold),
+                                    )
+                                },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = AppColors.Ink,
+                                    selectedLabelColor = AppColors.BrassLight,
+                                    containerColor = Color.White,
+                                    labelColor = AppColors.Ink,
+                                ),
+                            )
+                            FilterChip(
+                                selected = uiState.favoritesOnlyFilter,
+                                onClick = { onToggleFavoritesOnlyFilter(!uiState.favoritesOnlyFilter) },
+                                modifier = Modifier.testTag("favorites_filter_chip"),
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = if (uiState.favoritesOnlyFilter) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                                        contentDescription = null,
+                                        tint = if (uiState.favoritesOnlyFilter) AppColors.BrassLight else AppColors.Brass,
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                },
+                                label = {
+                                    Text(
+                                        text = "المفضلة (${uiState.favoriteShopIds.size})",
+                                        style = AppText.body.copy(fontSize = 12.sp, fontWeight = FontWeight.Bold),
+                                    )
+                                },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = AppColors.Ink,
+                                    selectedLabelColor = AppColors.BrassLight,
+                                    containerColor = Color.White,
+                                    labelColor = AppColors.Ink,
+                                ),
+                            )
+                        }
+
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color.White)
+                                .border(1.dp, AppColors.Line, RoundedCornerShape(10.dp)),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            IconButton(
+                                onClick = { isMapView = false },
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .background(if (!isMapView) AppColors.Ink else Color.Transparent)
+                                    .testTag("discover_mode_list"),
+                            ) {
                                 Icon(
-                                    imageVector = if (uiState.favoritesOnlyFilter) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                                    contentDescription = null,
-                                    tint = if (uiState.favoritesOnlyFilter) AppColors.BrassLight else AppColors.Brass,
-                                    modifier = Modifier.size(16.dp),
+                                    imageVector = Icons.Outlined.FormatListBulleted,
+                                    contentDescription = "عرض القائمة",
+                                    tint = if (!isMapView) AppColors.BrassLight else AppColors.Muted,
                                 )
-                            },
-                            label = {
-                                Text(
-                                    text = "المفضلة (${uiState.favoriteShopIds.size})",
-                                    style = AppText.body.copy(fontSize = 12.sp, fontWeight = FontWeight.Bold),
+                            }
+                            IconButton(
+                                onClick = { isMapView = true },
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .background(if (isMapView) AppColors.Ink else Color.Transparent)
+                                    .testTag("discover_mode_map"),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Map,
+                                    contentDescription = "عرض الخريطة",
+                                    tint = if (isMapView) AppColors.BrassLight else AppColors.Muted,
                                 )
-                            },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = AppColors.Ink,
-                                selectedLabelColor = AppColors.BrassLight,
-                                containerColor = Color.White,
-                                labelColor = AppColors.Ink,
-                            ),
-                        )
+                            }
+                        }
                     }
                 }
             }
 
-            if (uiState.filteredShops.isEmpty()) {
+            if (isMapView) {
+                item {
+                    GoldShopsMapView(
+                        shops = uiState.filteredShops,
+                        favoriteShopIds = uiState.favoriteShopIds,
+                        onOpenShop = onOpenShop,
+                        onToggleFavoriteShop = onToggleFavoriteShop,
+                        onResetFilters = {
+                            onSearchChange("")
+                            onToggleFavoritesOnlyFilter(false)
+                            onApplyFilters(null, true, ShopSortOption.NEAREST)
+                        },
+                    )
+                }
+            } else if (uiState.filteredShops.isEmpty()) {
                 item {
                     Column(
                         modifier = Modifier

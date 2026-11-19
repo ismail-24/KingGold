@@ -3,6 +3,9 @@
     <string name="fcm_price_alert_channel_id">gold_24k_price_alerts</string>
     <string name="fcm_price_alert_channel_name">تنبيهات أسعار الذهب عيار 24</string>
     <string name="fcm_price_alert_channel_desc">إشعارات فورية عبر Firebase Cloud Messaging عند انخفاض سعر عيار 24 عن الحد المحدد</string>
+    <string name="fcm_shop_offer_channel_id">nearby_gold_shop_offers</string>
+    <string name="fcm_shop_offer_channel_name">عروض محلات الذهب القريبة</string>
+    <string name="fcm_shop_offer_channel_desc">إشعارات فورية بالعروض الخاصة وخصومات المصنعية من محلات الصاغة القريبة منك</string>
     <string name="merchant_reg_title">تسجيل حساب تاجر</string>
     <string name="merchant_reg_submit">إرسال طلب تسجيل التاجر</string>
     <string name="admin_approval_title">اعتماد التجار المعلّقين</string>

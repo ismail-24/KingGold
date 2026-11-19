@@ -13,6 +13,8 @@ import kotlinx.coroutines.tasks.await
 object FcmRegistrationManager {
 
     const val TOPIC_GOLD_24K_ALERTS = "gold_24k_price_alerts"
+    const val TOPIC_PRICE_FLUCTUATIONS = "gold_price_fluctuations"
+    const val TOPIC_NEARBY_SHOP_OFFERS = "nearby_gold_shop_offers"
     private const val TAG = "FcmRegistration"
 
     suspend fun syncFcmAlertSubscription(
@@ -20,6 +22,7 @@ object FcmRegistrationManager {
         enabled: Boolean,
         alertKarat: Int,
         alertAbove: Boolean,
+        shopOffersEnabled: Boolean = true,
         onTokenSynced: ((String) -> Unit)? = null,
     ) {
         val token = runCatching { Firebase.messaging.token.await() }
@@ -44,6 +47,16 @@ object FcmRegistrationManager {
                 Firebase.messaging.subscribeToTopic(TOPIC_GOLD_24K_ALERTS).await()
             } else {
                 Firebase.messaging.unsubscribeFromTopic(TOPIC_GOLD_24K_ALERTS).await()
+            }
+            if (enabled) {
+                Firebase.messaging.subscribeToTopic(TOPIC_PRICE_FLUCTUATIONS).await()
+            } else {
+                Firebase.messaging.unsubscribeFromTopic(TOPIC_PRICE_FLUCTUATIONS).await()
+            }
+            if (shopOffersEnabled) {
+                Firebase.messaging.subscribeToTopic(TOPIC_NEARBY_SHOP_OFFERS).await()
+            } else {
+                Firebase.messaging.unsubscribeFromTopic(TOPIC_NEARBY_SHOP_OFFERS).await()
             }
         }.onFailure {
             Log.w(TAG, "Topic subscription update skipped: ${it.localizedMessage}")

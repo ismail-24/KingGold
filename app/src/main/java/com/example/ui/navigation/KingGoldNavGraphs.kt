@@ -42,6 +42,7 @@ import com.example.ui.screens.merchant.MerchantPortalScreen
 import com.example.ui.screens.merchant.MerchantRegistrationScreen
 import com.example.ui.screens.orders.OrderDetailScreen
 import com.example.ui.screens.orders.RatingScreen
+import com.example.ui.components.GoldCalculatorScreen
 import com.example.ui.screens.orders.ReportIssueScreen
 import com.example.ui.screens.orders.VerifyPickupScreen
 import com.example.ui.screens.price.PriceInsightScreen
@@ -204,6 +205,8 @@ internal fun NavGraphBuilder.registerSecondaryDestinations(
                 uiState = uiState,
                 onBack = { navController.popBackSafely() },
                 onOrderClick = { order -> navController.navigateSingleTop(Routes.orderDetail(order.id), isAuthorized) },
+                onOpenShop = { shop -> navController.navigateSingleTop(Routes.shopDetail(shop.id), isAuthorized) },
+                onToggleFavoriteShop = vm::toggleFavoriteShop,
                 onSignOut = onSignOut,
             )
         }
@@ -267,6 +270,22 @@ internal fun NavGraphBuilder.registerSecondaryDestinations(
                 onSaveAlert = vm::updatePriceAlert,
                 onOpenAiAdvisor = { prompt -> navController.navigateSingleTop(Routes.aiAdvisor(prompt), isAuthorized) },
                 onBack = { navController.popBackSafely() },
+            )
+        }
+    }
+
+    composable(Routes.GOLD_CALCULATOR) {
+        val isAuthorized = isAuthenticatedProvider()
+        AuthenticatedRoute(
+            isAuthenticated = isAuthorized,
+            viewModel = viewModelProvider(),
+            onUnauthorized = { navController.redirectToLogin() },
+        ) { vm ->
+            val uiState by vm.uiState.collectAsStateWithLifecycle()
+            GoldCalculatorScreen(
+                uiState = uiState,
+                onBack = { navController.popBackSafely() },
+                onOpenPriceInsight = { navController.navigateSingleTop(Routes.PRICE_INSIGHT, isAuthorized) },
             )
         }
     }

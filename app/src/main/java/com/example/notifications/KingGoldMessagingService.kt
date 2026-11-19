@@ -41,12 +41,41 @@ class KingGoldMessagingService : FirebaseMessagingService() {
         val data = remoteMessage.data
         val notif = remoteMessage.notification
 
+        val type = data["type"]?.trim()?.lowercase().orEmpty()
+        val shopId = data["shopId"]?.trim().orEmpty()
+        val shopName = data["shopName"]?.trim().orEmpty()
+        val title = notif?.title ?: data["title"]
+        val body = notif?.body ?: data["body"]
+
+        if (type == "shop_offer" || type == "nearby_offer" || shopId.isNotBlank()) {
+            GoldPriceNotificationHelper.showNearbyShopOfferAlert(
+                context = applicationContext,
+                shopId = shopId,
+                shopName = shopName,
+                offerTitle = title,
+                offerBody = body,
+            )
+            return
+        }
+
         val price24k = data["price24k"]?.toDoubleOrNull()
             ?: data["price"]?.toDoubleOrNull()
             ?: 0.0
+        val changePercent = data["changePercent"]?.toDoubleOrNull()
+        val karat = data["karat"]?.toIntOrNull() ?: 24
         val threshold = data["threshold"]?.toDoubleOrNull() ?: 0.0
-        val title = notif?.title ?: data["title"]
-        val body = notif?.body ?: data["body"]
+
+        if (type == "price_fluctuation" || changePercent != null) {
+            GoldPriceNotificationHelper.showPriceFluctuationAlert(
+                context = applicationContext,
+                karat = karat,
+                currentPriceEgp = price24k,
+                changePercent = changePercent ?: 0.0,
+                customTitle = title,
+                customBody = body,
+            )
+            return
+        }
 
         if (price24k > 0.0 || !title.isNullOrBlank() || !body.isNullOrBlank()) {
             GoldPriceNotificationHelper.show24KPriceDropAlert(

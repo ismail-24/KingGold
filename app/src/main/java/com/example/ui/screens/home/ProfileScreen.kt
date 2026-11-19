@@ -25,9 +25,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.outlined.Logout
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.outlined.Email
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.ReceiptLong
+import androidx.compose.material.icons.outlined.Star
+import androidx.compose.material.icons.outlined.Storefront
 import androidx.compose.material.icons.outlined.VerifiedUser
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -59,11 +63,32 @@ import androidx.compose.ui.unit.sp
 import com.example.model.GoldOrder
 import com.example.model.KycStatus
 import com.example.model.OrderStatus
+import com.example.model.Shop
 import com.example.ui.components.SealBadge
+import com.example.ui.components.VerifiedStrip
 import com.example.ui.components.formatCurrency
 import com.example.ui.state.KingGoldUiState
 import com.example.ui.theme.AppColors
 import com.example.ui.theme.AppText
+
+@Composable
+fun UserProfileScreen(
+    uiState: KingGoldUiState,
+    onBack: () -> Unit,
+    onOrderClick: (GoldOrder) -> Unit,
+    onOpenShop: (Shop) -> Unit = {},
+    onToggleFavoriteShop: (String) -> Unit = {},
+    onSignOut: () -> Unit,
+) {
+    ProfileScreen(
+        uiState = uiState,
+        onBack = onBack,
+        onOrderClick = onOrderClick,
+        onOpenShop = onOpenShop,
+        onToggleFavoriteShop = onToggleFavoriteShop,
+        onSignOut = onSignOut,
+    )
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -72,10 +97,15 @@ fun ProfileScreen(
     onBack: () -> Unit,
     onOrderClick: (GoldOrder) -> Unit,
     onSignOut: () -> Unit,
+    onOpenShop: (Shop) -> Unit = {},
+    onToggleFavoriteShop: (String) -> Unit = {},
 ) {
     var showSignOutDialog by remember { mutableStateOf(false) }
 
     val displayEmail = uiState.userEmail.ifBlank { "حساب Google موثّق" }
+    val favoriteShops = remember(uiState.shops, uiState.favoriteShopIds) {
+        uiState.shops.filter { uiState.favoriteShopIds.contains(it.id) }
+    }
 
     Scaffold(
         containerColor = AppColors.Parchment,
@@ -271,6 +301,69 @@ fun ProfileScreen(
                 }
 
                 item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("profile_favorites_section"),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "محلات الذهب المفضلة",
+                            style = AppText.display.copy(fontSize = 18.sp),
+                        )
+                        Text(
+                            text = "${favoriteShops.size} محل",
+                            style = AppText.body.copy(
+                                color = AppColors.Brass,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.5.sp,
+                            ),
+                        )
+                    }
+                }
+
+                if (favoriteShops.isEmpty()) {
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(Color.White)
+                                .border(1.dp, AppColors.Line, RoundedCornerShape(16.dp))
+                                .padding(20.dp)
+                                .testTag("profile_favorites_empty"),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.FavoriteBorder,
+                                contentDescription = null,
+                                tint = AppColors.Muted,
+                                modifier = Modifier.size(32.dp),
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "لا توجد محلات ذهب مفضلة حتى الآن",
+                                style = AppText.body.copy(fontWeight = FontWeight.Bold, fontSize = 13.5.sp),
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "اضغط على أيقونة القلب بجانب أي محل صاغة لحفظه هنا والوصول إليه بسرعة.",
+                                style = AppText.body.copy(color = AppColors.Muted, fontSize = 12.sp),
+                            )
+                        }
+                    }
+                } else {
+                    items(favoriteShops, key = { "fav_${it.id}" }) { shop ->
+                        ProfileFavoriteShopItem(
+                            shop = shop,
+                            onClick = { onOpenShop(shop) },
+                            onRemoveFavorite = { onToggleFavoriteShop(shop.id) },
+                        )
+                    }
+                }
+
+                item {
                     Text(
                         text = "سجل الطلبات",
                         style = AppText.display.copy(fontSize = 18.sp),
@@ -415,5 +508,79 @@ private fun ProfileOrderHistoryItem(
             contentDescription = "عرض تفاصيل الطلب",
             tint = AppColors.Muted,
         )
+    }
+}
+
+@Composable
+private fun ProfileFavoriteShopItem(
+    shop: Shop,
+    onClick: () -> Unit,
+    onRemoveFavorite: () -> Unit,
+) {
+    val shape = RoundedCornerShape(14.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(Color.White)
+            .border(1.dp, AppColors.Brass.copy(alpha = 0.45f), shape)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp)
+            .testTag("profile_favorite_shop_${shop.id}"),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(AppColors.ParchmentDeep),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Storefront,
+                contentDescription = shop.name,
+                tint = AppColors.Brass,
+                modifier = Modifier.size(22.dp),
+            )
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = shop.name,
+                    style = AppText.body.copy(fontWeight = FontWeight.ExtraBold, fontSize = 14.5.sp),
+                )
+                if (shop.verified) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    VerifiedStrip()
+                }
+            }
+            Spacer(modifier = Modifier.height(3.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Outlined.Star,
+                    contentDescription = null,
+                    tint = AppColors.Brass,
+                    modifier = Modifier.size(13.dp),
+                )
+                Spacer(modifier = Modifier.width(3.dp))
+                Text(
+                    text = "${shop.rating} · ${shop.area}، ${shop.city} · مصنعية ${shop.makingFeePerGram.toInt()} ج.م/جم",
+                    style = AppText.body.copy(color = AppColors.Muted, fontSize = 11.5.sp),
+                )
+            }
+        }
+        IconButton(
+            onClick = onRemoveFavorite,
+            modifier = Modifier
+                .size(48.dp)
+                .testTag("profile_unfavorite_${shop.id}"),
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Favorite,
+                contentDescription = "إزالة من المفضلة",
+                tint = AppColors.Brass,
+            )
+        }
     }
 }
