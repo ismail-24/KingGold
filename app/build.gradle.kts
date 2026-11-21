@@ -125,6 +125,7 @@ dependencies {
   implementation(libs.okhttp)
   implementation(libs.osmdroid.android)
   implementation(libs.vico.compose.m3)
+  implementation(libs.osmdroid.android)
   // implementation(libs.play.services.location)
   // implementation(libs.retrofit)
   testImplementation(libs.androidx.compose.ui.test.junit4)

@@ -1,13 +1,19 @@
 package com.example.ui.components
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
+import android.location.LocationManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.view.MotionEvent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -24,17 +30,25 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.CenterFocusStrong
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.LocationOff
 import androidx.compose.material.icons.outlined.LocationOn
+import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material.icons.outlined.MyLocation
 import androidx.compose.material.icons.outlined.NearMe
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Remove
+import androidx.compose.material.icons.outlined.SatelliteAlt
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material.icons.outlined.Storefront
 import androidx.compose.material.icons.outlined.WifiOff
@@ -51,6 +65,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -59,6 +74,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -71,6 +87,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import androidx.core.graphics.createBitmap
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -79,13 +96,50 @@ import com.example.model.Shop
 import com.example.ui.theme.AppColors
 import com.example.ui.theme.AppText
 import org.osmdroid.config.Configuration
+import org.osmdroid.tileprovider.MapTileProviderBasic
+import org.osmdroid.tileprovider.tilesource.ITileSource
+import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
+import org.osmdroid.util.MapTileIndex
 import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
+import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
+import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 import java.io.File
+
+enum class MapLayerMode(val arabicLabel: String) {
+    STANDARD("خريطة"),
+    SATELLITE("قمر صناعي"),
+}
+
+internal val SATELLITE_TILE_SOURCE: OnlineTileSourceBase = object : OnlineTileSourceBase(
+    "EsriWorldImagery",
+    0,
+    18,
+    256,
+    ".jpg",
+    arrayOf("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/"),
+) {
+    override fun getTileURLString(pMapTileIndex: Long): String {
+        return baseUrl +
+            MapTileIndex.getZoom(pMapTileIndex) + "/" +
+            MapTileIndex.getY(pMapTileIndex) + "/" +
+            MapTileIndex.getX(pMapTileIndex)
+    }
+}
+
+fun tileSourceForLayer(mode: MapLayerMode): ITileSource = when (mode) {
+    MapLayerMode.STANDARD -> TileSourceFactory.MAPNIK
+    MapLayerMode.SATELLITE -> SATELLITE_TILE_SOURCE
+}
+
+fun attributionForLayer(mode: MapLayerMode): String = when (mode) {
+    MapLayerMode.STANDARD -> "© OpenStreetMap contributors"
+    MapLayerMode.SATELLITE -> "© Esri, Maxar, Earthstar Geographics"
+}
 
 data class MappedShopsPartition(
     val mappable: List<Shop>,
@@ -100,6 +154,9 @@ fun configureOsmdroid(context: Context) {
         userAgentValue = appContext.packageName.ifBlank { "com.example.kinggold" }
         osmdroidBasePath = baseDir
         osmdroidTileCache = cacheDir
+        tileDownloadThreads = 4.toShort()
+        tileFileSystemCacheMaxBytes = 64L * 1024L * 1024L
+        tileFileSystemCacheTrimBytes = 48L * 1024L * 1024L
     }
 }
 
@@ -120,6 +177,28 @@ fun defaultCenterForShops(shops: List<Shop>): GeoPoint {
     val avgLat = valid.map { it.latitude }.average()
     val avgLon = valid.map { it.longitude }.average()
     return GeoPoint(avgLat, avgLon)
+}
+
+fun hasAnyLocationPermission(context: Context): Boolean {
+    val fineGranted = ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.ACCESS_FINE_LOCATION,
+    ) == PackageManager.PERMISSION_GRANTED
+    val coarseGranted = ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.ACCESS_COARSE_LOCATION,
+    ) == PackageManager.PERMISSION_GRANTED
+    return fineGranted || coarseGranted
+}
+
+fun createConfiguredMyLocationOverlay(context: Context, mapView: MapView): MyLocationNewOverlay {
+    val provider = GpsMyLocationProvider(context.applicationContext).apply {
+        addLocationSource(LocationManager.GPS_PROVIDER)
+        addLocationSource(LocationManager.NETWORK_PROVIDER)
+    }
+    return MyLocationNewOverlay(provider, mapView).apply {
+        isDrawAccuracyEnabled = true
+    }
 }
 
 private fun isNetworkAvailable(context: Context): Boolean = runCatching {
@@ -151,6 +230,10 @@ fun GoldShopsMapView(
     }
     var recenterSignal by remember { mutableIntStateOf(0) }
     var networkCheckTick by remember { mutableIntStateOf(0) }
+    var layerMode by rememberSaveable { mutableStateOf(MapLayerMode.STANDARD) }
+    var hasLocationPermission by remember { mutableStateOf(hasAnyLocationPermission(context)) }
+    var locationPermissionDenied by remember { mutableStateOf(false) }
+    var pendingCenterOnMyLocation by remember { mutableStateOf(false) }
     val isOnline = remember(networkCheckTick) { isNetworkAvailable(context) }
 
     val selectedShop = remember(mappableShops, selectedShopId) {
@@ -261,32 +344,142 @@ fun GoldShopsMapView(
                 .border(1.dp, AppColors.Line, RoundedCornerShape(18.dp))
                 .background(AppColors.ParchmentDeep),
         ) {
-            val mapView = remember {
+            val tileProvider = remember(context) {
                 configureOsmdroid(context)
-                MapView(context).apply {
+                MapTileProviderBasic(context.applicationContext, TileSourceFactory.MAPNIK)
+            }
+            val mapView = remember(context, tileProvider) {
+                MapView(context, tileProvider).apply {
                     setTileSource(TileSourceFactory.MAPNIK)
+                    setUseDataConnection(isOnline)
                     setMultiTouchControls(true)
+                    isHorizontalMapRepetitionEnabled = false
+                    isVerticalMapRepetitionEnabled = false
+                    minZoomLevel = 4.0
+                    maxZoomLevel = 19.0
                     zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
                     controller.setZoom(13.5)
                     controller.setCenter(defaultCenterForShops(mappableShops))
+                    setOnTouchListener { view, event ->
+                        val disallow = event.actionMasked != MotionEvent.ACTION_UP &&
+                            event.actionMasked != MotionEvent.ACTION_CANCEL
+                        view.parent?.requestDisallowInterceptTouchEvent(disallow)
+                        false
+                    }
                 }
+            }
+
+            val myLocationOverlay = remember(context, mapView) {
+                createConfiguredMyLocationOverlay(context, mapView)
+            }
+
+            fun centerMapOnUserLocation() {
+                runCatching { myLocationOverlay.enableMyLocation() }
+                val currentFix = myLocationOverlay.myLocation
+                if (currentFix != null) {
+                    if (mapView.zoomLevelDouble < 15.0) {
+                        mapView.controller.setZoom(15.5)
+                    }
+                    mapView.controller.animateTo(currentFix)
+                } else {
+                    myLocationOverlay.runOnFirstFix {
+                        mapView.post {
+                            myLocationOverlay.myLocation?.let { geo ->
+                                if (mapView.zoomLevelDouble < 15.0) {
+                                    mapView.controller.setZoom(15.5)
+                                }
+                                mapView.controller.animateTo(geo)
+                            }
+                        }
+                    }
+                }
+            }
+
+            val locationPermissionLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.RequestMultiplePermissions(),
+            ) { results ->
+                val granted = results[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                    results[Manifest.permission.ACCESS_COARSE_LOCATION] == true ||
+                    hasAnyLocationPermission(context)
+                hasLocationPermission = granted
+                locationPermissionDenied = !granted
+                if (granted && pendingCenterOnMyLocation) {
+                    pendingCenterOnMyLocation = false
+                    centerMapOnUserLocation()
+                } else if (!granted) {
+                    pendingCenterOnMyLocation = false
+                }
+            }
+
+            val selectedPinIcon = remember(context) {
+                createGoldShopMarkerDrawable(context = context, selected = true, verified = true)
+            }
+            val verifiedPinIcon = remember(context) {
+                createGoldShopMarkerDrawable(context = context, selected = false, verified = true)
+            }
+            val defaultPinIcon = remember(context) {
+                createGoldShopMarkerDrawable(context = context, selected = false, verified = false)
+            }
+
+            LaunchedEffect(isOnline, mapView) {
+                mapView.setUseDataConnection(isOnline)
+            }
+
+            LaunchedEffect(layerMode, mapView) {
+                mapView.setTileSource(tileSourceForLayer(layerMode))
+                mapView.invalidate()
+            }
+
+            LaunchedEffect(hasLocationPermission, myLocationOverlay, mapView) {
+                if (hasLocationPermission) {
+                    runCatching { myLocationOverlay.enableMyLocation() }
+                    if (!mapView.overlays.contains(myLocationOverlay)) {
+                        mapView.overlays.add(myLocationOverlay)
+                    }
+                    if (pendingCenterOnMyLocation) {
+                        pendingCenterOnMyLocation = false
+                        centerMapOnUserLocation()
+                    }
+                } else {
+                    runCatching {
+                        myLocationOverlay.disableFollowLocation()
+                        myLocationOverlay.disableMyLocation()
+                    }
+                    mapView.overlays.remove(myLocationOverlay)
+                }
+                mapView.invalidate()
             }
 
             val currentOnSelect by rememberUpdatedState<(String) -> Unit> { clickedId ->
                 selectedShopId = clickedId
             }
 
-            DisposableEffect(lifecycleOwner, mapView) {
+            DisposableEffect(lifecycleOwner, mapView, myLocationOverlay) {
                 val observer = LifecycleEventObserver { _, event ->
                     when (event) {
-                        Lifecycle.Event.ON_RESUME -> mapView.onResume()
-                        Lifecycle.Event.ON_PAUSE -> mapView.onPause()
+                        Lifecycle.Event.ON_RESUME -> {
+                            mapView.onResume()
+                            val granted = hasAnyLocationPermission(context)
+                            hasLocationPermission = granted
+                            if (granted) {
+                                locationPermissionDenied = false
+                                runCatching { myLocationOverlay.enableMyLocation() }
+                            }
+                        }
+                        Lifecycle.Event.ON_PAUSE -> {
+                            runCatching { myLocationOverlay.disableMyLocation() }
+                            mapView.onPause()
+                        }
                         else -> Unit
                     }
                 }
                 lifecycleOwner.lifecycle.addObserver(observer)
                 onDispose {
                     lifecycleOwner.lifecycle.removeObserver(observer)
+                    runCatching {
+                        myLocationOverlay.disableFollowLocation()
+                        myLocationOverlay.disableMyLocation()
+                    }
                     mapView.onDetach()
                 }
             }
@@ -297,31 +490,25 @@ fun GoldShopsMapView(
                     .fillMaxSize()
                     .testTag("osm_map_view"),
                 update = { view ->
-                    view.overlays.clear()
-                    mappableShops.forEach { shop ->
-                        val isSelected = selectedShop?.id == shop.id
-                        val marker = Marker(view).apply {
-                            position = GeoPoint(shop.latitude, shop.longitude)
-                            title = shop.name
-                            snippet = "${shop.area}، ${shop.city} · مصنعية ${shop.makingFeePerGram.toInt()} ج.م/جم"
-                            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                            icon = createGoldShopMarkerDrawable(
-                                context = context,
-                                selected = isSelected,
-                                verified = shop.verified,
-                            )
-                            setOnMarkerClickListener { m, _ ->
-                                currentOnSelect(shop.id)
-                                m.showInfoWindow()
-                                true
-                            }
-                        }
-                        view.overlays.add(marker)
-                        if (isSelected) {
-                            marker.showInfoWindow()
-                        }
+                    val renderSignature = Triple(
+                        mappableShops.map { listOf(it.id, it.name, it.latitude, it.longitude, it.verified, it.makingFeePerGram) },
+                        selectedShop?.id,
+                        hasLocationPermission,
+                    )
+                    if (view.tag != renderSignature) {
+                        view.tag = renderSignature
+                        syncGoldShopMarkers(
+                            mapView = view,
+                            shops = mappableShops,
+                            selectedShopId = selectedShop?.id,
+                            selectedIcon = selectedPinIcon,
+                            verifiedIcon = verifiedPinIcon,
+                            defaultIcon = defaultPinIcon,
+                            myLocationOverlay = myLocationOverlay,
+                            hasLocationPermission = hasLocationPermission,
+                            onSelect = currentOnSelect,
+                        )
                     }
-                    view.invalidate()
                 },
             )
 
@@ -360,78 +547,270 @@ fun GoldShopsMapView(
                 }
             }
 
-            // Re-center FloatingActionButton
-            FloatingActionButton(
-                onClick = {
-                    recenterSignal++
-                    networkCheckTick++
-                },
+            // Re-center, My Location, & Zoom controls (+ / -)
+            Column(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(12.dp)
-                    .size(48.dp)
-                    .testTag("map_recenter_button"),
-                shape = CircleShape,
-                containerColor = AppColors.Ink,
-                contentColor = AppColors.BrassLight,
-                elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 3.dp),
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Icon(
-                    imageVector = Icons.Outlined.MyLocation,
-                    contentDescription = "إعادة توسيط الخريطة",
-                )
-            }
-
-            // Offline tile warning banner
-            if (!isOnline) {
-                Surface(
+                FloatingActionButton(
+                    onClick = {
+                        recenterSignal++
+                        networkCheckTick++
+                    },
                     modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(12.dp)
-                        .testTag("map_offline_banner"),
-                    shape = RoundedCornerShape(12.dp),
-                    color = AppColors.AlertSoft,
-                    border = BorderStroke(1.dp, AppColors.Alert.copy(alpha = 0.4f)),
+                        .size(48.dp)
+                        .testTag("map_recenter_button"),
+                    shape = CircleShape,
+                    containerColor = AppColors.Ink,
+                    contentColor = AppColors.BrassLight,
+                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 3.dp),
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.WifiOff,
-                            contentDescription = null,
-                            tint = AppColors.Alert,
-                            modifier = Modifier.size(16.dp),
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "لا يوجد اتصال — قد لا تتحمل بلاطات الخريطة",
-                            style = AppText.body.copy(color = AppColors.Alert, fontSize = 11.sp, fontWeight = FontWeight.Bold),
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Icon(
-                            imageVector = Icons.Outlined.Refresh,
-                            contentDescription = "إعادة فحص الاتصال",
-                            tint = AppColors.Alert,
+                    Icon(
+                        imageVector = Icons.Outlined.CenterFocusStrong,
+                        contentDescription = "إعادة توسيط الخريطة",
+                    )
+                }
+
+                FloatingActionButton(
+                    onClick = {
+                        if (hasAnyLocationPermission(context)) {
+                            hasLocationPermission = true
+                            locationPermissionDenied = false
+                            centerMapOnUserLocation()
+                        } else {
+                            pendingCenterOnMyLocation = true
+                            locationPermissionLauncher.launch(
+                                arrayOf(
+                                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                                    Manifest.permission.ACCESS_FINE_LOCATION,
+                                ),
+                            )
+                        }
+                    },
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag("map_my_location_button"),
+                    shape = CircleShape,
+                    containerColor = if (hasLocationPermission) AppColors.Ink else Color.White.copy(alpha = 0.96f),
+                    contentColor = if (hasLocationPermission) AppColors.BrassLight else AppColors.Ink,
+                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 3.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.MyLocation,
+                        contentDescription = "تحديد موقعي الحالي",
+                    )
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = Color.White.copy(alpha = 0.96f),
+                    shadowElevation = 3.dp,
+                    border = BorderStroke(1.dp, AppColors.Line),
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        IconButton(
+                            onClick = { mapView.controller.zoomIn() },
                             modifier = Modifier
-                                .size(18.dp)
-                                .clickable { networkCheckTick++ }
-                                .testTag("map_retry_network_button"),
-                        )
+                                .size(48.dp)
+                                .testTag("map_zoom_in_button"),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Add,
+                                contentDescription = "تكبير الخريطة",
+                                tint = AppColors.Ink,
+                            )
+                        }
+                        IconButton(
+                            onClick = { mapView.controller.zoomOut() },
+                            modifier = Modifier
+                                .size(48.dp)
+                                .testTag("map_zoom_out_button"),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Remove,
+                                contentDescription = "تصغير الخريطة",
+                                tint = AppColors.Ink,
+                            )
+                        }
                     }
                 }
             }
 
-            // OpenStreetMap attribution badge
+            // TopStart overlay: Layer Switcher (Standard / Satellite) + Offline / Location banners
+            Column(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Surface(
+                    modifier = Modifier.testTag("map_layer_toggle"),
+                    shape = RoundedCornerShape(14.dp),
+                    color = Color.White.copy(alpha = 0.96f),
+                    shadowElevation = 3.dp,
+                    border = BorderStroke(1.dp, AppColors.Line),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(3.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        val isStandard = layerMode == MapLayerMode.STANDARD
+                        Row(
+                            modifier = Modifier
+                                .minimumInteractiveComponentSize()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (isStandard) AppColors.Ink else Color.Transparent)
+                                .clickable { layerMode = MapLayerMode.STANDARD }
+                                .padding(horizontal = 10.dp, vertical = 8.dp)
+                                .testTag("map_layer_standard_button"),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Map,
+                                contentDescription = "عرض الخريطة القياسية",
+                                tint = if (isStandard) AppColors.BrassLight else AppColors.Ink,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Spacer(modifier = Modifier.width(5.dp))
+                            Text(
+                                text = MapLayerMode.STANDARD.arabicLabel,
+                                style = AppText.body.copy(
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isStandard) Color.White else AppColors.Ink,
+                                ),
+                            )
+                        }
+
+                        val isSatellite = layerMode == MapLayerMode.SATELLITE
+                        Row(
+                            modifier = Modifier
+                                .minimumInteractiveComponentSize()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (isSatellite) AppColors.Ink else Color.Transparent)
+                                .clickable { layerMode = MapLayerMode.SATELLITE }
+                                .padding(horizontal = 10.dp, vertical = 8.dp)
+                                .testTag("map_layer_satellite_button"),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.SatelliteAlt,
+                                contentDescription = "عرض الأقمار الصناعية",
+                                tint = if (isSatellite) AppColors.BrassLight else AppColors.Ink,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Spacer(modifier = Modifier.width(5.dp))
+                            Text(
+                                text = MapLayerMode.SATELLITE.arabicLabel,
+                                style = AppText.body.copy(
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isSatellite) Color.White else AppColors.Ink,
+                                ),
+                            )
+                        }
+                    }
+                }
+
+                if (!isOnline) {
+                    Surface(
+                        modifier = Modifier
+                            .widthIn(max = 260.dp)
+                            .testTag("map_offline_banner"),
+                        shape = RoundedCornerShape(12.dp),
+                        color = AppColors.AlertSoft,
+                        border = BorderStroke(1.dp, AppColors.Alert.copy(alpha = 0.4f)),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.WifiOff,
+                                contentDescription = null,
+                                tint = AppColors.Alert,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "لا يوجد اتصال — قد لا تتحمل بلاطات الخريطة",
+                                modifier = Modifier.weight(1f),
+                                style = AppText.body.copy(color = AppColors.Alert, fontSize = 11.sp, fontWeight = FontWeight.Bold),
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            IconButton(
+                                onClick = { networkCheckTick++ },
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .testTag("map_retry_network_button"),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Refresh,
+                                    contentDescription = "إعادة فحص الاتصال",
+                                    tint = AppColors.Alert,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (locationPermissionDenied && !hasLocationPermission) {
+                    Surface(
+                        modifier = Modifier
+                            .widthIn(max = 240.dp)
+                            .testTag("map_location_denied_banner"),
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color.White.copy(alpha = 0.96f),
+                        border = BorderStroke(1.dp, AppColors.Brass.copy(alpha = 0.45f)),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.LocationOff,
+                                contentDescription = null,
+                                tint = AppColors.Brass,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "فعّل إذن الموقع لعرض موقعك الحالي",
+                                modifier = Modifier.weight(1f),
+                                style = AppText.body.copy(color = AppColors.Ink, fontSize = 11.sp, fontWeight = FontWeight.Bold),
+                            )
+                            IconButton(
+                                onClick = { locationPermissionDenied = false },
+                                modifier = Modifier.size(32.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Close,
+                                    contentDescription = "إغلاق التنبيه",
+                                    tint = AppColors.Muted,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Map tile provider attribution badge
             Surface(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
-                    .padding(10.dp),
+                    .padding(10.dp)
+                    .testTag("map_attribution_badge"),
                 shape = RoundedCornerShape(8.dp),
                 color = Color.White.copy(alpha = 0.88f),
             ) {
                 Text(
-                    text = "© OpenStreetMap contributors",
+                    text = attributionForLayer(layerMode),
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                     style = AppText.body.copy(color = AppColors.Ink, fontSize = 10.sp),
                 )
@@ -617,3 +996,71 @@ private fun createGoldShopMarkerDrawable(
 
     return BitmapDrawable(context.resources, bitmap)
 }
+
+fun createGoldShopMarker(
+    mapView: MapView,
+    shop: Shop,
+    isSelected: Boolean,
+    selectedIcon: Drawable,
+    verifiedIcon: Drawable,
+    defaultIcon: Drawable,
+    onSelect: (String) -> Unit,
+): Marker = Marker(mapView).apply {
+    id = shop.id
+    position = GeoPoint(shop.latitude, shop.longitude)
+    title = shop.name
+    val sourceLabel = if (shop.verified) "معتمد" else "قيد التحقق"
+    snippet = "${shop.area}، ${shop.city} · مصنعية ${shop.makingFeePerGram.toInt()} ج.م/جم · $sourceLabel"
+    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+    icon = when {
+        isSelected -> selectedIcon
+        shop.verified -> verifiedIcon
+        else -> defaultIcon
+    }
+    setOnMarkerClickListener { marker, _ ->
+        onSelect(shop.id)
+        marker.showInfoWindow()
+        true
+    }
+}
+
+fun syncGoldShopMarkers(
+    mapView: MapView,
+    shops: List<Shop>,
+    selectedShopId: String?,
+    selectedIcon: Drawable,
+    verifiedIcon: Drawable,
+    defaultIcon: Drawable,
+    myLocationOverlay: MyLocationNewOverlay? = null,
+    hasLocationPermission: Boolean = false,
+    onSelect: (String) -> Unit,
+): Int {
+    mapView.overlays.removeAll { it is Marker }
+    var addedCount = 0
+    shops.filter(::hasValidMapCoordinates).forEach { shop ->
+        val isSelected = selectedShopId == shop.id
+        val marker = createGoldShopMarker(
+            mapView = mapView,
+            shop = shop,
+            isSelected = isSelected,
+            selectedIcon = selectedIcon,
+            verifiedIcon = verifiedIcon,
+            defaultIcon = defaultIcon,
+            onSelect = onSelect,
+        )
+        mapView.overlays.add(marker)
+        addedCount++
+        if (isSelected) {
+            marker.showInfoWindow()
+        }
+    }
+    if (myLocationOverlay != null) {
+        mapView.overlays.remove(myLocationOverlay)
+        if (hasLocationPermission) {
+            mapView.overlays.add(myLocationOverlay)
+        }
+    }
+    mapView.invalidate()
+    return addedCount
+}
+

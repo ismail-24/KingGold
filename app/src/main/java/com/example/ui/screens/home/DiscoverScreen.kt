@@ -84,7 +84,7 @@ import androidx.compose.ui.unit.sp
 import com.example.model.MoneyUtils
 import com.example.model.Shop
 import com.example.model.ShopSortOption
-import com.example.ui.components.Gold24KHistoryChartCard
+import com.example.ui.components.DailyGoldPriceTrendChartCard
 import com.example.ui.components.GoldShopsMapView
 import com.example.ui.components.RealTimeGlobalGoldPriceBanner
 import com.example.ui.components.SealBadge
@@ -386,14 +386,15 @@ fun DiscoverScreen(
             }
 
             item {
-                Gold24KHistoryChartCard(
-                    historyPoints = uiState.history24K7Days,
+                DailyGoldPriceTrendChartCard(
+                    dailyPrices = uiState.dailyGoldPriceTrend,
+                    isSyncedFromFirestore = uiState.isDailyPricesFromFirestore,
                     onOpenFullInsight = onOpenPriceInsight,
                 )
             }
 
             item {
-                val triggered = uiState.is24KAlertTriggered
+                val triggered = uiState.isPriceAlertTriggered
                 val alertBg = when {
                     triggered -> AppColors.Alert.copy(alpha = 0.09f)
                     uiState.priceAlertEnabled -> Color.White
@@ -405,14 +406,14 @@ fun DiscoverScreen(
                     else -> AppColors.Line
                 }
                 val alertTitle = when {
-                    triggered -> "تنبيه عاجل: انخفض عيار 24 عن ${uiState.priceAlertTarget} ج.م!"
+                    triggered -> "تنبيه عاجل: تحقق شرط عيار ${uiState.priceAlertKarat} (${if (uiState.priceAlertAbove) "أعلى من" else "أقل من"} ${uiState.priceAlertTarget} ج.م)!"
                     uiState.priceAlertEnabled -> "تنبيه FCM: عند ${if (uiState.priceAlertAbove) "صعود" else "هبوط"} عيار ${uiState.priceAlertKarat} (${uiState.priceAlertTarget} ج.م)"
-                    else -> "تفعيل تنبيه انخفاض عيار 24 عبر FCM"
+                    else -> "تفعيل تنبيه هبوط أسعار الذهب عبر FCM"
                 }
                 val alertSub = when {
-                    triggered -> "السعر الحالي ${uiState.gramPrice(24).toInt()} ج.م/جم — اضغط للمتابعة"
+                    triggered -> "السعر الحالي ${uiState.gramPrice(uiState.priceAlertKarat).toInt()} ج.م/جم — اضغط للمتابعة"
                     uiState.priceAlertEnabled -> "يصلك إشعار فوري عند تحقق الشرط · اضغط للتعديل"
-                    else -> "حدد الحد المطلوب ليصلك إشعار فوري عند الهبوط"
+                    else -> "حدد العيار والحد المطلوب ليصلك إشعار فوري عند الهبوط"
                 }
                 Card(
                     onClick = onOpenPriceInsight,

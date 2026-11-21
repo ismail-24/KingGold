@@ -3,6 +3,7 @@ package com.example.ui.components
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,17 +14,29 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.TrendingUp
+import androidx.compose.material.icons.outlined.CloudDone
+import androidx.compose.material.icons.outlined.CloudQueue
+import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,6 +48,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.model.DailyGoldPrice
 import com.example.model.GoldPriceHistoryPoint
 import com.example.ui.theme.AppColors
 import com.example.ui.theme.AppText
@@ -61,9 +75,539 @@ import com.patrykandpatrick.vico.core.cartesian.layer.LineCartesianLayer
 import com.patrykandpatrick.vico.core.common.shader.ShaderProvider
 import com.patrykandpatrick.vico.core.common.shape.CorneredShape
 import java.util.Locale
-import kotlin.math.floor
 import kotlin.math.ceil
+import kotlin.math.floor
 import kotlin.math.roundToInt
+
+enum class DailyChartKaratMode(
+    val karat: Int?,
+    val chipLabel: String,
+    val tagSuffix: String,
+    val seriesColor: Color,
+) {
+    ALL(null, "الكل", "ALL", AppColors.Brass),
+    KARAT_24(24, "عيار 24", "24", AppColors.Brass),
+    KARAT_21(21, "عيار 21", "21", AppColors.Trust),
+    KARAT_18(18, "عيار 18", "18", AppColors.Alert),
+}
+
+/**
+ * Interactive multi-karat (24K, 21K, 18K) daily gold price trend chart powered by Vico Compose M3
+ * and synchronized from Firestore `/daily_gold_prices`.
+ */
+@Composable
+fun DailyGoldPriceTrendChartCard(
+    dailyPrices: List<DailyGoldPrice>,
+    isSyncedFromFirestore: Boolean,
+    modifier: Modifier = Modifier,
+    onOpenFullInsight: (() -> Unit)? = null,
+    onRecordTodayPrices: (() -> Unit)? = null,
+    isRecordingBusy: Boolean = false,
+) {
+    var selectedMode by rememberSaveable { mutableStateOf(DailyChartKaratMode.ALL) }
+
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag("daily_gold_trend_chart_card")
+            .semantics {
+                contentDescription = "رسم بياني لاتجاه أسعار الذهب اليومية لعيارات 24 و21 و18"
+            },
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = BorderStroke(1.dp, AppColors.Line),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(34.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(AppColors.ParchmentDeep),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Outlined.TrendingUp,
+                            contentDescription = null,
+                            tint = AppColors.Brass,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = "السجل اليومي لأسعار الذهب",
+                            style = AppText.display.copy(fontSize = 15.sp),
+                        )
+                        Text(
+                            text = "مقارنة عيار 24 و21 و18 · ج.م / جرام",
+                            style = AppText.body.copy(color = AppColors.Muted, fontSize = 11.5.sp),
+                        )
+                    }
+                }
+
+                if (onOpenFullInsight != null) {
+                    Text(
+                        text = "المؤشر الكامل ◀",
+                        modifier = Modifier
+                            .minimumInteractiveComponentSize()
+                            .clickable(onClick = onOpenFullInsight)
+                            .padding(horizontal = 6.dp, vertical = 4.dp)
+                            .testTag("daily_chart_open_insight"),
+                        style = AppText.body.copy(
+                            color = AppColors.Brass,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                        ),
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Firestore sync badge
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(if (isSyncedFromFirestore) AppColors.TrustSoft else AppColors.ParchmentDeep)
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
+                    .testTag("daily_chart_source_badge"),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = if (isSyncedFromFirestore) Icons.Outlined.CloudDone else Icons.Outlined.CloudQueue,
+                    contentDescription = null,
+                    tint = if (isSyncedFromFirestore) AppColors.Trust else AppColors.Muted,
+                    modifier = Modifier.size(14.dp),
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = if (isSyncedFromFirestore) {
+                        "متزامن مع Firestore · ${dailyPrices.size} أيام"
+                    } else {
+                        "أسعار مرجعية · بانتظار مزامنة السحابة"
+                    },
+                    style = AppText.body.copy(
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (isSyncedFromFirestore) AppColors.Trust else AppColors.Muted,
+                    ),
+                )
+            }
+
+            if (dailyPrices.isEmpty()) {
+                Spacer(modifier = Modifier.height(14.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(AppColors.ParchmentDeep)
+                        .padding(16.dp)
+                        .testTag("daily_chart_empty_state"),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "لا توجد قراءات يومية مسجلة حالياً",
+                        style = AppText.body.copy(color = AppColors.Muted, fontSize = 12.5.sp),
+                    )
+                }
+            } else {
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Interactive karat selector chips
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    DailyChartKaratMode.entries.forEach { mode ->
+                        val selected = selectedMode == mode
+                        FilterChip(
+                            selected = selected,
+                            onClick = { selectedMode = mode },
+                            modifier = Modifier.testTag("daily_chart_karat_chip_${mode.tagSuffix}"),
+                            label = {
+                                Text(
+                                    text = mode.chipLabel,
+                                    style = AppText.body.copy(
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                    ),
+                                )
+                            },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = AppColors.Ink,
+                                selectedLabelColor = AppColors.BrassLight,
+                                containerColor = AppColors.ParchmentDeep,
+                                labelColor = AppColors.Ink,
+                            ),
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                val latestPoint = dailyPrices.last()
+                val focusKarat = selectedMode.karat ?: 24
+                val plottedPoints = remember(dailyPrices) {
+                    if (dailyPrices.size == 1) listOf(dailyPrices.first(), dailyPrices.first()) else dailyPrices
+                }
+
+                // Color legend for 24K, 21K, 18K
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    KaratLegendPill(
+                        label = "24K",
+                        priceText = formatCurrency(latestPoint.price24kEgp, decimals = 0),
+                        dotColor = AppColors.Brass,
+                        highlighted = selectedMode == DailyChartKaratMode.ALL || selectedMode == DailyChartKaratMode.KARAT_24,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("daily_chart_legend_24k"),
+                    )
+                    KaratLegendPill(
+                        label = "21K",
+                        priceText = formatCurrency(latestPoint.price21kEgp, decimals = 0),
+                        dotColor = AppColors.Trust,
+                        highlighted = selectedMode == DailyChartKaratMode.ALL || selectedMode == DailyChartKaratMode.KARAT_21,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("daily_chart_legend_21k"),
+                    )
+                    KaratLegendPill(
+                        label = "18K",
+                        priceText = formatCurrency(latestPoint.price18kEgp, decimals = 0),
+                        dotColor = AppColors.Alert,
+                        highlighted = selectedMode == DailyChartKaratMode.ALL || selectedMode == DailyChartKaratMode.KARAT_18,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("daily_chart_legend_18k"),
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                val prices24 = remember(plottedPoints) { plottedPoints.map { it.price24kEgp } }
+                val prices21 = remember(plottedPoints) { plottedPoints.map { it.price21kEgp } }
+                val prices18 = remember(plottedPoints) { plottedPoints.map { it.price18kEgp } }
+                val labels = remember(plottedPoints) { plottedPoints.map { it.dayLabel } }
+
+                val focusPrices = remember(plottedPoints, focusKarat) {
+                    plottedPoints.map { it.priceForKarat(focusKarat) }
+                }
+                val activePrices = remember(prices24, prices21, prices18, selectedMode) {
+                    when (selectedMode) {
+                        DailyChartKaratMode.ALL -> prices24 + prices21 + prices18
+                        DailyChartKaratMode.KARAT_24 -> prices24
+                        DailyChartKaratMode.KARAT_21 -> prices21
+                        DailyChartKaratMode.KARAT_18 -> prices18
+                    }
+                }
+                val minActivePrice = activePrices.minOrNull() ?: 0.0
+                val maxActivePrice = activePrices.maxOrNull() ?: 100.0
+                val spread = (maxActivePrice - minActivePrice).coerceAtLeast(40.0)
+                val yPadding = (spread * 0.18).coerceAtLeast(30.0)
+                val chartMinY = (floor((minActivePrice - yPadding) / 10.0) * 10.0).coerceAtLeast(0.0)
+                val rawMaxY = ceil((maxActivePrice + yPadding) / 10.0) * 10.0
+                val chartMaxY = maxOf(rawMaxY, chartMinY + 50.0)
+
+                val focusMin = focusPrices.minOrNull() ?: 0.0
+                val focusMax = focusPrices.maxOrNull() ?: 0.0
+                val focusFirst = focusPrices.firstOrNull() ?: 0.0
+                val focusLatest = focusPrices.lastOrNull() ?: 0.0
+                val changePct = if (focusFirst > 0.0) ((focusLatest - focusFirst) / focusFirst) * 100.0 else 0.0
+                val isPositive = changePct >= 0.0
+
+                val modelProducer = remember { CartesianChartModelProducer() }
+                LaunchedEffect(prices24, prices21, prices18, selectedMode) {
+                    modelProducer.runTransaction {
+                        lineSeries {
+                            when (selectedMode) {
+                                DailyChartKaratMode.ALL -> {
+                                    series(prices24)
+                                    series(prices21)
+                                    series(prices18)
+                                }
+                                DailyChartKaratMode.KARAT_24 -> series(prices24)
+                                DailyChartKaratMode.KARAT_21 -> series(prices21)
+                                DailyChartKaratMode.KARAT_18 -> series(prices18)
+                            }
+                        }
+                    }
+                }
+
+                val rangeProvider = remember(chartMinY, chartMaxY) {
+                    CartesianLayerRangeProvider.fixed(minY = chartMinY, maxY = chartMaxY)
+                }
+                val yAxisValueFormatter = remember {
+                    CartesianValueFormatter { _, value, _ ->
+                        String.format(Locale.US, "%,.0f", value)
+                    }
+                }
+                val xAxisValueFormatter = remember(labels) {
+                    CartesianValueFormatter { _, value, _ ->
+                        val idx = value.roundToInt().coerceIn(0, labels.lastIndex)
+                        labels[idx]
+                    }
+                }
+                val marker = rememberDefaultCartesianMarker(
+                    label = rememberTextComponent(
+                        color = Color.White,
+                        textSize = 11.sp,
+                        background = rememberShapeComponent(
+                            fill = fill(AppColors.Ink),
+                            shape = CorneredShape.Pill,
+                        ),
+                    ),
+                    guideline = rememberLineComponent(
+                        fill = fill(AppColors.Brass.copy(alpha = 0.45f)),
+                        thickness = 1.dp,
+                    ),
+                )
+
+                val line24Multi = LineCartesianLayer.rememberLine(
+                    fill = LineCartesianLayer.LineFill.single(fill(AppColors.Brass)),
+                    pointConnector = LineCartesianLayer.PointConnector.cubic(),
+                    pointProvider = LineCartesianLayer.PointProvider.single(
+                        LineCartesianLayer.point(
+                            component = rememberShapeComponent(fill = fill(AppColors.Brass), shape = CorneredShape.Pill),
+                            size = 6.dp,
+                        ),
+                    ),
+                )
+                val line21Multi = LineCartesianLayer.rememberLine(
+                    fill = LineCartesianLayer.LineFill.single(fill(AppColors.Trust)),
+                    pointConnector = LineCartesianLayer.PointConnector.cubic(),
+                    pointProvider = LineCartesianLayer.PointProvider.single(
+                        LineCartesianLayer.point(
+                            component = rememberShapeComponent(fill = fill(AppColors.Trust), shape = CorneredShape.Pill),
+                            size = 6.dp,
+                        ),
+                    ),
+                )
+                val line18Multi = LineCartesianLayer.rememberLine(
+                    fill = LineCartesianLayer.LineFill.single(fill(AppColors.Alert)),
+                    pointConnector = LineCartesianLayer.PointConnector.cubic(),
+                    pointProvider = LineCartesianLayer.PointProvider.single(
+                        LineCartesianLayer.point(
+                            component = rememberShapeComponent(fill = fill(AppColors.Alert), shape = CorneredShape.Pill),
+                            size = 6.dp,
+                        ),
+                    ),
+                )
+                val line24Area = LineCartesianLayer.rememberLine(
+                    fill = LineCartesianLayer.LineFill.single(fill(AppColors.Brass)),
+                    areaFill = LineCartesianLayer.AreaFill.single(
+                        fill(
+                            ShaderProvider.verticalGradient(
+                                AppColors.Brass.copy(alpha = 0.28f).toArgb(),
+                                Color.Transparent.toArgb(),
+                            ),
+                        ),
+                    ),
+                    pointConnector = LineCartesianLayer.PointConnector.cubic(),
+                    pointProvider = LineCartesianLayer.PointProvider.single(
+                        LineCartesianLayer.point(
+                            component = rememberShapeComponent(fill = fill(AppColors.Brass), shape = CorneredShape.Pill),
+                            size = 7.dp,
+                        ),
+                    ),
+                )
+                val line21Area = LineCartesianLayer.rememberLine(
+                    fill = LineCartesianLayer.LineFill.single(fill(AppColors.Trust)),
+                    areaFill = LineCartesianLayer.AreaFill.single(
+                        fill(
+                            ShaderProvider.verticalGradient(
+                                AppColors.Trust.copy(alpha = 0.25f).toArgb(),
+                                Color.Transparent.toArgb(),
+                            ),
+                        ),
+                    ),
+                    pointConnector = LineCartesianLayer.PointConnector.cubic(),
+                    pointProvider = LineCartesianLayer.PointProvider.single(
+                        LineCartesianLayer.point(
+                            component = rememberShapeComponent(fill = fill(AppColors.Trust), shape = CorneredShape.Pill),
+                            size = 7.dp,
+                        ),
+                    ),
+                )
+                val line18Area = LineCartesianLayer.rememberLine(
+                    fill = LineCartesianLayer.LineFill.single(fill(AppColors.Alert)),
+                    areaFill = LineCartesianLayer.AreaFill.single(
+                        fill(
+                            ShaderProvider.verticalGradient(
+                                AppColors.Alert.copy(alpha = 0.24f).toArgb(),
+                                Color.Transparent.toArgb(),
+                            ),
+                        ),
+                    ),
+                    pointConnector = LineCartesianLayer.PointConnector.cubic(),
+                    pointProvider = LineCartesianLayer.PointProvider.single(
+                        LineCartesianLayer.point(
+                            component = rememberShapeComponent(fill = fill(AppColors.Alert), shape = CorneredShape.Pill),
+                            size = 7.dp,
+                        ),
+                    ),
+                )
+
+                val lineProvider = when (selectedMode) {
+                    DailyChartKaratMode.ALL -> LineCartesianLayer.LineProvider.series(line24Multi, line21Multi, line18Multi)
+                    DailyChartKaratMode.KARAT_24 -> LineCartesianLayer.LineProvider.series(line24Area)
+                    DailyChartKaratMode.KARAT_21 -> LineCartesianLayer.LineProvider.series(line21Area)
+                    DailyChartKaratMode.KARAT_18 -> LineCartesianLayer.LineProvider.series(line18Area)
+                }
+
+                CartesianChartHost(
+                    chart = rememberCartesianChart(
+                        rememberLineCartesianLayer(
+                            lineProvider = lineProvider,
+                            rangeProvider = rangeProvider,
+                        ),
+                        startAxis = VerticalAxis.rememberStart(
+                            line = null,
+                            tick = null,
+                            guideline = rememberLineComponent(
+                                fill = fill(AppColors.Line.copy(alpha = 0.65f)),
+                                thickness = 0.8.dp,
+                            ),
+                            label = rememberTextComponent(
+                                color = AppColors.Muted,
+                                textSize = 10.sp,
+                            ),
+                            valueFormatter = yAxisValueFormatter,
+                        ),
+                        bottomAxis = HorizontalAxis.rememberBottom(
+                            line = rememberLineComponent(
+                                fill = fill(AppColors.Line),
+                                thickness = 1.dp,
+                            ),
+                            tick = null,
+                            guideline = null,
+                            label = rememberTextComponent(
+                                color = AppColors.Muted,
+                                textSize = 9.5.sp,
+                            ),
+                            valueFormatter = xAxisValueFormatter,
+                        ),
+                        marker = marker,
+                    ),
+                    modelProducer = modelProducer,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(195.dp)
+                        .testTag("daily_gold_vico_chart"),
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    TrendMiniStat(
+                        label = "الأدنى (عيار $focusKarat)",
+                        value = formatCurrency(focusMin, decimals = 0),
+                        valueColor = AppColors.Ink,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TrendMiniStat(
+                        label = "الأعلى (عيار $focusKarat)",
+                        value = formatCurrency(focusMax, decimals = 0),
+                        valueColor = AppColors.Ink,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TrendMiniStat(
+                        label = "التغير",
+                        value = String.format(
+                            Locale.US,
+                            "%s%.2f%%",
+                            if (isPositive) "+" else "",
+                            changePct,
+                        ),
+                        valueColor = if (isPositive) AppColors.Trust else AppColors.Alert,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+
+            if (onRecordTodayPrices != null) {
+                Spacer(modifier = Modifier.height(10.dp))
+                OutlinedButton(
+                    onClick = onRecordTodayPrices,
+                    enabled = !isRecordingBusy,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .testTag("admin_record_daily_price_button"),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Save,
+                        contentDescription = null,
+                        tint = AppColors.Brass,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = if (isRecordingBusy) "جاري حفظ قراءة اليوم..." else "تسجيل أسعار اليوم في Firestore",
+                        style = AppText.body.copy(
+                            color = AppColors.Ink,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.5.sp,
+                        ),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun KaratLegendPill(
+    label: String,
+    priceText: String,
+    dotColor: Color,
+    highlighted: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (highlighted) AppColors.ParchmentDeep else AppColors.Parchment.copy(alpha = 0.6f))
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .clip(CircleShape)
+                .background(if (highlighted) dotColor else dotColor.copy(alpha = 0.35f)),
+        )
+        Spacer(modifier = Modifier.width(5.dp))
+        Text(
+            text = "$label · $priceText",
+            style = AppText.body.copy(
+                fontSize = 10.5.sp,
+                fontWeight = if (highlighted) FontWeight.Bold else FontWeight.Normal,
+                color = if (highlighted) AppColors.Ink else AppColors.Muted,
+            ),
+            maxLines = 1,
+        )
+    }
+}
 
 /**
  * Interactive 7-day 24K gold price line chart powered by Vico Compose M3.

@@ -17,9 +17,21 @@ import com.example.ui.navigation.Routes
 import java.util.Locale
 import kotlin.math.abs
 
+data class CachedPriceAlertRule(
+    val enabled: Boolean = true,
+    val above: Boolean = false,
+    val karat: Int = 24,
+    val thresholdText: String = "6000",
+)
+
 object GoldPriceNotificationHelper {
 
     const val EXTRA_TARGET_ROUTE = "extra_target_route"
+    private const val PREFS_NAME = "kinggold_fcm_alert_prefs"
+    private const val KEY_ENABLED = "alert_enabled"
+    private const val KEY_ABOVE = "alert_above"
+    private const val KEY_KARAT = "alert_karat"
+    private const val KEY_TARGET = "alert_target"
     private const val NOTIFICATION_ID_24K_DROP = 2401
     private const val NOTIFICATION_ID_FLUCTUATION = 2402
     private const val NOTIFICATION_ID_SHOP_OFFER_BASE = 2500
@@ -30,6 +42,36 @@ object GoldPriceNotificationHelper {
             context,
             Manifest.permission.POST_NOTIFICATIONS,
         ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    fun saveAlertRuleCache(
+        context: Context,
+        enabled: Boolean,
+        above: Boolean,
+        karat: Int,
+        thresholdText: String,
+    ) {
+        val safeKarat = if (karat in setOf(18, 21, 24)) karat else 24
+        context.applicationContext
+            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_ENABLED, enabled)
+            .putBoolean(KEY_ABOVE, above)
+            .putInt(KEY_KARAT, safeKarat)
+            .putString(KEY_TARGET, thresholdText.trim())
+            .commit()
+    }
+
+    fun loadAlertRuleCache(context: Context): CachedPriceAlertRule {
+        val prefs = context.applicationContext
+            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val karat = prefs.getInt(KEY_KARAT, 24).let { if (it in setOf(18, 21, 24)) it else 24 }
+        return CachedPriceAlertRule(
+            enabled = prefs.getBoolean(KEY_ENABLED, true),
+            above = prefs.getBoolean(KEY_ABOVE, false),
+            karat = karat,
+            thresholdText = prefs.getString(KEY_TARGET, "6000") ?: "6000",
+        )
     }
 
     fun ensureNotificationChannel(context: Context) {
@@ -68,12 +110,32 @@ object GoldPriceNotificationHelper {
         thresholdText: String,
         current24KPrice: Double,
     ): Double? {
-        if (!alertEnabled || alertAbove || alertKarat != 24 || current24KPrice <= 0.0) {
+        if (!alertEnabled || alertAbove || alertKarat != 24) {
+            return null
+        }
+        return shouldTriggerPriceThresholdAlert(
+            alertEnabled = true,
+            alertAbove = false,
+            alertKarat = 24,
+            thresholdText = thresholdText,
+            currentKaratPrice = current24KPrice,
+        )
+    }
+
+    fun shouldTriggerPriceThresholdAlert(
+        alertEnabled: Boolean,
+        alertAbove: Boolean,
+        alertKarat: Int,
+        thresholdText: String,
+        currentKaratPrice: Double,
+    ): Double? {
+        if (!alertEnabled || alertKarat !in setOf(18, 21, 24) || currentKaratPrice <= 0.0) {
             return null
         }
         val threshold = thresholdText.trim().toDoubleOrNull() ?: return null
         if (threshold <= 0.0) return null
-        return if (current24KPrice < threshold) threshold else null
+        val triggered = if (alertAbove) currentKaratPrice > threshold else currentKaratPrice < threshold
+        return if (triggered) threshold else null
     }
 
     fun buildLaunchIntent(context: Context, targetRoute: String): Intent {
@@ -92,23 +154,56 @@ object GoldPriceNotificationHelper {
         thresholdEgp: Double,
         customTitle: String? = null,
         customBody: String? = null,
+    ): Boolean = showGoldPriceThresholdAlert(
+        context = context,
+        karat = 24,
+        currentPriceEgp = currentPriceEgp,
+        thresholdEgp = thresholdEgp,
+        isAbove = false,
+        customTitle = customTitle,
+        customBody = customBody,
+    )
+
+    fun showGoldPriceThresholdAlert(
+        context: Context,
+        karat: Int,
+        currentPriceEgp: Double,
+        thresholdEgp: Double,
+        isAbove: Boolean = false,
+        customTitle: String? = null,
+        customBody: String? = null,
     ): Boolean {
         ensureAllNotificationChannels(context)
         if (!hasNotificationPermission(context)) return false
 
+        val safeKarat = if (karat in setOf(18, 21, 24)) karat else 24
         val channelId = context.getString(R.string.fcm_price_alert_channel_id)
         val formattedPrice = String.format(Locale.US, "%,.0f", currentPriceEgp)
         val formattedThreshold = String.format(Locale.US, "%,.0f", thresholdEgp)
 
-        val title = customTitle?.takeIf { it.isNotBlank() }
-            ?: "انخفض سعر الذهب عيار 24 الآن"
-        val body = customBody?.takeIf { it.isNotBlank() }
-            ?: "وصل عيار 24 إلى $formattedPrice ج.م/جم (أقل من الحد المحدد $formattedThreshold ج.م)."
+        val defaultTitle = if (isAbove) {
+            "ارتفع سعر الذهب عيار $safeKarat الآن"
+        } else {
+            "انخفض سعر الذهب عيار $safeKarat الآن"
+        }
+        val defaultBody = if (isAbove) {
+            "تجاوز عيار $safeKarat الحد المحدد ($formattedThreshold ج.م) ليصل إلى $formattedPrice ج.م/جم."
+        } else {
+            "وصل عيار $safeKarat إلى $formattedPrice ج.م/جم (أقل من الحد المحدد $formattedThreshold ج.م)."
+        }
+
+        val title = customTitle?.takeIf { it.isNotBlank() } ?: defaultTitle
+        val body = customBody?.takeIf { it.isNotBlank() } ?: defaultBody
+        val notificationId = if (safeKarat == 24 && !isAbove) {
+            NOTIFICATION_ID_24K_DROP
+        } else {
+            NOTIFICATION_ID_24K_DROP + safeKarat + if (isAbove) 100 else 0
+        }
 
         return postNotification(
             context = context,
             channelId = channelId,
-            notificationId = NOTIFICATION_ID_24K_DROP,
+            notificationId = notificationId,
             title = title,
             body = body,
             targetRoute = Routes.PRICE_INSIGHT,

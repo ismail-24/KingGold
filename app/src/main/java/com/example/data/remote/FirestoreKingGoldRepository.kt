@@ -3,8 +3,10 @@ package com.example.data.remote
 import android.content.Context
 import com.example.R
 import com.example.data.KingGoldRepository
+import com.example.model.DailyGoldPrice
 import com.example.model.GoldOrder
 import com.example.model.OrderStatus
+import com.example.model.Shop
 import com.google.firebase.Firebase
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
@@ -41,6 +43,217 @@ class FirestoreKingGoldRepository(
 
     private fun preferencesDoc(userId: String) =
         db.collection("users").document(userId).collection("preferences").document(PREFS_DOC_ID)
+
+    private fun goldShopsCollection() =
+        db.collection("gold_shops")
+
+    fun observeActiveGoldShops(): Flow<List<Shop>> = flow {
+        val path = "gold_shops?active=true"
+        emitAll(
+            goldShopsCollection()
+                .whereEqualTo("active", true)
+                .snapshots()
+                .map { snapshot ->
+                    snapshot.toObjects(
+                        GoldShopLocationRecord::class.java,
+                        DocumentSnapshot.ServerTimestampBehavior.ESTIMATE,
+                    ).map { it.toShop() }
+                        .sortedBy { it.distanceKm }
+                }
+                .catch { error ->
+                    val firestoreError = generateSequence(error) { it.cause }
+                        .filterIsInstance<FirebaseFirestoreException>()
+                        .firstOrNull()
+                    if (firestoreError == null && error is CancellationException) throw error
+                    val toLog = firestoreError ?: (error as? Exception)
+                    if (toLog != null && auth.currentUser != null) {
+                        handleFirestoreError(toLog, OperationType.LIST, path)
+                    }
+                    throw (firestoreError ?: error)
+                },
+        )
+    }
+
+    suspend fun seedInitialGoldShopsIfAdmin(): Result<Unit> {
+        val uid = requireUserId()
+        val path = "gold_shops"
+        return try {
+            val existing = goldShopsCollection().whereEqualTo("active", true).limit(1).get().await()
+            if (existing.isEmpty) {
+                val batch = db.batch()
+                for (shop in KingGoldRepository.shops) {
+                    val ref = goldShopsCollection().document(shop.id)
+                    val record = GoldShopLocationRecord.fromShop(
+                        shop = shop,
+                        ownerUid = uid,
+                        active = true,
+                        includeGeoPoint = true,
+                    )
+                    batch.set(ref, record.toCreateMap())
+                }
+                batch.commit().await()
+            }
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun saveGoldShopLocation(
+        record: GoldShopLocationRecord,
+        shopId: String? = null,
+    ): Result<String> {
+        val uid = requireUserId()
+        val lat = record.resolvedLatitude()
+        val lng = record.resolvedLongitude()
+        if (!lat.isFinite() || !lng.isFinite() || lat !in -85.0..85.0 || lng !in -180.0..180.0 || (lat == 0.0 && lng == 0.0)) {
+            return Result.failure(IllegalArgumentException("إحداثيات موقع المحل غير صالحة."))
+        }
+        val docRef = if (!shopId.isNullOrBlank()) {
+            goldShopsCollection().document(shopId.trim())
+        } else {
+            goldShopsCollection().document()
+        }
+        val scopedRecord = record.copy(
+            id = docRef.id,
+            ownerUid = record.ownerUid.ifBlank { uid },
+        )
+        return try {
+            val existing = docRef.get().await()
+            if (existing.exists()) {
+                docRef.update(scopedRecord.toUpdateMap()).await()
+            } else {
+                docRef.set(scopedRecord.toCreateMap()).await()
+            }
+            Result.success(docRef.id)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, docRef.path)
+            Result.failure(e)
+        }
+    }
+
+    private fun dailyGoldPricesCollection() =
+        db.collection("daily_gold_prices")
+
+    fun observeDailyGoldPrices(): Flow<List<DailyGoldPrice>> = flow {
+        val path = "daily_gold_prices?published=true"
+        emitAll(
+            dailyGoldPricesCollection()
+                .whereEqualTo("published", true)
+                .snapshots()
+                .map { snapshot ->
+                    snapshot.toObjects(
+                        DailyGoldPriceRecord::class.java,
+                        DocumentSnapshot.ServerTimestampBehavior.ESTIMATE,
+                    ).map { it.toDailyGoldPrice() }
+                        .filter { it.dateKey.isNotBlank() }
+                        .sortedBy { it.dateKey }
+                        .takeLast(30)
+                }
+                .catch { error ->
+                    val firestoreError = generateSequence(error) { it.cause }
+                        .filterIsInstance<FirebaseFirestoreException>()
+                        .firstOrNull()
+                    if (firestoreError == null && error is CancellationException) throw error
+                    val toLog = firestoreError ?: (error as? Exception)
+                    if (toLog != null && auth.currentUser != null) {
+                        handleFirestoreError(toLog, OperationType.LIST, path)
+                    }
+                    throw (firestoreError ?: error)
+                },
+        )
+    }
+
+    suspend fun seedInitialDailyGoldPricesIfAdmin(
+        current24KPrice: Double,
+        current21KPrice: Double,
+        current18KPrice: Double,
+    ): Result<Unit> {
+        val uid = requireUserId()
+        val path = "daily_gold_prices"
+        return try {
+            val existing = dailyGoldPricesCollection()
+                .whereEqualTo("published", true)
+                .limit(1)
+                .get()
+                .await()
+            if (existing.isEmpty) {
+                val seedSeries = KingGoldRepository.dailyGoldPriceFallbackSeries(
+                    current24KPrice = current24KPrice,
+                    current21KPrice = current21KPrice,
+                    current18KPrice = current18KPrice,
+                )
+                val batch = db.batch()
+                for (entry in seedSeries) {
+                    val ref = dailyGoldPricesCollection().document(entry.dateKey)
+                    val record = DailyGoldPriceRecord.fromDailyGoldPrice(
+                        daily = entry,
+                        updatedByAdminUid = uid,
+                        published = true,
+                    )
+                    batch.set(ref, record.toCreateMap())
+                }
+                batch.commit().await()
+            }
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun recordDailyGoldPriceIfAdmin(
+        dateKey: String = KingGoldRepository.todayDateKey(),
+        dayLabel: String = "اليوم",
+        price24kPerGramPiasters: Long,
+        price21kPerGramPiasters: Long,
+        price18kPerGramPiasters: Long,
+        source: String = "ADMIN_PRICING",
+    ): Result<Unit> {
+        val uid = requireUserId()
+        if (!dateKey.matches(Regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}$"))) {
+            return Result.failure(IllegalArgumentException("صيغة تاريخ السعر غير صالحة."))
+        }
+        if (price18kPerGramPiasters < 100000L ||
+            price21kPerGramPiasters <= price18kPerGramPiasters ||
+            price24kPerGramPiasters <= price21kPerGramPiasters
+        ) {
+            return Result.failure(IllegalArgumentException("يجب أن تكون أسعار الأعيرة موجبة وبترتيب 24 > 21 > 18."))
+        }
+        val docRef = dailyGoldPricesCollection().document(dateKey)
+        val record = DailyGoldPriceRecord(
+            id = dateKey,
+            dateKey = dateKey,
+            dayLabel = dayLabel.trim().ifBlank { dateKey },
+            price24kPerGramPiasters = price24kPerGramPiasters,
+            price21kPerGramPiasters = price21kPerGramPiasters,
+            price18kPerGramPiasters = price18kPerGramPiasters,
+            source = source.takeIf { it in setOf("SEED", "ADMIN_PRICING", "GLOBAL_FEED") } ?: "ADMIN_PRICING",
+            published = true,
+            updatedByAdminUid = uid,
+        )
+        return try {
+            val snap = docRef.get().await()
+            if (snap.exists()) {
+                docRef.update(record.toUpdateMap()).await()
+            } else {
+                docRef.set(record.toCreateMap()).await()
+            }
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, docRef.path)
+            Result.failure(e)
+        }
+    }
 
     fun observeOrders(userId: String): Flow<List<GoldOrderRecord>> = flow {
         val path = "users/$userId/orders"

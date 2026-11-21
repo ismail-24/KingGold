@@ -78,6 +78,9 @@ data class MerchantStoreRecord(
     val prepaidMakingApproved: Boolean = false,
     val prepaidMakingBudgetPiasters: Long = 0L,
     val pricingPolicyNote: String? = null,
+    val city: String = "القاهرة",
+    val latitude: Double = 0.0,
+    val longitude: Double = 0.0,
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null,
 ) {
@@ -97,9 +100,13 @@ data class MerchantStoreRecord(
         prepaidMakingApproved = prepaidMakingApproved,
         prepaidMakingBudgetPiasters = prepaidMakingBudgetPiasters,
         pricingPolicyNote = pricingPolicyNote,
+        city = city.ifBlank { "القاهرة" },
+        latitude = latitude,
+        longitude = longitude,
     )
 
     fun toCreateMap(): Map<String, Any> {
+        val hasValidCoords = latitude in -85.0..85.0 && longitude in -180.0..180.0 && !(latitude == 0.0 && longitude == 0.0)
         val raw = mutableMapOf<String, Any?>(
             "ownerUid" to ownerUid,
             "shopName" to shopName,
@@ -113,6 +120,9 @@ data class MerchantStoreRecord(
             "status" to MerchantStatus.PENDING.name,
             "prepaidMakingApproved" to false,
             "prepaidMakingBudgetPiasters" to 0L,
+            "city" to city.takeIf { it.isNotBlank() },
+            "latitude" to if (hasValidCoords) latitude else null,
+            "longitude" to if (hasValidCoords) longitude else null,
             "createdAt" to FieldValue.serverTimestamp(),
             "updatedAt" to FieldValue.serverTimestamp(),
         )

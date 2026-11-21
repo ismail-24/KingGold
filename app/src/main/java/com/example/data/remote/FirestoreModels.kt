@@ -1,14 +1,18 @@
 package com.example.data.remote
 
+import androidx.annotation.Keep
 import com.example.model.CartItem
+import com.example.model.DailyGoldPrice
 import com.example.model.GoldOrder
 import com.example.model.KycStatus
+import com.example.model.MoneyUtils
 import com.example.model.OrderStatus
 import com.example.model.Product
 import com.example.model.Shop
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.DocumentId
 import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.GeoPoint
 import com.google.firebase.firestore.IgnoreExtraProperties
 import com.google.firebase.firestore.ServerTimestamp
 
@@ -230,3 +234,209 @@ data class UserPreferencesRecord(
         return raw.filterValues { it != null } as Map<String, Any>
     }
 }
+
+@Keep
+@IgnoreExtraProperties
+data class GoldShopLocationRecord(
+    @DocumentId val id: String = "",
+    val name: String = "",
+    val city: String = "القاهرة",
+    val area: String = "",
+    val address: String = "",
+    val phone: String = "",
+    val latitude: Double = 0.0,
+    val longitude: Double = 0.0,
+    val coordinates: GeoPoint? = null,
+    val rating: Double = 4.8,
+    val reviews: Long = 0L,
+    val distanceKm: Double = 1.5,
+    val verified: Boolean = false,
+    val closesAt: String = "9:00 م",
+    val makingFeePerGram: Double = 90.0,
+    val merchantId: String? = null,
+    val ownerUid: String = "",
+    val active: Boolean = true,
+    @ServerTimestamp val createdAt: Timestamp? = null,
+    @ServerTimestamp val updatedAt: Timestamp? = null,
+) {
+    fun resolvedLatitude(): Double = coordinates?.latitude ?: latitude
+
+    fun resolvedLongitude(): Double = coordinates?.longitude ?: longitude
+
+    fun toShop(): Shop = Shop(
+        id = id,
+        name = name.ifBlank { "محل ذهب شريك" },
+        area = area.ifBlank { city },
+        address = address.ifBlank { "$area، $city" },
+        phone = phone.ifBlank { "+201001234567" },
+        rating = rating.coerceIn(0.0, 5.0),
+        reviews = reviews.toInt().coerceAtLeast(0),
+        distanceKm = distanceKm.coerceAtLeast(0.0),
+        verified = verified,
+        closesAt = closesAt.ifBlank { "9:00 م" },
+        makingFeePerGram = makingFeePerGram.coerceAtLeast(0.0),
+        ownerUid = ownerUid,
+        isDynamicMerchant = !merchantId.isNullOrBlank(),
+        city = city.ifBlank { "القاهرة" },
+        latitude = resolvedLatitude(),
+        longitude = resolvedLongitude(),
+    )
+
+    fun toCreateMap(): Map<String, Any> {
+        val lat = resolvedLatitude()
+        val lng = resolvedLongitude()
+        val raw = mutableMapOf<String, Any?>(
+            "name" to name.trim(),
+            "city" to city.trim().ifBlank { "القاهرة" },
+            "area" to area.trim(),
+            "address" to address.trim(),
+            "phone" to phone.trim(),
+            "latitude" to lat,
+            "longitude" to lng,
+            "coordinates" to coordinates,
+            "rating" to rating,
+            "reviews" to reviews,
+            "distanceKm" to distanceKm,
+            "verified" to verified,
+            "closesAt" to closesAt.trim().ifBlank { "9:00 م" },
+            "makingFeePerGram" to makingFeePerGram,
+            "merchantId" to merchantId?.takeIf { it.isNotBlank() },
+            "ownerUid" to ownerUid,
+            "active" to active,
+            "createdAt" to FieldValue.serverTimestamp(),
+            "updatedAt" to FieldValue.serverTimestamp(),
+        )
+        @Suppress("UNCHECKED_CAST")
+        return raw.filterValues { it != null } as Map<String, Any>
+    }
+
+    fun toUpdateMap(): Map<String, Any> {
+        val lat = resolvedLatitude()
+        val lng = resolvedLongitude()
+        val raw = mutableMapOf<String, Any?>(
+            "name" to name.trim(),
+            "city" to city.trim().ifBlank { "القاهرة" },
+            "area" to area.trim(),
+            "address" to address.trim(),
+            "phone" to phone.trim(),
+            "latitude" to lat,
+            "longitude" to lng,
+            "coordinates" to coordinates,
+            "closesAt" to closesAt.trim().ifBlank { "9:00 م" },
+            "makingFeePerGram" to makingFeePerGram,
+            "updatedAt" to FieldValue.serverTimestamp(),
+        )
+        @Suppress("UNCHECKED_CAST")
+        return raw.filterValues { it != null } as Map<String, Any>
+    }
+
+    companion object {
+        fun fromShop(
+            shop: Shop,
+            ownerUid: String,
+            merchantId: String? = null,
+            active: Boolean = true,
+            includeGeoPoint: Boolean = true,
+        ): GoldShopLocationRecord = GoldShopLocationRecord(
+            id = shop.id,
+            name = shop.name,
+            city = shop.city,
+            area = shop.area,
+            address = shop.address,
+            phone = shop.phone,
+            latitude = shop.latitude,
+            longitude = shop.longitude,
+            coordinates = if (includeGeoPoint && shop.latitude in -85.0..85.0 && shop.longitude in -180.0..180.0 && !(shop.latitude == 0.0 && shop.longitude == 0.0)) {
+                GeoPoint(shop.latitude, shop.longitude)
+            } else {
+                null
+            },
+            rating = shop.rating,
+            reviews = shop.reviews.toLong(),
+            distanceKm = shop.distanceKm,
+            verified = shop.verified,
+            closesAt = shop.closesAt,
+            makingFeePerGram = shop.makingFeePerGram,
+            merchantId = merchantId,
+            ownerUid = ownerUid,
+            active = active,
+        )
+    }
+}
+
+@Keep
+@IgnoreExtraProperties
+data class DailyGoldPriceRecord(
+    @DocumentId val id: String = "",
+    val dateKey: String = "",
+    val dayLabel: String = "",
+    val price24kPerGramPiasters: Long = 620000L,
+    val price21kPerGramPiasters: Long = 542500L,
+    val price18kPerGramPiasters: Long = 465000L,
+    val source: String = "SEED",
+    val published: Boolean = true,
+    val updatedByAdminUid: String = "",
+    @ServerTimestamp val createdAt: Timestamp? = null,
+    @ServerTimestamp val updatedAt: Timestamp? = null,
+) {
+    fun toDailyGoldPrice(): DailyGoldPrice {
+        val resolvedKey = dateKey.ifBlank { id }
+        val resolvedLabel = dayLabel.ifBlank { resolvedKey }
+        return DailyGoldPrice(
+            dateKey = resolvedKey,
+            dayLabel = resolvedLabel,
+            price24kEgp = MoneyUtils.piastersToEgp(price24kPerGramPiasters),
+            price21kEgp = MoneyUtils.piastersToEgp(price21kPerGramPiasters),
+            price18kEgp = MoneyUtils.piastersToEgp(price18kPerGramPiasters),
+            source = source,
+        )
+    }
+
+    fun toCreateMap(): Map<String, Any> = mapOf(
+        "dateKey" to dateKey.trim(),
+        "dayLabel" to dayLabel.trim().ifBlank { dateKey.trim() },
+        "price24kPerGramPiasters" to price24kPerGramPiasters,
+        "price21kPerGramPiasters" to price21kPerGramPiasters,
+        "price18kPerGramPiasters" to price18kPerGramPiasters,
+        "source" to source.ifBlank { "ADMIN_PRICING" },
+        "published" to published,
+        "updatedByAdminUid" to updatedByAdminUid,
+        "createdAt" to FieldValue.serverTimestamp(),
+        "updatedAt" to FieldValue.serverTimestamp(),
+    )
+
+    fun toUpdateMap(): Map<String, Any> = mapOf(
+        "dayLabel" to dayLabel.trim().ifBlank { dateKey.trim() },
+        "price24kPerGramPiasters" to price24kPerGramPiasters,
+        "price21kPerGramPiasters" to price21kPerGramPiasters,
+        "price18kPerGramPiasters" to price18kPerGramPiasters,
+        "source" to source.ifBlank { "ADMIN_PRICING" },
+        "published" to published,
+        "updatedByAdminUid" to updatedByAdminUid,
+        "updatedAt" to FieldValue.serverTimestamp(),
+    )
+
+    companion object {
+        fun fromDailyGoldPrice(
+            daily: DailyGoldPrice,
+            updatedByAdminUid: String,
+            published: Boolean = true,
+        ): DailyGoldPriceRecord {
+            val p24 = MoneyUtils.egpToPiasters(daily.price24kEgp).coerceAtLeast(100000L)
+            val p21 = MoneyUtils.egpToPiasters(daily.price21kEgp).coerceIn(100000L, p24 - 1L)
+            val p18 = MoneyUtils.egpToPiasters(daily.price18kEgp).coerceIn(100000L, p21 - 1L)
+            return DailyGoldPriceRecord(
+                id = daily.dateKey,
+                dateKey = daily.dateKey,
+                dayLabel = daily.dayLabel,
+                price24kPerGramPiasters = p24,
+                price21kPerGramPiasters = p21,
+                price18kPerGramPiasters = p18,
+                source = daily.source.takeIf { it in setOf("SEED", "ADMIN_PRICING", "GLOBAL_FEED") } ?: "ADMIN_PRICING",
+                published = published,
+                updatedByAdminUid = updatedByAdminUid,
+            )
+        }
+    }
+}
+

@@ -4,7 +4,6 @@ import android.Manifest
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -58,12 +57,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -71,8 +65,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.data.KingGoldRepository
+import com.example.notifications.FcmRegistrationManager
 import com.example.notifications.GoldPriceNotificationHelper
+import com.example.ui.components.DailyGoldPriceTrendChartCard
 import com.example.ui.components.LivePriceTicker
 import com.example.ui.components.formatCurrency
 import com.example.ui.state.KingGoldUiState
@@ -86,6 +81,7 @@ fun PriceInsightScreen(
     uiState: KingGoldUiState,
     onSaveAlert: (enabled: Boolean, above: Boolean, karat: Int, target: String) -> Unit,
     onOpenAiAdvisor: (String?) -> Unit = {},
+    onRecordTodayPrices: (() -> Unit)? = null,
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -167,63 +163,12 @@ fun PriceInsightScreen(
                 }
 
                 item {
-                    val history21K = uiState.history21K7Days
-                    val chartData = history21K.map { it.pricePerGram }
-                    val min21K = chartData.minOrNull() ?: uiState.gramPrice(21)
-                    val max21K = chartData.maxOrNull() ?: uiState.gramPrice(21)
-                    val first21K = chartData.firstOrNull() ?: min21K
-                    val last21K = chartData.lastOrNull() ?: max21K
-                    val changePct = if (first21K > 0.0) ((last21K - first21K) / first21K) * 100.0 else 0.0
-                    val changeLabel = String.format(java.util.Locale.US, "%+.2f%%", changePct)
-
-                    Column {
-                        Text(
-                            text = "عيار 21 · آخر 7 أيام (ج.م/جرام)",
-                            style = AppText.display.copy(fontSize = 16.sp),
-                        )
-                        Spacer(modifier = Modifier.height(10.dp))
-                        val shape = RoundedCornerShape(16.dp)
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(185.dp)
-                                .clip(shape)
-                                .background(Color.White)
-                                .border(1.dp, AppColors.Line, shape)
-                                .padding(14.dp),
-                        ) {
-                            GoldPriceTrendChart(
-                                data = chartData,
-                                modifier = Modifier.fillMaxSize(),
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                        ) {
-                            history21K.forEach { point ->
-                                Text(
-                                    text = point.dayLabel,
-                                    style = AppText.body.copy(fontSize = 10.sp, color = AppColors.Muted),
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            StatBox(
-                                label = "التغير",
-                                value = changeLabel,
-                                valueColor = if (changePct >= 0.0) AppColors.Trust else AppColors.Alert,
-                                modifier = Modifier.weight(1f),
-                            )
-                            StatBox("الأدنى", formatCurrency(min21K, 0), AppColors.Ink, Modifier.weight(1f))
-                            StatBox("الأعلى", formatCurrency(max21K, 0), AppColors.Ink, Modifier.weight(1f))
-                        }
-                    }
+                    DailyGoldPriceTrendChartCard(
+                        dailyPrices = uiState.dailyGoldPriceTrend,
+                        isSyncedFromFirestore = uiState.isDailyPricesFromFirestore,
+                        onRecordTodayPrices = onRecordTodayPrices,
+                        isRecordingBusy = uiState.isActionBusy,
+                    )
                 }
 
                 item {
@@ -246,7 +191,7 @@ fun PriceInsightScreen(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "إشعارات هبوط السعر (FCM)",
+                                    text = "إشعارات تغير السعر الفورية (FCM)",
                                     style = AppText.display.copy(fontSize = 15.5.sp),
                                 )
                                 Text(
@@ -275,7 +220,8 @@ fun PriceInsightScreen(
                                 .background(
                                     if (hasNotificationPermission) AppColors.TrustSoft else AppColors.Alert.copy(alpha = 0.08f),
                                 )
-                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                                .padding(horizontal = 10.dp, vertical = 8.dp)
+                                .testTag("fcm_status_banner"),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Icon(
@@ -289,11 +235,13 @@ fun PriceInsightScreen(
                                 modifier = Modifier.size(16.dp),
                             )
                             Spacer(modifier = Modifier.width(8.dp))
+                            val topicName = FcmRegistrationManager.topicForKarat(alertKarat)
                             Text(
                                 text = when {
                                     !hasNotificationPermission -> "يتطلب السماح بإذن الإشعارات لاستلام تنبيهات FCM"
-                                    uiState.fcmToken != null -> "FCM متصل · الإشعارات مفعّلة لهذا الجهاز"
-                                    else -> "الإشعارات مفعّلة · قناة تنبيهات عيار 24 جاهزة"
+                                    !alertEnabled -> "التنبيهات متوقفة مؤقتاً — فعّل المفتاح للمتابعة"
+                                    uiState.fcmToken != null -> "FCM متصل ($topicName) · التنبيه الفوري مفعّل"
+                                    else -> "قناة تنبيهات عيار $alertKarat جاهزة ($topicName)"
                                 },
                                 modifier = Modifier.weight(1f),
                                 style = AppText.body.copy(
@@ -425,15 +373,17 @@ fun PriceInsightScreen(
                                     if (!hasNotificationPermission) {
                                         requestNotificationPermissionIfNeeded()
                                     } else {
-                                        val posted = GoldPriceNotificationHelper.show24KPriceDropAlert(
+                                        val posted = GoldPriceNotificationHelper.showGoldPriceThresholdAlert(
                                             context = context,
-                                            currentPriceEgp = uiState.gramPrice(24),
+                                            karat = alertKarat,
+                                            currentPriceEgp = currentKaratPrice,
                                             thresholdEgp = threshold,
+                                            isAbove = alertAbove,
                                         )
                                         scope.launch {
                                             snackbarHostState.showSnackbar(
                                                 if (posted) {
-                                                    "تم إرسال إشعار تجريبي لهبوط عيار 24"
+                                                    "تم إرسال إشعار تجريبي لتنبيه عيار $alertKarat"
                                                 } else {
                                                     "تعذر عرض الإشعار — تأكد من تفعيل إذن الإشعارات"
                                                 },
@@ -455,7 +405,7 @@ fun PriceInsightScreen(
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = "اختبار إشعار هبوط عيار 24 الآن",
+                                    text = "اختبار إشعار عيار $alertKarat الآن",
                                     style = AppText.body.copy(color = AppColors.Ink, fontWeight = FontWeight.Bold),
                                 )
                             }
@@ -499,106 +449,5 @@ fun PriceInsightScreen(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun StatBox(
-    label: String,
-    value: String,
-    valueColor: Color,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
-            .background(AppColors.ParchmentDeep)
-            .padding(vertical = 10.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(
-            text = label,
-            style = AppText.body.copy(fontSize = 11.sp, color = AppColors.Muted),
-        )
-        Spacer(modifier = Modifier.height(3.dp))
-        Text(
-            text = value,
-            style = AppText.display.copy(fontSize = 16.sp, color = valueColor),
-        )
-    }
-}
-
-@Composable
-private fun GoldPriceTrendChart(
-    data: List<Double>,
-    modifier: Modifier = Modifier,
-) {
-    Canvas(modifier = modifier) {
-        if (data.size < 2) return@Canvas
-        val minV = data.min()
-        val maxV = data.max()
-        val range = (maxV - minV).let { if (it < 1.0) 1.0 else it }
-        val dx = size.width / (data.size - 1)
-
-        fun pointAt(i: Int): Offset {
-            val norm = ((data[i] - minV) / range).toFloat()
-            val x = size.width - i * dx // RTL flow: newest on left/end or chronological right-to-left
-            val y = size.height - norm * size.height * 0.82f - size.height * 0.09f
-            return Offset(x, y)
-        }
-
-        // Subtle horizontal guide lines
-        for (step in 0..2) {
-            val y = size.height * (0.15f + step * 0.35f)
-            drawLine(
-                color = AppColors.Line.copy(alpha = 0.5f),
-                start = Offset(0f, y),
-                end = Offset(size.width, y),
-                strokeWidth = 1.dp.toPx(),
-            )
-        }
-
-        val linePath = Path().apply {
-            val first = pointAt(0)
-            moveTo(first.x, first.y)
-            for (i in 1 until data.size) {
-                val pt = pointAt(i)
-                lineTo(pt.x, pt.y)
-            }
-        }
-
-        val fillPath = Path().apply {
-            addPath(linePath)
-            val last = pointAt(data.lastIndex)
-            val first = pointAt(0)
-            lineTo(last.x, size.height)
-            lineTo(first.x, size.height)
-            close()
-        }
-
-        drawPath(
-            path = fillPath,
-            brush = Brush.verticalGradient(
-                colors = listOf(AppColors.Brass.copy(alpha = 0.24f), Color.Transparent),
-            ),
-        )
-
-        drawPath(
-            path = linePath,
-            color = AppColors.Brass,
-            style = Stroke(width = 2.6.dp.toPx(), cap = StrokeCap.Round),
-        )
-
-        val latest = pointAt(data.lastIndex)
-        drawCircle(
-            color = AppColors.Brass.copy(alpha = 0.25f),
-            radius = 9.dp.toPx(),
-            center = latest,
-        )
-        drawCircle(
-            color = AppColors.Brass,
-            radius = 5.dp.toPx(),
-            center = latest,
-        )
     }
 }

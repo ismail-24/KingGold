@@ -269,6 +269,7 @@ internal fun NavGraphBuilder.registerSecondaryDestinations(
                 uiState = uiState,
                 onSaveAlert = vm::updatePriceAlert,
                 onOpenAiAdvisor = { prompt -> navController.navigateSingleTop(Routes.aiAdvisor(prompt), isAuthorized) },
+                onRecordTodayPrices = if (uiState.isAdmin) vm::recordTodayDailyGoldPrices else null,
                 onBack = { navController.popBackSafely() },
             )
         }

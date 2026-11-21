@@ -300,4 +300,32 @@ class KingGoldViewModelTest {
         assertEquals(product.availablePieces, vm.uiState.value.cartItemCount)
         assertEquals(582, vm.uiState.value.priceLockSecondsRemaining)
     }
+
+    @Test
+    fun priceThresholdAlert_triggersFor21KAnd18KWhenBelowThreshold() {
+        val triggered = mutableListOf<Triple<Int, Double, Double>>()
+        val vm = KingGoldViewModel(
+            onPriceThresholdTriggered = { karat, currentPrice, threshold, _ ->
+                triggered.add(Triple(karat, currentPrice, threshold))
+            },
+        )
+
+        // Default 21K is 5425 -> threshold 5400 does not trigger
+        vm.updatePriceAlert(enabled = true, above = false, karat = 21, target = "5400")
+        assertTrue(triggered.isEmpty())
+        assertFalse(vm.uiState.value.isPriceAlertTriggered)
+
+        // Threshold 5500 -> 5425 < 5500 triggers 21K drop alert
+        vm.updatePriceAlert(enabled = true, above = false, karat = 21, target = "5500")
+        assertEquals(1, triggered.size)
+        assertEquals(21, triggered.first().first)
+        assertEquals(5425.0, triggered.first().second, 0.01)
+        assertEquals(5500.0, triggered.first().third, 0.01)
+        assertTrue(vm.uiState.value.isPriceAlertTriggered)
+
+        // Disabled alert suppresses triggers
+        vm.updatePriceAlert(enabled = false, above = false, karat = 18, target = "5000")
+        assertEquals(1, triggered.size)
+        assertFalse(vm.uiState.value.isPriceAlertTriggered)
+    }
 }

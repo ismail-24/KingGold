@@ -18,4 +18,14 @@ class ExampleRobolectricTest {
     val appName = context.getString(R.string.app_name)
     assertEquals("King Gold", appName)
   }
+
+  @Test
+  fun `configureOsmdroid sets user agent and app internal tile directories`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    com.example.ui.components.configureOsmdroid(context)
+    val config = org.osmdroid.config.Configuration.getInstance()
+    assertEquals(context.packageName.ifBlank { "com.example.kinggold" }, config.userAgentValue)
+    assertEquals(true, config.osmdroidBasePath.absolutePath.contains("osmdroid"))
+    assertEquals(true, config.osmdroidTileCache.absolutePath.contains("osmdroid"))
+  }
 }

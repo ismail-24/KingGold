@@ -19,6 +19,22 @@ data class GoldPriceHistoryPoint(
     val pricePerGram: Double,
 )
 
+data class DailyGoldPrice(
+    val dateKey: String,
+    val dayLabel: String,
+    val price24kEgp: Double,
+    val price21kEgp: Double,
+    val price18kEgp: Double,
+    val source: String = "SEED",
+) {
+    fun priceForKarat(karat: Int): Double = when (karat) {
+        24 -> price24kEgp
+        21 -> price21kEgp
+        18 -> price18kEgp
+        else -> price24kEgp
+    }
+}
+
 data class Shop(
     val id: String,
     val name: String,

@@ -1155,4 +1155,235 @@ test("Atomic MARKETPLACE_ORDER_PAID checkout debits cash wallet, creates merchan
   assert.equal(prodAfter.data().stockQuantity, 1);
 });
 
+function validGoldShopLocationPayload(ownerUid, overrides = {}) {
+  return {
+    name: "النور للذهب",
+    city: "القاهرة",
+    area: "المعادي",
+    address: "12 شارع 9، المعادي، القاهرة",
+    phone: "+201001234567",
+    latitude: 29.9602,
+    longitude: 31.2569,
+    rating: 4.9,
+    reviews: 212,
+    distanceKm: 1.2,
+    verified: true,
+    closesAt: "9:00 م",
+    makingFeePerGram: 90.0,
+    ownerUid,
+    active: true,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    ...overrides,
+  };
+}
+
+test("gold_shops coordinates collection: zero-trust isolation, coordinate validation, and active map query", async () => {
+  const unauthDb = testEnv.unauthenticatedContext().firestore();
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const merchantDb = testEnv.authenticatedContext(MERCHANT_UID).firestore();
+  const admDb = adminContext(true).firestore();
+
+  // Unauthenticated reads/writes are denied
+  await assertFails(unauthDb.collection("gold_shops").where("active", "==", true).get());
+  await assertFails(
+    unauthDb.doc("gold_shops/s1").set(validGoldShopLocationPayload(ADMIN_UID))
+  );
+
+  // Non-admin cannot publish active or verified shop pins directly
+  await assertFails(
+    aliceDb.doc("gold_shops/s1").set(validGoldShopLocationPayload(ALICE_UID))
+  );
+  await assertFails(
+    merchantDb.doc("gold_shops/s_m1").set(
+      validGoldShopLocationPayload(MERCHANT_UID, { verified: true, active: false })
+    )
+  );
+
+  // Invalid coordinates (0, 0) or out-of-range latitude fail even for admin
+  await assertFails(
+    admDb.doc("gold_shops/s_zero").set(
+      validGoldShopLocationPayload(ADMIN_UID, { latitude: 0, longitude: 0 })
+    )
+  );
+  await assertFails(
+    admDb.doc("gold_shops/s_oob").set(
+      validGoldShopLocationPayload(ADMIN_UID, { latitude: 95.0, longitude: 31.2 })
+    )
+  );
+
+  // Admin publishes verified active gold shop coordinates
+  await assertSucceeds(
+    admDb.doc("gold_shops/s1").set(validGoldShopLocationPayload(ADMIN_UID))
+  );
+  await assertSucceeds(
+    admDb.doc("gold_shops/s_khan").set(
+      validGoldShopLocationPayload(ADMIN_UID, {
+        name: "صاغة خان الخليلي",
+        city: "القاهرة",
+        area: "الحسين",
+        address: "شارع المعز لدين الله، القاهرة",
+        latitude: 30.0477,
+        longitude: 31.2623,
+        distanceKm: 4.5,
+      })
+    )
+  );
+
+  // Merchant proposes unverified/inactive shop coordinate record for review
+  await assertSucceeds(
+    merchantDb.doc("gold_shops/s_pending").set(
+      validGoldShopLocationPayload(MERCHANT_UID, {
+        name: "فرع الزمالك الجديد",
+        area: "الزمالك",
+        latitude: 30.0609,
+        longitude: 31.2197,
+        verified: false,
+        active: false,
+      })
+    )
+  );
+
+  // Merchant can update own proposed coordinates, but cannot self-verify or activate
+  await assertSucceeds(
+    merchantDb.doc("gold_shops/s_pending").update({
+      latitude: 30.0615,
+      longitude: 31.2201,
+      updatedAt: serverTimestamp(),
+    })
+  );
+  await assertFails(
+    merchantDb.doc("gold_shops/s_pending").update({
+      active: true,
+      verified: true,
+      updatedAt: serverTimestamp(),
+    })
+  );
+
+  // Buyer cannot read inactive shop or run unfiltered list query, but CAN query active == true
+  await assertFails(aliceDb.doc("gold_shops/s_pending").get());
+  await assertFails(aliceDb.collection("gold_shops").get());
+  const activeSnap = await assertSucceeds(
+    aliceDb.collection("gold_shops").where("active", "==", true).get()
+  );
+  assert.equal(activeSnap.size, 2);
+
+  // Merchant storefront can also carry optional coordinates
+  await assertSucceeds(
+    merchantDb.doc("merchants/m_geo").set(
+      validMerchantPayload(MERCHANT_UID, {
+        city: "الإسكندرية",
+        latitude: 31.2001,
+        longitude: 29.9187,
+      })
+    )
+  );
+});
+
+function validDailyGoldPricePayload(dateKey, adminUid, overrides = {}) {
+  return {
+    dateKey,
+    dayLabel: "20 نوف",
+    price24kPerGramPiasters: 620000,
+    price21kPerGramPiasters: 542500,
+    price18kPerGramPiasters: 465000,
+    source: "ADMIN_PRICING",
+    published: true,
+    updatedByAdminUid: adminUid,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    ...overrides,
+  };
+}
+
+test("daily_gold_prices collection: zero-trust writes, karat ordering, and published trend query", async () => {
+  const unauthDb = testEnv.unauthenticatedContext().firestore();
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const admDb = adminContext(true).firestore();
+
+  // Unauthenticated reads/writes are denied
+  await assertFails(
+    unauthDb.collection("daily_gold_prices").where("published", "==", true).get()
+  );
+  await assertFails(
+    unauthDb.doc("daily_gold_prices/2026-11-20").set(
+      validDailyGoldPricePayload("2026-11-20", ADMIN_UID)
+    )
+  );
+
+  // Regular buyer cannot write or tamper daily gold price benchmarks
+  await assertFails(
+    aliceDb.doc("daily_gold_prices/2026-11-20").set(
+      validDailyGoldPricePayload("2026-11-20", ALICE_UID)
+    )
+  );
+
+  // Invalid dateId format or violated karat price ordering (24K > 21K > 18K) fails even for admin
+  await assertFails(
+    admDb.doc("daily_gold_prices/invalid-date").set(
+      validDailyGoldPricePayload("invalid-date", ADMIN_UID)
+    )
+  );
+  await assertFails(
+    admDb.doc("daily_gold_prices/2026-11-20").set(
+      validDailyGoldPricePayload("2026-11-20", ADMIN_UID, {
+        price24kPerGramPiasters: 500000,
+        price21kPerGramPiasters: 550000,
+      })
+    )
+  );
+
+  // Admin writes published & unpublished benchmarks
+  await assertSucceeds(
+    admDb.doc("daily_gold_prices/2026-11-19").set(
+      validDailyGoldPricePayload("2026-11-19", ADMIN_UID, {
+        dayLabel: "19 نوف",
+        price24kPerGramPiasters: 615000,
+        price21kPerGramPiasters: 538100,
+        price18kPerGramPiasters: 461200,
+        source: "SEED",
+      })
+    )
+  );
+  await assertSucceeds(
+    admDb.doc("daily_gold_prices/2026-11-20").set(
+      validDailyGoldPricePayload("2026-11-20", ADMIN_UID, {
+        dayLabel: "اليوم",
+      })
+    )
+  );
+  await assertSucceeds(
+    admDb.doc("daily_gold_prices/2026-11-21").set(
+      validDailyGoldPricePayload("2026-11-21", ADMIN_UID, {
+        published: false,
+      })
+    )
+  );
+
+  // Partial update preserves immutable createdAt & dateKey
+  await assertSucceeds(
+    admDb.doc("daily_gold_prices/2026-11-20").update({
+      price24kPerGramPiasters: 622000,
+      price21kPerGramPiasters: 544200,
+      price18kPerGramPiasters: 466500,
+      updatedAt: serverTimestamp(),
+    })
+  );
+  await assertFails(
+    admDb.doc("daily_gold_prices/2026-11-20").update({
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    })
+  );
+
+  // Buyer cannot read unpublished docs or run unfiltered list query, but CAN query published == true
+  await assertFails(aliceDb.doc("daily_gold_prices/2026-11-21").get());
+  await assertFails(aliceDb.collection("daily_gold_prices").get());
+  const publishedSnap = await assertSucceeds(
+    aliceDb.collection("daily_gold_prices").where("published", "==", true).get()
+  );
+  assert.equal(publishedSnap.size, 2);
+});
+
+
 

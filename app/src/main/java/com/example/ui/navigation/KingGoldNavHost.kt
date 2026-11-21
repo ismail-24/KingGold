@@ -98,16 +98,24 @@ fun KingGoldNavHost(
     if (viewModel != null) {
         val alertConfig by remember(viewModel) {
             viewModel.uiState
-                .map { Triple(it.priceAlertEnabled, it.priceAlertKarat, it.priceAlertAbove) }
+                .map {
+                    listOf(
+                        it.priceAlertEnabled.toString(),
+                        it.priceAlertKarat.toString(),
+                        it.priceAlertAbove.toString(),
+                        it.priceAlertTarget,
+                    )
+                }
                 .distinctUntilChanged()
-        }.collectAsStateWithLifecycle(initialValue = Triple(true, 24, false))
+        }.collectAsStateWithLifecycle(initialValue = listOf("true", "24", "false", "6000"))
 
         LaunchedEffect(alertConfig) {
             FcmRegistrationManager.syncFcmAlertSubscription(
                 context = context,
-                enabled = alertConfig.first,
-                alertKarat = alertConfig.second,
-                alertAbove = alertConfig.third,
+                enabled = alertConfig[0].toBoolean(),
+                alertKarat = alertConfig[1].toIntOrNull() ?: 24,
+                alertAbove = alertConfig[2].toBoolean(),
+                alertTarget = alertConfig[3],
                 onTokenSynced = viewModel::updateFcmTokenState,
             )
         }

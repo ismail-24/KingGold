@@ -104,6 +104,9 @@
         "prepaidMakingApproved": { "type": "boolean" },
         "prepaidMakingBudgetPiasters": { "type": "integer" },
         "pricingPolicyNote": { "type": "string" },
+        "city": { "type": "string", "description": "Optional Egyptian city name" },
+        "latitude": { "type": "number", "description": "Optional store WGS84 latitude" },
+        "longitude": { "type": "number", "description": "Optional store WGS84 longitude" },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
@@ -345,6 +348,51 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["actorUid", "actorRole", "action", "targetPath", "details", "createdAt"]
+    },
+    "GoldShopLocation": {
+      "title": "GoldShopLocation",
+      "description": "Gold shop directory record with geographic coordinates for the osmdroid MapView",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Display name of the gold shop" },
+        "city": { "type": "string", "description": "City name in Egypt" },
+        "area": { "type": "string", "description": "Neighborhood or district" },
+        "address": { "type": "string", "description": "Full street address" },
+        "phone": { "type": "string", "description": "Customer contact phone number" },
+        "latitude": { "type": "number", "description": "WGS84 latitude (-85..85)" },
+        "longitude": { "type": "number", "description": "WGS84 longitude (-180..180)" },
+        "coordinates": { "type": "object", "description": "Optional Firestore GeoPoint (latlng)" },
+        "rating": { "type": "number" },
+        "reviews": { "type": "integer" },
+        "distanceKm": { "type": "number" },
+        "verified": { "type": "boolean" },
+        "closesAt": { "type": "string" },
+        "makingFeePerGram": { "type": "number" },
+        "merchantId": { "type": "string", "description": "Optional linked merchant document ID" },
+        "ownerUid": { "type": "string", "description": "Admin or merchant owner UID" },
+        "active": { "type": "boolean", "description": "Whether the shop marker is active on the public map" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "city", "area", "address", "phone", "latitude", "longitude", "rating", "reviews", "distanceKm", "verified", "closesAt", "makingFeePerGram", "ownerUid", "active", "createdAt", "updatedAt"]
+    },
+    "DailyGoldPrice": {
+      "title": "DailyGoldPrice",
+      "description": "Daily gold price snapshot in piasters per gram for 24k, 21k, and 18k karats",
+      "type": "object",
+      "properties": {
+        "dateKey": { "type": "string", "description": "ISO calendar date YYYY-MM-DD used as document ID" },
+        "dayLabel": { "type": "string", "description": "Display label for chart X-axis (e.g. '15 نوف' or 'اليوم')" },
+        "price24kPerGramPiasters": { "type": "integer", "description": "Daily 24k gold price per gram in piasters" },
+        "price21kPerGramPiasters": { "type": "integer", "description": "Daily 21k gold price per gram in piasters" },
+        "price18kPerGramPiasters": { "type": "integer", "description": "Daily 18k gold price per gram in piasters" },
+        "source": { "type": "string", "enum": ["SEED", "ADMIN_PRICING", "GLOBAL_FEED"], "description": "Origin of the daily price entry" },
+        "published": { "type": "boolean", "description": "Whether the daily benchmark is published for buyer charts" },
+        "updatedByAdminUid": { "type": "string", "description": "Admin UID that recorded or updated this daily benchmark" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp on creation" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp on update" }
+      },
+      "required": ["dateKey", "dayLabel", "price24kPerGramPiasters", "price21kPerGramPiasters", "price18kPerGramPiasters", "source", "published", "updatedByAdminUid", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
@@ -415,6 +463,14 @@
     "/users/{userId}/ledger/{entryId}": {
       "schema": { "$ref": "#/entities/LedgerEntry" },
       "description": "Append-only immutable cash & gold movement ledger"
+    },
+    "/gold_shops/{shopId}": {
+      "schema": { "$ref": "#/entities/GoldShopLocation" },
+      "description": "Gold shop directory & geographic coordinates for map markers"
+    },
+    "/daily_gold_prices/{dateId}": {
+      "schema": { "$ref": "#/entities/DailyGoldPrice" },
+      "description": "Daily gold price series for 24k, 21k, and 18k trend charts"
     }
   }
 }

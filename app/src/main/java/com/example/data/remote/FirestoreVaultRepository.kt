@@ -969,10 +969,34 @@ class FirestoreVaultRepository(
             merchantPolicyNote = config.merchantPolicyNote.trim(),
             updatedByAdminUid = adminUid,
         )
+        val todayKey = com.example.data.KingGoldRepository.todayDateKey()
+        val dailyRef = db.collection("daily_gold_prices").document(todayKey)
+        val validDailyOrder = config.reference18kPerGramPiasters >= 100000L &&
+            config.reference21kPerGramPiasters > config.reference18kPerGramPiasters &&
+            config.reference24kPerGramPiasters > config.reference21kPerGramPiasters
         return try {
+            val dailyExists = if (validDailyOrder) dailyRef.get().await().exists() else false
             db.runBatch { batch ->
                 batch.set(cfgRef, rec.toWriteMap())
                 batch.set(histRef, rec.toWriteMap())
+                if (validDailyOrder) {
+                    val dailyRec = DailyGoldPriceRecord(
+                        id = todayKey,
+                        dateKey = todayKey,
+                        dayLabel = "اليوم",
+                        price24kPerGramPiasters = config.reference24kPerGramPiasters,
+                        price21kPerGramPiasters = config.reference21kPerGramPiasters,
+                        price18kPerGramPiasters = config.reference18kPerGramPiasters,
+                        source = "ADMIN_PRICING",
+                        published = true,
+                        updatedByAdminUid = adminUid,
+                    )
+                    if (dailyExists) {
+                        batch.update(dailyRef, dailyRec.toUpdateMap())
+                    } else {
+                        batch.set(dailyRef, dailyRec.toCreateMap())
+                    }
+                }
             }.await()
             Result.success(Unit)
         } catch (e: CancellationException) {

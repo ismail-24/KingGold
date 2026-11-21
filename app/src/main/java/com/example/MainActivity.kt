@@ -153,11 +153,13 @@ private fun rememberUserSessionViewModels(
                         currentUserId = user.uid,
                         userDisplayName = user.displayName,
                         userEmail = user.email,
-                        on24KPriceDroppedBelowThreshold = { current24K, threshold ->
-                            GoldPriceNotificationHelper.show24KPriceDropAlert(
+                        onPriceThresholdTriggered = { karat, currentPrice, threshold, isAbove ->
+                            GoldPriceNotificationHelper.showGoldPriceThresholdAlert(
                                 context = app,
-                                currentPriceEgp = current24K,
+                                karat = karat,
+                                currentPriceEgp = currentPrice,
                                 thresholdEgp = threshold,
+                                isAbove = isAbove,
                             )
                         },
                     )

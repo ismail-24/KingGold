@@ -9,11 +9,13 @@ import com.example.data.KingGoldRepository
 import com.example.data.remote.FirestoreKingGoldRepository
 import com.example.data.remote.FirestoreMarketplaceRepository
 import com.example.data.remote.FirestoreVaultRepository
+import com.example.data.remote.GoldShopLocationRecord
 import com.example.data.remote.OrderItemRecord
 import com.example.data.remote.UserCartRecord
 import com.example.data.remote.UserPreferencesRecord
 import com.example.model.AuditLogRecord
 import com.example.model.CartItem
+import com.example.model.DailyGoldPrice
 import com.example.model.DepositRequest
 import com.example.model.DepositStatus
 import com.example.model.FractionalGoldOrder
@@ -70,6 +72,8 @@ data class KingGoldUiState(
     val platformPricing: PlatformPricingConfig = PlatformPricingConfig(),
     val hasRemotePricingConfig: Boolean = false,
     val staticShops: List<Shop> = KingGoldRepository.shops,
+    val firestoreGoldShops: List<Shop> = emptyList(),
+    val firestoreDailyGoldPrices: List<DailyGoldPrice> = emptyList(),
     val approvedMerchants: List<MerchantStore> = emptyList(),
     val ownMerchants: List<MerchantStore> = emptyList(),
     val allMerchantsAdmin: List<MerchantStore> = emptyList(),
@@ -117,7 +121,11 @@ data class KingGoldUiState(
     val firestoreSyncError: String? = null,
 ) {
     val shops: List<Shop>
-        get() = staticShops + approvedMerchants.map { it.toShop() }
+        get() = mergeGoldShopCatalog(
+            staticShops = staticShops,
+            firestoreGoldShops = firestoreGoldShops,
+            approvedMerchants = approvedMerchants,
+        )
 
     fun productsForShop(shopId: String): List<Product> {
         val dynamic = activeMerchantProducts
@@ -259,6 +267,20 @@ data class KingGoldUiState(
         get() = availablePaymentMethods.firstOrNull { it.id == selectedPaymentMethodId }
             ?: availablePaymentMethods.first()
 
+    val isDailyPricesFromFirestore: Boolean
+        get() = firestoreDailyGoldPrices.isNotEmpty()
+
+    val dailyGoldPriceTrend: List<DailyGoldPrice>
+        get() = if (firestoreDailyGoldPrices.isNotEmpty()) {
+            firestoreDailyGoldPrices.sortedBy { it.dateKey }.takeLast(14)
+        } else {
+            KingGoldRepository.dailyGoldPriceFallbackSeries(
+                current24KPrice = gramPrice(24),
+                current21KPrice = gramPrice(21),
+                current18KPrice = gramPrice(18),
+            )
+        }
+
     val history24K7Days: List<com.example.model.GoldPriceHistoryPoint>
         get() = KingGoldRepository.priceHistory24KForCurrentPrice(gramPrice(24))
 
@@ -273,6 +295,15 @@ data class KingGoldUiState(
             thresholdText = priceAlertTarget,
             current24KPrice = gramPrice(24),
         ) != null
+
+    val isPriceAlertTriggered: Boolean
+        get() = GoldPriceNotificationHelper.shouldTriggerPriceThresholdAlert(
+            alertEnabled = priceAlertEnabled,
+            alertAbove = priceAlertAbove,
+            alertKarat = priceAlertKarat,
+            thresholdText = priceAlertTarget,
+            currentKaratPrice = gramPrice(priceAlertKarat),
+        ) != null
 }
 
 class KingGoldViewModel(
@@ -283,6 +314,7 @@ class KingGoldViewModel(
     userDisplayName: String? = null,
     userEmail: String? = null,
     private val on24KPriceDroppedBelowThreshold: ((current24K: Double, threshold: Double) -> Unit)? = null,
+    private val onPriceThresholdTriggered: ((karat: Int, currentPrice: Double, threshold: Double, isAbove: Boolean) -> Unit)? = null,
     autoFetchPrices: Boolean = firestoreRepository != null,
 ) : ViewModel() {
 
@@ -302,7 +334,7 @@ class KingGoldViewModel(
     private var cartSyncJob: Job? = null
     private var merchantAuditJob: Job? = null
     private var hasLocalCartEdits = false
-    private var lastNotifiedDropSignature: Pair<Double, Double>? = null
+    private var lastNotifiedThresholdSignature: Triple<Int, Double, Double>? = null
 
     init {
         if (firestoreRepository != null && currentUserId != null) {
@@ -342,6 +374,21 @@ class KingGoldViewModel(
     private fun startFirestoreSync(repo: FirestoreKingGoldRepository, uid: String) {
         viewModelScope.launch {
             repo.ensureInitialUserData(uid)
+            if (isAdminUser) {
+                repo.seedInitialGoldShopsIfAdmin()
+                val snapshot = _uiState.value
+                repo.seedInitialDailyGoldPricesIfAdmin(
+                    current24KPrice = snapshot.gramPrice(24),
+                    current21KPrice = snapshot.gramPrice(21),
+                    current18KPrice = snapshot.gramPrice(18),
+                )
+            }
+        }
+        collectSafeFlow(repo.observeActiveGoldShops(), "تعذّر مزامنة مواقع محلات الذهب") { remoteShops ->
+            _uiState.update { it.copy(firestoreGoldShops = remoteShops, firestoreSyncError = null) }
+        }
+        collectSafeFlow(repo.observeDailyGoldPrices(), "تعذّر مزامنة السجل اليومي لأسعار الذهب") { dailyPrices ->
+            _uiState.update { it.copy(firestoreDailyGoldPrices = dailyPrices, firestoreSyncError = null) }
         }
         collectSafeFlow(repo.observeOrders(uid), "تعذّر مزامنة الطلبات") { records ->
             if (records.isNotEmpty()) {
@@ -369,7 +416,7 @@ class KingGoldViewModel(
                         firestoreSyncError = null,
                     )
                 }
-                evaluateAndNotify24KPriceDrop()
+                evaluateAndNotifyPriceAlert()
             }
         }
         collectSafeFlow(repo.observeCart(uid), "تعذّر مزامنة السلة") { remoteCart ->
@@ -448,7 +495,25 @@ class KingGoldViewModel(
         }
         collectSafeFlow(repo.observePlatformPricing(), "تعذّر مزامنة تسعير المنصة") { cfg ->
             if (cfg != null) {
-                _uiState.update { it.copy(platformPricing = cfg, hasRemotePricingConfig = true) }
+                val p24 = MoneyUtils.piastersToEgp(cfg.reference24kPerGramPiasters)
+                val p21 = MoneyUtils.piastersToEgp(cfg.reference21kPerGramPiasters)
+                val p18 = MoneyUtils.piastersToEgp(cfg.reference18kPerGramPiasters)
+                val prev24 = _uiState.value.gramPrice(24)
+                val pct = if (prev24 > 0.0) ((p24 - prev24) / prev24) * 100.0 else 0.0
+                val updatedPrices = listOf(
+                    KaratPrice(24, "عيار 24", p24, pct),
+                    KaratPrice(21, "عيار 21", p21, pct),
+                    KaratPrice(18, "عيار 18", p18, pct),
+                    KaratPrice(0, "الجنيه", p21 * 8.0, pct),
+                )
+                _uiState.update {
+                    it.copy(
+                        platformPricing = cfg,
+                        hasRemotePricingConfig = true,
+                        prices = updatedPrices,
+                    )
+                }
+                evaluateAndNotifyPriceAlert()
             }
         }
         collectSafeFlow(repo.observeUserSellRequests(uid), "تعذّر مزامنة طلبات البيع") { list ->
@@ -1590,9 +1655,9 @@ class KingGoldViewModel(
                 priceAlertTarget = target,
             )
         }
-        lastNotifiedDropSignature = null
+        lastNotifiedThresholdSignature = null
         syncPreferencesToFirestore(_uiState.value)
-        evaluateAndNotify24KPriceDrop()
+        evaluateAndNotifyPriceAlert()
     }
 
     fun updateFcmTokenState(token: String) {
@@ -1600,21 +1665,25 @@ class KingGoldViewModel(
         _uiState.update { it.copy(fcmToken = token) }
     }
 
-    private fun evaluateAndNotify24KPriceDrop() {
+    private fun evaluateAndNotifyPriceAlert() {
         val state = _uiState.value
-        val current24K = state.gramPrice(24)
-        val threshold = GoldPriceNotificationHelper.shouldTrigger24KDropAlert(
+        val karat = state.priceAlertKarat
+        val currentPrice = state.gramPrice(karat)
+        val threshold = GoldPriceNotificationHelper.shouldTriggerPriceThresholdAlert(
             alertEnabled = state.priceAlertEnabled,
             alertAbove = state.priceAlertAbove,
-            alertKarat = state.priceAlertKarat,
+            alertKarat = karat,
             thresholdText = state.priceAlertTarget,
-            current24KPrice = current24K,
+            currentKaratPrice = currentPrice,
         ) ?: return
 
-        val signature = current24K to threshold
-        if (lastNotifiedDropSignature != signature) {
-            lastNotifiedDropSignature = signature
-            on24KPriceDroppedBelowThreshold?.invoke(current24K, threshold)
+        val signature = Triple(karat, currentPrice, threshold)
+        if (lastNotifiedThresholdSignature != signature) {
+            lastNotifiedThresholdSignature = signature
+            onPriceThresholdTriggered?.invoke(karat, currentPrice, threshold, state.priceAlertAbove)
+            if (karat == 24 && !state.priceAlertAbove) {
+                on24KPriceDroppedBelowThreshold?.invoke(currentPrice, threshold)
+            }
         }
     }
 
@@ -1623,6 +1692,63 @@ class KingGoldViewModel(
 
     fun findShop(shopId: String): Shop? =
         _uiState.value.shops.firstOrNull { it.id == shopId }
+
+    fun saveGoldShopLocationToFirestore(shop: Shop, active: Boolean = true) {
+        val repo = firestoreRepository ?: return
+        val uid = currentUserId ?: return
+        val record = GoldShopLocationRecord.fromShop(
+            shop = shop,
+            ownerUid = shop.ownerUid.ifBlank { uid },
+            merchantId = if (shop.isDynamicMerchant) shop.id else null,
+            active = active && _uiState.value.isAdmin,
+            includeGeoPoint = true,
+        )
+        viewModelScope.launch {
+            repo.saveGoldShopLocation(record, shopId = shop.id.takeIf { it.isNotBlank() })
+                .onSuccess {
+                    _uiState.update { it.copy(actionBannerMessage = "تم حفظ إحداثيات محل ${shop.name} في Firestore.") }
+                }
+                .onFailure { err ->
+                    _uiState.update {
+                        it.copy(firestoreSyncError = err.localizedMessage ?: "تعذّر حفظ إحداثيات المحل")
+                    }
+                }
+        }
+    }
+
+    fun recordTodayDailyGoldPrices() {
+        if (!_uiState.value.isAdmin) return
+        val repo = firestoreRepository ?: return
+        val snapshot = _uiState.value
+        val p24 = MoneyUtils.egpToPiasters(snapshot.gramPrice(24))
+        val p21 = MoneyUtils.egpToPiasters(snapshot.gramPrice(21))
+        val p18 = MoneyUtils.egpToPiasters(snapshot.gramPrice(18))
+        viewModelScope.launch {
+            _uiState.update { it.copy(isActionBusy = true, actionErrorMessage = null) }
+            repo.recordDailyGoldPriceIfAdmin(
+                dateKey = KingGoldRepository.todayDateKey(),
+                dayLabel = "اليوم",
+                price24kPerGramPiasters = p24,
+                price21kPerGramPiasters = p21,
+                price18kPerGramPiasters = p18,
+                source = if (snapshot.goldFeedStatus is GoldFeedStatus.Live) "GLOBAL_FEED" else "ADMIN_PRICING",
+            ).onSuccess {
+                _uiState.update {
+                    it.copy(
+                        isActionBusy = false,
+                        actionBannerMessage = "تم تسجيل أسعار اليوم لعيار 24 و21 و18 في Firestore.",
+                    )
+                }
+            }.onFailure { err ->
+                _uiState.update {
+                    it.copy(
+                        isActionBusy = false,
+                        actionErrorMessage = err.localizedMessage ?: "تعذّر تسجيل أسعار اليوم",
+                    )
+                }
+            }
+        }
+    }
 
     fun refreshGlobalGoldPrices() {
         _uiState.update { it.copy(goldFeedStatus = GoldFeedStatus.Loading) }
@@ -1653,7 +1779,7 @@ class KingGoldViewModel(
                             ),
                         )
                     }
-                    evaluateAndNotify24KPriceDrop()
+                    evaluateAndNotifyPriceAlert()
                 }
                 is GlobalGoldFeedResult.Error -> {
                     _uiState.update {
@@ -1670,4 +1796,28 @@ class KingGoldViewModel(
         private const val TAG = "KingGoldVM"
         const val ADMIN_EMAIL = "esmailtarek228@gmail.com"
     }
+}
+
+fun mergeGoldShopCatalog(
+    staticShops: List<Shop>,
+    firestoreGoldShops: List<Shop>,
+    approvedMerchants: List<MerchantStore>,
+): List<Shop> {
+    val merged = LinkedHashMap<String, Shop>()
+    staticShops.forEach { shop -> merged[shop.id] = shop }
+    firestoreGoldShops.forEach { shop -> merged[shop.id] = shop }
+    approvedMerchants.map { it.toShop() }.forEach { merchantShop ->
+        val existing = merged[merchantShop.id]
+        val hasMerchantCoords = merchantShop.latitude != 0.0 || merchantShop.longitude != 0.0
+        merged[merchantShop.id] = if (existing != null && !hasMerchantCoords) {
+            merchantShop.copy(
+                latitude = existing.latitude,
+                longitude = existing.longitude,
+                city = merchantShop.city.ifBlank { existing.city },
+            )
+        } else {
+            merchantShop
+        }
+    }
+    return merged.values.toList()
 }
