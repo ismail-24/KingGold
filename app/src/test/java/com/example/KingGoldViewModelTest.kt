@@ -328,4 +328,37 @@ class KingGoldViewModelTest {
         assertEquals(1, triggered.size)
         assertFalse(vm.uiState.value.isPriceAlertTriggered)
     }
+
+    @Test
+    fun applyIncomingFcmEvent_updatesLivePricesAndSetsThresholdBanner() {
+        val triggered = mutableListOf<Triple<Int, Double, Double>>()
+        val vm = KingGoldViewModel(
+            onPriceThresholdTriggered = { karat, currentPrice, threshold, _ ->
+                triggered.add(Triple(karat, currentPrice, threshold))
+            },
+        )
+        vm.updatePriceAlert(enabled = true, above = true, karat = 24, target = "6300")
+        assertTrue(triggered.isEmpty())
+
+        vm.applyIncomingFcmEvent(
+            com.example.notifications.FcmIncomingPriceEvent(
+                price24k = 6360.0,
+                price21k = 5565.0,
+                price18k = 4770.0,
+                changePercent = 1.25,
+                triggeredKarat = 24,
+                triggeredThreshold = 6300.0,
+                triggeredAbove = true,
+            ),
+        )
+
+        assertEquals(6360.0, vm.uiState.value.gramPrice(24), 0.01)
+        assertEquals(5565.0, vm.uiState.value.gramPrice(21), 0.01)
+        assertEquals(4770.0, vm.uiState.value.gramPrice(18), 0.01)
+        assertTrue(vm.uiState.value.isPriceAlertTriggered)
+        assertTrue(vm.uiState.value.actionBannerMessage?.contains("6300") == true)
+        assertEquals(1, triggered.size)
+        assertEquals(24, triggered.first().first)
+        assertEquals(6360.0, triggered.first().second, 0.01)
+    }
 }

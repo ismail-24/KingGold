@@ -22,6 +22,15 @@ data class CachedPriceAlertRule(
     val above: Boolean = false,
     val karat: Int = 24,
     val thresholdText: String = "6000",
+) {
+    fun ruleKey(): String = "$enabled|$above|$karat|${thresholdText.trim()}"
+}
+
+data class ThresholdCrossingResult(
+    val karat: Int,
+    val currentPriceEgp: Double,
+    val thresholdEgp: Double,
+    val isAbove: Boolean,
 )
 
 object GoldPriceNotificationHelper {
@@ -32,6 +41,8 @@ object GoldPriceNotificationHelper {
     private const val KEY_ABOVE = "alert_above"
     private const val KEY_KARAT = "alert_karat"
     private const val KEY_TARGET = "alert_target"
+    private const val KEY_LAST_RULE_KEY = "alert_last_rule_key"
+    private const val KEY_WAS_CROSSED = "alert_was_crossed"
     private const val NOTIFICATION_ID_24K_DROP = 2401
     private const val NOTIFICATION_ID_FLUCTUATION = 2402
     private const val NOTIFICATION_ID_SHOP_OFFER_BASE = 2500
@@ -52,13 +63,33 @@ object GoldPriceNotificationHelper {
         thresholdText: String,
     ) {
         val safeKarat = if (karat in setOf(18, 21, 24)) karat else 24
-        context.applicationContext
+        val cleanTarget = thresholdText.trim()
+        val prefs = context.applicationContext
             .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit()
+        val newRuleKey = CachedPriceAlertRule(
+            enabled = enabled,
+            above = above,
+            karat = safeKarat,
+            thresholdText = cleanTarget,
+        ).ruleKey()
+        val previousRuleKey = prefs.getString(KEY_LAST_RULE_KEY, null)
+        val editor = prefs.edit()
             .putBoolean(KEY_ENABLED, enabled)
             .putBoolean(KEY_ABOVE, above)
             .putInt(KEY_KARAT, safeKarat)
-            .putString(KEY_TARGET, thresholdText.trim())
+            .putString(KEY_TARGET, cleanTarget)
+        if (!enabled || newRuleKey != previousRuleKey) {
+            editor.putString(KEY_LAST_RULE_KEY, newRuleKey)
+            editor.putBoolean(KEY_WAS_CROSSED, false)
+        }
+        editor.commit()
+    }
+
+    fun clearThresholdCrossingState(context: Context) {
+        context.applicationContext
+            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_WAS_CROSSED, false)
             .commit()
     }
 
@@ -136,6 +167,59 @@ object GoldPriceNotificationHelper {
         if (threshold <= 0.0) return null
         val triggered = if (alertAbove) currentKaratPrice > threshold else currentKaratPrice < threshold
         return if (triggered) threshold else null
+    }
+
+    /**
+     * Evaluates whether [currentKaratPrice] crosses the cached user-configured threshold.
+     * Fires once per crossing and automatically re-arms if the price moves back across the threshold
+     * or if the user updates their alert rule.
+     */
+    fun evaluateAndRecordThresholdCrossing(
+        context: Context,
+        currentKaratPrice: Double,
+    ): ThresholdCrossingResult? {
+        val rule = loadAlertRuleCache(context)
+        val ruleKey = rule.ruleKey()
+        val prefs = context.applicationContext
+            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val storedRuleKey = prefs.getString(KEY_LAST_RULE_KEY, null)
+        val wasCrossed = if (storedRuleKey == ruleKey) {
+            prefs.getBoolean(KEY_WAS_CROSSED, false)
+        } else {
+            false
+        }
+
+        val breachedThreshold = shouldTriggerPriceThresholdAlert(
+            alertEnabled = rule.enabled,
+            alertAbove = rule.above,
+            alertKarat = rule.karat,
+            thresholdText = rule.thresholdText,
+            currentKaratPrice = currentKaratPrice,
+        )
+
+        if (breachedThreshold == null) {
+            prefs.edit()
+                .putString(KEY_LAST_RULE_KEY, ruleKey)
+                .putBoolean(KEY_WAS_CROSSED, false)
+                .commit()
+            return null
+        }
+
+        if (wasCrossed) {
+            return null
+        }
+
+        prefs.edit()
+            .putString(KEY_LAST_RULE_KEY, ruleKey)
+            .putBoolean(KEY_WAS_CROSSED, true)
+            .commit()
+
+        return ThresholdCrossingResult(
+            karat = rule.karat,
+            currentPriceEgp = currentKaratPrice,
+            thresholdEgp = breachedThreshold,
+            isAbove = rule.above,
+        )
     }
 
     fun buildLaunchIntent(context: Context, targetRoute: String): Intent {

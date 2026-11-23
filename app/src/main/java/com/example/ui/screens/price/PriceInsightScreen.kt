@@ -96,6 +96,7 @@ fun PriceInsightScreen(
     var alertAbove by remember(uiState.priceAlertAbove) { mutableStateOf(uiState.priceAlertAbove) }
     var alertKarat by remember(uiState.priceAlertKarat) { mutableIntStateOf(uiState.priceAlertKarat) }
     var targetText by remember(uiState.priceAlertTarget) { mutableStateOf(uiState.priceAlertTarget) }
+    var targetError by remember { mutableStateOf<String?>(null) }
     var hasNotificationPermission by remember {
         mutableStateOf(GoldPriceNotificationHelper.hasNotificationPermission(context))
     }
@@ -406,6 +407,35 @@ fun PriceInsightScreen(
                             }
                         }
 
+                        if (alertEnabled && uiState.isPriceAlertTriggered) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(AppColors.Alert.copy(alpha = 0.10f))
+                                    .border(1.dp, AppColors.Alert.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
+                                    .padding(horizontal = 10.dp, vertical = 8.dp)
+                                    .testTag("fcm_threshold_crossed_banner"),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.NotificationsActive,
+                                    contentDescription = null,
+                                    tint = AppColors.Alert,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "تم تجاوز الحد المحدد الآن لعيار ${uiState.priceAlertKarat} (${if (uiState.priceAlertAbove) "أعلى من" else "أقل من"} ${uiState.priceAlertTarget} ج.م)",
+                                    style = AppText.body.copy(
+                                        color = AppColors.Alert,
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                    ),
+                                )
+                            }
+                        }
+
                         if (alertEnabled) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -459,11 +489,24 @@ fun PriceInsightScreen(
                                 }
                                 OutlinedTextField(
                                     value = targetText,
-                                    onValueChange = { targetText = it.filter { ch -> ch.isDigit() }.take(6) },
+                                    onValueChange = {
+                                        targetText = it.filter { ch -> ch.isDigit() }.take(6)
+                                        targetError = null
+                                    },
                                     modifier = Modifier
                                         .weight(1f)
                                         .testTag("alert_threshold_input"),
                                     singleLine = true,
+                                    isError = targetError != null,
+                                    supportingText = targetError?.let { err ->
+                                        {
+                                            Text(
+                                                text = err,
+                                                modifier = Modifier.testTag("alert_threshold_error"),
+                                                style = AppText.body.copy(color = AppColors.Alert, fontSize = 10.5.sp),
+                                            )
+                                        }
+                                    },
                                     suffix = {
                                         Text(
                                             text = "ج.م",
@@ -482,7 +525,20 @@ fun PriceInsightScreen(
 
                             Button(
                                 onClick = {
+                                    val parsedTarget = targetText.toDoubleOrNull()
+                                    if (parsedTarget == null || parsedTarget <= 0.0) {
+                                        targetError = "أدخل سعراً أكبر من 0"
+                                        return@Button
+                                    }
+                                    targetError = null
                                     requestNotificationPermissionIfNeeded()
+                                    GoldPriceNotificationHelper.saveAlertRuleCache(
+                                        context = context,
+                                        enabled = alertEnabled,
+                                        above = alertAbove,
+                                        karat = alertKarat,
+                                        thresholdText = targetText,
+                                    )
                                     onSaveAlert(alertEnabled, alertAbove, alertKarat, targetText)
                                     scope.launch {
                                         snackbarHostState.showSnackbar(

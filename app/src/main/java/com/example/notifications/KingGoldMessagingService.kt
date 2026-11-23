@@ -14,7 +14,22 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
+
+data class FcmIncomingPriceEvent(
+    val price24k: Double? = null,
+    val price21k: Double? = null,
+    val price18k: Double? = null,
+    val changePercent: Double? = null,
+    val triggeredKarat: Int? = null,
+    val triggeredThreshold: Double? = null,
+    val triggeredAbove: Boolean? = null,
+    val alertTitle: String? = null,
+    val alertBody: String? = null,
+)
 
 class KingGoldMessagingService : FirebaseMessagingService() {
 
@@ -56,6 +71,9 @@ class KingGoldMessagingService : FirebaseMessagingService() {
     companion object {
         private const val TAG = "KingGoldFCMService"
 
+        private val _incomingEvents = MutableSharedFlow<FcmIncomingPriceEvent>(extraBufferCapacity = 16)
+        val incomingEvents: SharedFlow<FcmIncomingPriceEvent> = _incomingEvents.asSharedFlow()
+
         internal fun handleIncomingFcmData(
             context: Context,
             data: Map<String, String>,
@@ -78,20 +96,24 @@ class KingGoldMessagingService : FirebaseMessagingService() {
                 )
             }
 
+            val price24k = data["price24k"]?.toDoubleOrNull()
+            val price21k = data["price21k"]?.toDoubleOrNull()
+            val price18k = data["price18k"]?.toDoubleOrNull()
             val changePercent = data["changePercent"]?.toDoubleOrNull()
-            val karat = data["karat"]?.toIntOrNull()?.takeIf { it in setOf(18, 21, 24) } ?: 24
+            val rule = GoldPriceNotificationHelper.loadAlertRuleCache(context)
+            val karat = data["karat"]?.toIntOrNull()?.takeIf { it in setOf(18, 21, 24) } ?: rule.karat
             val incomingPriceForKarat = priceForKaratFromPayload(data, karat)
 
             GoldPriceAppWidgetProvider.syncFromPayloadPrices(
                 context = context,
-                price24K = data["price24k"]?.toDoubleOrNull(),
-                price21K = data["price21k"]?.toDoubleOrNull(),
-                price18K = data["price18k"]?.toDoubleOrNull(),
+                price24K = price24k,
+                price21K = price21k,
+                price18K = price18k,
                 changePercent = changePercent,
             )
 
-            if (type == "price_fluctuation" || changePercent != null) {
-                return GoldPriceNotificationHelper.showPriceFluctuationAlert(
+            if (type == "price_fluctuation" || (type.isBlank() && changePercent != null)) {
+                val fluctuationShown = GoldPriceNotificationHelper.showPriceFluctuationAlert(
                     context = context,
                     karat = karat,
                     currentPriceEgp = incomingPriceForKarat,
@@ -99,43 +121,115 @@ class KingGoldMessagingService : FirebaseMessagingService() {
                     customTitle = title,
                     customBody = body,
                 )
+                val targetPrice = priceForKaratFromPayload(data, rule.karat)
+                val crossing = GoldPriceNotificationHelper.evaluateAndRecordThresholdCrossing(
+                    context = context,
+                    currentKaratPrice = targetPrice,
+                )
+                if (crossing != null) {
+                    GoldPriceNotificationHelper.showGoldPriceThresholdAlert(
+                        context = context,
+                        karat = crossing.karat,
+                        currentPriceEgp = crossing.currentPriceEgp,
+                        thresholdEgp = crossing.thresholdEgp,
+                        isAbove = crossing.isAbove,
+                    )
+                }
+                _incomingEvents.tryEmit(
+                    FcmIncomingPriceEvent(
+                        price24k = price24k,
+                        price21k = price21k,
+                        price18k = price18k,
+                        changePercent = changePercent,
+                        triggeredKarat = crossing?.karat,
+                        triggeredThreshold = crossing?.thresholdEgp,
+                        triggeredAbove = crossing?.isAbove,
+                        alertTitle = title,
+                        alertBody = body,
+                    ),
+                )
+                return fluctuationShown || crossing != null
             }
 
-            // Real-time background price tick broadcast: only notify if user's configured threshold is crossed
-            if (type == "price_update" || type == "gold_price_tick") {
-                val rule = GoldPriceNotificationHelper.loadAlertRuleCache(context)
+            // Real-time background price tick broadcast: notify only when user's configured threshold is crossed
+            if (type in setOf("price_update", "gold_price_tick", "threshold_check")) {
                 val targetPrice = priceForKaratFromPayload(data, rule.karat)
-                val breachedThreshold = GoldPriceNotificationHelper.shouldTriggerPriceThresholdAlert(
-                    alertEnabled = rule.enabled,
-                    alertAbove = rule.above,
-                    alertKarat = rule.karat,
-                    thresholdText = rule.thresholdText,
-                    currentKaratPrice = targetPrice,
-                ) ?: return false
-
-                return GoldPriceNotificationHelper.showGoldPriceThresholdAlert(
+                val crossing = GoldPriceNotificationHelper.evaluateAndRecordThresholdCrossing(
                     context = context,
-                    karat = rule.karat,
-                    currentPriceEgp = targetPrice,
-                    thresholdEgp = breachedThreshold,
-                    isAbove = rule.above,
+                    currentKaratPrice = targetPrice,
+                )
+                if (crossing == null) {
+                    _incomingEvents.tryEmit(
+                        FcmIncomingPriceEvent(
+                            price24k = price24k,
+                            price21k = price21k,
+                            price18k = price18k,
+                            changePercent = changePercent,
+                        ),
+                    )
+                    return false
+                }
+
+                val posted = GoldPriceNotificationHelper.showGoldPriceThresholdAlert(
+                    context = context,
+                    karat = crossing.karat,
+                    currentPriceEgp = crossing.currentPriceEgp,
+                    thresholdEgp = crossing.thresholdEgp,
+                    isAbove = crossing.isAbove,
                     customTitle = title,
                     customBody = body,
                 )
+                _incomingEvents.tryEmit(
+                    FcmIncomingPriceEvent(
+                        price24k = price24k,
+                        price21k = price21k,
+                        price18k = price18k,
+                        changePercent = changePercent,
+                        triggeredKarat = crossing.karat,
+                        triggeredThreshold = crossing.thresholdEgp,
+                        triggeredAbove = crossing.isAbove,
+                        alertTitle = title,
+                        alertBody = body,
+                    ),
+                )
+                return posted
             }
 
-            val threshold = data["threshold"]?.toDoubleOrNull() ?: 0.0
-            val isAbove = data["direction"]?.trim()?.equals("above", ignoreCase = true) == true
+            val explicitDirection = data["direction"]?.trim()?.lowercase()
+            val isAbove = when (explicitDirection) {
+                "above", "up", "surge" -> true
+                "below", "down", "drop" -> false
+                else -> type == "price_surge" || (type != "price_drop" && rule.above)
+            }
+            val threshold = data["threshold"]?.toDoubleOrNull()
+                ?: rule.thresholdText.toDoubleOrNull()
+                ?: 0.0
             if (incomingPriceForKarat > 0.0 || !title.isNullOrBlank() || !body.isNullOrBlank()) {
-                return GoldPriceNotificationHelper.showGoldPriceThresholdAlert(
+                val effectivePrice = if (incomingPriceForKarat > 0.0) incomingPriceForKarat else threshold
+                val effectiveThreshold = if (threshold > 0.0) threshold else effectivePrice
+                val posted = GoldPriceNotificationHelper.showGoldPriceThresholdAlert(
                     context = context,
                     karat = karat,
-                    currentPriceEgp = if (incomingPriceForKarat > 0.0) incomingPriceForKarat else threshold,
-                    thresholdEgp = if (threshold > 0.0) threshold else incomingPriceForKarat,
+                    currentPriceEgp = effectivePrice,
+                    thresholdEgp = effectiveThreshold,
                     isAbove = isAbove,
                     customTitle = title,
                     customBody = body,
                 )
+                _incomingEvents.tryEmit(
+                    FcmIncomingPriceEvent(
+                        price24k = price24k,
+                        price21k = price21k,
+                        price18k = price18k,
+                        changePercent = changePercent,
+                        triggeredKarat = karat,
+                        triggeredThreshold = effectiveThreshold,
+                        triggeredAbove = isAbove,
+                        alertTitle = title,
+                        alertBody = body,
+                    ),
+                )
+                return posted
             }
             return false
         }

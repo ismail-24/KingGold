@@ -119,6 +119,12 @@ fun KingGoldNavHost(
                 onTokenSynced = viewModel::updateFcmTokenState,
             )
         }
+
+        LaunchedEffect(viewModel) {
+            com.example.notifications.KingGoldMessagingService.incomingEvents.collect { event ->
+                viewModel.applyIncomingFcmEvent(event)
+            }
+        }
     }
 
     // Reactive auth guard across state changes (Sign In / Sign Out).

@@ -742,4 +742,131 @@ class KingGoldNewFeaturesTest {
 
         assertEquals(listOf(true, false, 21, "5300"), savedTuple)
     }
+
+    @Test
+    fun fcmMessagingService_upwardThresholdCrossingDeduplicatesUntilReArmed() {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        Shadows.shadowOf(app).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        val notificationManager =
+            app.getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        val shadowNm = Shadows.shadowOf(notificationManager)
+        notificationManager.cancelAll()
+
+        // Verify fixed 24K above-threshold topic selection includes 24K + above topics
+        val topics = com.example.notifications.FcmRegistrationManager.activeTopicsFor(
+            enabled = true,
+            alertKarat = 24,
+            alertAbove = true,
+        )
+        assertTrue(com.example.notifications.FcmRegistrationManager.TOPIC_GOLD_24K_ALERTS in topics)
+        assertTrue(com.example.notifications.FcmRegistrationManager.TOPIC_PRICE_DIRECTION_ABOVE in topics)
+        assertTrue(com.example.notifications.FcmRegistrationManager.TOPIC_PRICE_THRESHOLD_ALL in topics)
+
+        // Configure 24K > 6300 upward threshold alert
+        GoldPriceNotificationHelper.saveAlertRuleCache(
+            context = app,
+            enabled = true,
+            above = true,
+            karat = 24,
+            thresholdText = "6300",
+        )
+
+        // 1) Tick below threshold -> not triggered
+        assertFalse(
+            com.example.notifications.KingGoldMessagingService.handleIncomingFcmData(
+                context = app,
+                data = mapOf("type" to "gold_price_tick", "price24k" to "6280"),
+            ),
+        )
+        assertEquals(0, shadowNm.allNotifications.size)
+
+        // 2) First crossing above 6300 -> triggers notification
+        assertTrue(
+            com.example.notifications.KingGoldMessagingService.handleIncomingFcmData(
+                context = app,
+                data = mapOf("type" to "gold_price_tick", "price24k" to "6350"),
+            ),
+        )
+        assertEquals(1, shadowNm.allNotifications.size)
+        val firstBody = shadowNm.allNotifications.first().extras
+            .getString(android.app.Notification.EXTRA_TEXT).orEmpty()
+        assertTrue(firstBody.contains("6,350"))
+        assertTrue(firstBody.contains("6,300"))
+
+        // 3) Continued tick above 6300 for the same rule -> suppressed (no spam)
+        assertFalse(
+            com.example.notifications.KingGoldMessagingService.handleIncomingFcmData(
+                context = app,
+                data = mapOf("type" to "gold_price_tick", "price24k" to "6380"),
+            ),
+        )
+        assertEquals(1, shadowNm.allNotifications.size)
+
+        // 4) Price drops back below 6300 -> re-arms without notifying
+        assertFalse(
+            com.example.notifications.KingGoldMessagingService.handleIncomingFcmData(
+                context = app,
+                data = mapOf("type" to "gold_price_tick", "price24k" to "6290"),
+            ),
+        )
+        assertEquals(1, shadowNm.allNotifications.size)
+
+        // 5) Crosses above 6300 again -> notifies again (updating the active notification for 24K above)
+        assertTrue(
+            com.example.notifications.KingGoldMessagingService.handleIncomingFcmData(
+                context = app,
+                data = mapOf("type" to "gold_price_tick", "price24k" to "6320"),
+            ),
+        )
+        assertEquals(1, shadowNm.allNotifications.size)
+        val reArmedBody = shadowNm.allNotifications.first().extras
+            .getString(android.app.Notification.EXTRA_TEXT).orEmpty()
+        assertTrue(reArmedBody.contains("6,320"))
+    }
+
+    @Test
+    fun priceInsightScreen_showsCrossedBannerAndValidatesThresholdBeforeSaving() {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        Shadows.shadowOf(app).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        val vm = KingGoldViewModel(autoFetchPrices = false)
+        // Current 24K is 6200 -> 6200 > 6100 triggers crossed banner
+        vm.updatePriceAlert(enabled = true, above = true, karat = 24, target = "6100")
+
+        val savedRules = mutableListOf<List<Any>>()
+        composeRule.setContent {
+            KingGoldTheme {
+                com.example.ui.screens.price.PriceInsightScreen(
+                    uiState = vm.uiState.value.copy(fcmToken = "fcm_device_token_abc"),
+                    onSaveAlert = { enabled, above, karat, target ->
+                        savedRules.add(listOf(enabled, above, karat, target))
+                    },
+                    onBack = {},
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNode(hasScrollToNodeAction())
+            .performScrollToNode(hasTestTag("fcm_threshold_crossed_banner"))
+        composeRule.onNodeWithTag("fcm_threshold_crossed_banner").assertIsDisplayed()
+
+        // Blank threshold shows inline error and does not invoke onSaveAlert
+        composeRule.onNodeWithTag("alert_threshold_input").performScrollTo().performTextClearance()
+        composeRule.onNodeWithTag("save_price_alert_button").performScrollTo().performClick()
+        composeRule.waitForIdle()
+        assertTrue(savedRules.isEmpty())
+        composeRule.onNodeWithTag("alert_threshold_error", useUnmergedTree = true).assertIsDisplayed()
+
+        // Valid threshold saves cleanly and updates local FCM cache
+        composeRule.onNodeWithTag("alert_threshold_input").performScrollTo().performTextClearance()
+        composeRule.onNodeWithTag("alert_threshold_input").performTextInput("6400")
+        composeRule.onNodeWithTag("save_price_alert_button").performScrollTo().performClick()
+        composeRule.waitForIdle()
+        assertEquals(1, savedRules.size)
+        assertEquals(listOf(true, true, 24, "6400"), savedRules.first())
+        val cached = GoldPriceNotificationHelper.loadAlertRuleCache(app)
+        assertEquals(true, cached.above)
+        assertEquals(24, cached.karat)
+        assertEquals("6400", cached.thresholdText)
+    }
 }

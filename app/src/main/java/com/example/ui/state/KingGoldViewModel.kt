@@ -1734,6 +1734,45 @@ class KingGoldViewModel(
         _uiState.update { it.copy(fcmToken = token) }
     }
 
+    fun applyIncomingFcmEvent(event: com.example.notifications.FcmIncomingPriceEvent) {
+        val current = _uiState.value
+        val p24 = event.price24k?.takeIf { it > 0.0 } ?: current.gramPrice(24)
+        val p21 = event.price21k?.takeIf { it > 0.0 } ?: current.gramPrice(21)
+        val p18 = event.price18k?.takeIf { it > 0.0 } ?: current.gramPrice(18)
+        val hasPriceUpdate = listOf(event.price24k, event.price21k, event.price18k).any { (it ?: 0.0) > 0.0 }
+
+        val updatedPrices = if (hasPriceUpdate) {
+            val pct = event.changePercent ?: current.prices.firstOrNull { it.karat == 24 }?.changePercent ?: 0.0
+            listOf(
+                KaratPrice(24, "عيار 24", p24, pct),
+                KaratPrice(21, "عيار 21", p21, pct),
+                KaratPrice(18, "عيار 18", p18, pct),
+                KaratPrice(0, "الجنيه", p21 * 8.0, pct),
+            )
+        } else {
+            current.prices
+        }
+
+        val bannerText = if (event.triggeredKarat != null && event.triggeredThreshold != null) {
+            val directionLabel = if (event.triggeredAbove == true) "تجاوز" else "انخفض عن"
+            event.alertBody?.takeIf { it.isNotBlank() }
+                ?: "تنبيه FCM: عيار ${event.triggeredKarat} $directionLabel الحد المحدد (${event.triggeredThreshold.toInt()} ج.م)"
+        } else {
+            null
+        }
+
+        _uiState.update { state ->
+            state.copy(
+                prices = updatedPrices,
+                actionBannerMessage = bannerText ?: state.actionBannerMessage,
+            )
+        }
+        if (hasPriceUpdate) {
+            onPricesSynced?.invoke(updatedPrices, _uiState.value.goldFeedStatus)
+            evaluateAndNotifyPriceAlert()
+        }
+    }
+
     private fun evaluateAndNotifyPriceAlert() {
         val state = _uiState.value
         val karat = state.priceAlertKarat
