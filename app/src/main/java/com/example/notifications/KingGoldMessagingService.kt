@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.example.R
 import com.example.data.remote.FirestoreKingGoldRepository
+import com.example.widget.GoldPriceAppWidgetProvider
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FirebaseFirestore
@@ -80,6 +81,14 @@ class KingGoldMessagingService : FirebaseMessagingService() {
             val changePercent = data["changePercent"]?.toDoubleOrNull()
             val karat = data["karat"]?.toIntOrNull()?.takeIf { it in setOf(18, 21, 24) } ?: 24
             val incomingPriceForKarat = priceForKaratFromPayload(data, karat)
+
+            GoldPriceAppWidgetProvider.syncFromPayloadPrices(
+                context = context,
+                price24K = data["price24k"]?.toDoubleOrNull(),
+                price21K = data["price21k"]?.toDoubleOrNull(),
+                price18K = data["price18k"]?.toDoubleOrNull(),
+                changePercent = changePercent,
+            )
 
             if (type == "price_fluctuation" || changePercent != null) {
                 return GoldPriceNotificationHelper.showPriceFluctuationAlert(

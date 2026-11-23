@@ -115,6 +115,9 @@ fun DiscoverScreen(
     onOpenAdminCenter: () -> Unit = {},
     onOpenSupport: () -> Unit = {},
     onDismissSyncError: () -> Unit,
+    onUpdateSearchAnchor: (Double, Double, String) -> Unit = { _, _, _ -> },
+    onUpdateNearbyRadius: (Double?) -> Unit = {},
+    onClearSearchAnchor: () -> Unit = {},
 ) {
     var showFilterSheet by remember { mutableStateOf(false) }
     var isMapView by rememberSaveable { mutableStateOf(false) }
@@ -557,7 +560,11 @@ fun DiscoverScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            text = "محلات شريكة قريبة منك · $count محل موثّق",
+                            text = if (uiState.verifiedOnlyFilter) {
+                                "محلات شريكة قريبة منك · $count محل موثّق"
+                            } else {
+                                "محلات قريبة منك · $count محل"
+                            },
                             style = AppText.display.copy(fontSize = 16.sp),
                         )
                         Box(
@@ -675,8 +682,22 @@ fun DiscoverScreen(
                         onResetFilters = {
                             onSearchChange("")
                             onToggleFavoritesOnlyFilter(false)
+                            onClearSearchAnchor()
                             onApplyFilters(null, true, ShopSortOption.NEAREST)
                         },
+                        searchQuery = uiState.searchQuery,
+                        onSearchQueryChange = onSearchChange,
+                        verifiedOnly = uiState.verifiedOnlyFilter,
+                        onVerifiedOnlyChange = { verifiedOnly ->
+                            onApplyFilters(uiState.selectedKaratFilter, verifiedOnly, uiState.sortOption)
+                        },
+                        nearbyRadiusKm = uiState.nearbyRadiusKm,
+                        onNearbyRadiusChange = onUpdateNearbyRadius,
+                        searchAnchorLat = uiState.searchAnchorLat,
+                        searchAnchorLon = uiState.searchAnchorLon,
+                        searchAnchorLabel = uiState.searchAnchorLabel,
+                        onUpdateSearchAnchor = onUpdateSearchAnchor,
+                        onClearSearchAnchor = onClearSearchAnchor,
                     )
                 }
             } else if (uiState.filteredShops.isEmpty()) {

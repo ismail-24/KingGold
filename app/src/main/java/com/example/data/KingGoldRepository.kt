@@ -34,6 +34,12 @@ object KingGoldRepository {
         "اليوم" to 1.000,
     )
 
+    private val relative24K30DayFactors: List<Double> = listOf(
+        0.938, 0.941, 0.939, 0.944, 0.947, 0.945, 0.950, 0.953, 0.949, 0.954,
+        0.958, 0.956, 0.961, 0.964, 0.960, 0.966, 0.970, 0.968, 0.972, 0.975,
+        0.973, 0.978, 0.980, 0.976, 0.982, 0.985, 0.983, 0.989, 0.994, 1.000,
+    )
+
     fun priceHistory24KForCurrentPrice(current24KPrice: Double): List<com.example.model.GoldPriceHistoryPoint> {
         val anchor = if (current24KPrice > 0.0) current24KPrice else 6200.0
         return relative24K7DayTrend.map { (label, factor) ->
@@ -64,14 +70,17 @@ object KingGoldRepository {
         current21KPrice: Double,
         current18KPrice: Double,
         referenceTimeMs: Long = System.currentTimeMillis(),
+        days: Int = 30,
     ): List<com.example.model.DailyGoldPrice> {
         val anchor24 = if (current24KPrice > 0.0) current24KPrice else 6200.0
         val anchor21 = if (current21KPrice > 0.0) current21KPrice else (anchor24 * 21.0 / 24.0)
         val anchor18 = if (current18KPrice > 0.0) current18KPrice else (anchor24 * 18.0 / 24.0)
         val dateFmt = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
         val arDayFmt = java.text.SimpleDateFormat("d MMM", java.util.Locale.forLanguageTag("ar"))
-        val totalDays = relative24K7DayTrend.size
-        return relative24K7DayTrend.mapIndexed { idx, (_, factor24) ->
+        val safeDays = days.coerceIn(1, relative24K30DayFactors.size)
+        val factors = relative24K30DayFactors.takeLast(safeDays)
+        val totalDays = factors.size
+        return factors.mapIndexed { idx, factor24 ->
             val daysAgo = (totalDays - 1) - idx
             val timestamp = referenceTimeMs - daysAgo * 86_400_000L
             val date = java.util.Date(timestamp)
@@ -79,7 +88,7 @@ object KingGoldRepository {
             val label = if (daysAgo == 0) "اليوم" else arDayFmt.format(date)
             // Slightly distinct realistic micro-spreads per karat while preserving 24K > 21K > 18K
             val factor21 = (factor24 + (idx % 2) * 0.0012).coerceAtMost(1.0)
-            val factor18 = (factor24 - ((idx + 1) % 2) * 0.0014).coerceAtLeast(0.95)
+            val factor18 = (factor24 - ((idx + 1) % 2) * 0.0014).coerceAtLeast(0.92)
             val p24 = kotlin.math.round(anchor24 * factor24)
             val p21 = kotlin.math.round(anchor21 * if (daysAgo == 0) 1.0 else factor21)
             val p18 = kotlin.math.round(anchor18 * if (daysAgo == 0) 1.0 else factor18)

@@ -9,4 +9,9 @@
     <string name="merchant_reg_title">تسجيل حساب تاجر</string>
     <string name="merchant_reg_submit">إرسال طلب تسجيل التاجر</string>
     <string name="admin_approval_title">اعتماد التجار المعلّقين</string>
+    <string name="widget_gold_price_label">أسعار الذهب اللحظية</string>
+    <string name="widget_gold_price_description">تتبع لحظي لأسعار الذهب عيار 24 و21 و18 والجنيه الذهب بالجنيه والدولار</string>
+    <string name="widget_gold_price_header">King Gold · تتبع الذهب اللحظي</string>
+    <string name="widget_refresh_cd">تحديث أسعار الذهب في الويدجت</string>
+    <string name="widget_open_calculator">الحاسبة</string>
 </resources>

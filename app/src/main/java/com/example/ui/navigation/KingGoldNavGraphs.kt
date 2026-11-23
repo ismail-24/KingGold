@@ -270,6 +270,8 @@ internal fun NavGraphBuilder.registerSecondaryDestinations(
                 onSaveAlert = vm::updatePriceAlert,
                 onOpenAiAdvisor = { prompt -> navController.navigateSingleTop(Routes.aiAdvisor(prompt), isAuthorized) },
                 onRecordTodayPrices = if (uiState.isAdmin) vm::recordTodayDailyGoldPrices else null,
+                onRefreshPrices = vm::refreshGlobalGoldPrices,
+                onOpenCalculator = { navController.navigateSingleTop(Routes.GOLD_CALCULATOR, isAuthorized) },
                 onBack = { navController.popBackSafely() },
             )
         }
@@ -287,6 +289,8 @@ internal fun NavGraphBuilder.registerSecondaryDestinations(
                 uiState = uiState,
                 onBack = { navController.popBackSafely() },
                 onOpenPriceInsight = { navController.navigateSingleTop(Routes.PRICE_INSIGHT, isAuthorized) },
+                onRefreshPrices = vm::refreshGlobalGoldPrices,
+                onOpenAiAdvisor = { prompt -> navController.navigateSingleTop(Routes.aiAdvisor(prompt), isAuthorized) },
             )
         }
     }

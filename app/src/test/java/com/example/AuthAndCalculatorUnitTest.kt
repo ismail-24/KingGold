@@ -361,10 +361,20 @@ class AuthAndCalculatorUnitTest {
         assertTrue(inverted.price24kPerGramPiasters > inverted.price21kPerGramPiasters)
         assertTrue(inverted.price21kPerGramPiasters > inverted.price18kPerGramPiasters)
 
-        // UiState switches between fallback 7-day trend and Firestore-synced records sorted ascending
+        // UiState switches between fallback 30-day trend and Firestore-synced records sorted ascending
         val fallbackState = com.example.ui.state.KingGoldUiState()
         assertFalse(fallbackState.isDailyPricesFromFirestore)
-        assertEquals(7, fallbackState.dailyGoldPriceTrend.size)
+        assertEquals(30, fallbackState.dailyGoldPriceTrend.size)
+        assertEquals("اليوم", fallbackState.dailyGoldPriceTrend.last().dayLabel)
+        assertEquals(
+            fallbackState.dailyGoldPriceTrend.map { it.dateKey }.sorted(),
+            fallbackState.dailyGoldPriceTrend.map { it.dateKey },
+        )
+        assertTrue(
+            fallbackState.dailyGoldPriceTrend.all {
+                it.price24kEgp > it.price21kEgp && it.price21kEgp > it.price18kEgp
+            },
+        )
 
         val olderDay = sample.copy(dateKey = "2026-11-18", dayLabel = "18/11", price24kEgp = 6250.0)
         val syncedState = fallbackState.copy(

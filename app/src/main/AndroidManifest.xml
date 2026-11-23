@@ -41,6 +41,20 @@
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="@string/fcm_price_alert_channel_id" />
+
+        <receiver
+            android:name=".widget.GoldPriceAppWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_gold_price_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.example.ACTION_REFRESH_GOLD_WIDGET" />
+                <action android:name="com.example.ACTION_TOGGLE_GOLD_WIDGET_CURRENCY" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/gold_price_widget_info" />
+        </receiver>
     </application>
 
 </manifest>

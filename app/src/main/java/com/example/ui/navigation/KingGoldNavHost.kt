@@ -238,6 +238,9 @@ fun KingGoldNavHost(
                         onOpenAdminCenter = { navController.navigateSingleTop(Routes.ADMIN_CENTER, isAuthorized) },
                         onOpenSupport = { navController.navigateSingleTop(Routes.SUPPORT, isAuthorized) },
                         onDismissSyncError = vm::clearSyncError,
+                        onUpdateSearchAnchor = vm::updateSearchAnchor,
+                        onUpdateNearbyRadius = vm::updateNearbyRadiusKm,
+                        onClearSearchAnchor = vm::clearSearchAnchor,
                     )
                 }
             }

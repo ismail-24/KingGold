@@ -91,9 +91,19 @@ enum class DailyChartKaratMode(
     KARAT_18(18, "عيار 18", "18", AppColors.Alert),
 }
 
+enum class DailyChartRangeMode(
+    val days: Int,
+    val chipLabel: String,
+    val tagSuffix: String,
+) {
+    DAYS_30(30, "30 يوم", "30D"),
+    DAYS_14(14, "14 يوم", "14D"),
+    DAYS_7(7, "7 أيام", "7D"),
+}
+
 /**
- * Interactive multi-karat (24K, 21K, 18K) daily gold price trend chart powered by Vico Compose M3
- * and synchronized from Firestore `/daily_gold_prices`.
+ * Interactive multi-karat (24K, 21K, 18K) 30-day historical gold price line chart
+ * powered by Vico Compose M3 and synchronized from Firestore `/daily_gold_prices`.
  */
 @Composable
 fun DailyGoldPriceTrendChartCard(
@@ -105,6 +115,7 @@ fun DailyGoldPriceTrendChartCard(
     isRecordingBusy: Boolean = false,
 ) {
     var selectedMode by rememberSaveable { mutableStateOf(DailyChartKaratMode.ALL) }
+    var selectedRange by rememberSaveable { mutableStateOf(DailyChartRangeMode.DAYS_30) }
 
     Card(
         modifier = modifier
@@ -145,11 +156,11 @@ fun DailyGoldPriceTrendChartCard(
                     Spacer(modifier = Modifier.width(10.dp))
                     Column {
                         Text(
-                            text = "السجل اليومي لأسعار الذهب",
+                            text = "السجل التاريخي لأسعار الذهب",
                             style = AppText.display.copy(fontSize = 15.sp),
                         )
                         Text(
-                            text = "مقارنة عيار 24 و21 و18 · ج.م / جرام",
+                            text = "آخر ${selectedRange.days} يوماً · عيار 24 و21 و18 (ج.م/جم)",
                             style = AppText.body.copy(color = AppColors.Muted, fontSize = 11.5.sp),
                         )
                     }
@@ -223,6 +234,42 @@ fun DailyGoldPriceTrendChartCard(
             } else {
                 Spacer(modifier = Modifier.height(10.dp))
 
+                val visiblePrices = remember(dailyPrices, selectedRange) {
+                    dailyPrices.takeLast(selectedRange.days)
+                }
+
+                // 30D / 14D / 7D range chips
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    DailyChartRangeMode.entries.forEach { rangeMode ->
+                        val selected = selectedRange == rangeMode
+                        FilterChip(
+                            selected = selected,
+                            onClick = { selectedRange = rangeMode },
+                            modifier = Modifier.testTag("daily_chart_range_${rangeMode.tagSuffix}"),
+                            label = {
+                                Text(
+                                    text = rangeMode.chipLabel,
+                                    style = AppText.body.copy(
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                    ),
+                                )
+                            },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = AppColors.Brass,
+                                selectedLabelColor = Color.White,
+                                containerColor = AppColors.Parchment,
+                                labelColor = AppColors.Ink,
+                            ),
+                        )
+                    }
+                }
+
                 // Interactive karat selector chips
                 Row(
                     modifier = Modifier
@@ -257,10 +304,10 @@ fun DailyGoldPriceTrendChartCard(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                val latestPoint = dailyPrices.last()
+                val latestPoint = visiblePrices.last()
                 val focusKarat = selectedMode.karat ?: 24
-                val plottedPoints = remember(dailyPrices) {
-                    if (dailyPrices.size == 1) listOf(dailyPrices.first(), dailyPrices.first()) else dailyPrices
+                val plottedPoints = remember(visiblePrices) {
+                    if (visiblePrices.size == 1) listOf(visiblePrices.first(), visiblePrices.first()) else visiblePrices
                 }
 
                 // Color legend for 24K, 21K, 18K
@@ -377,13 +424,16 @@ fun DailyGoldPriceTrendChartCard(
                     ),
                 )
 
+                val multiDotSize = if (plottedPoints.size > 15) 3.5.dp else 6.dp
+                val singleDotSize = if (plottedPoints.size > 15) 4.5.dp else 7.dp
+
                 val line24Multi = LineCartesianLayer.rememberLine(
                     fill = LineCartesianLayer.LineFill.single(fill(AppColors.Brass)),
                     pointConnector = LineCartesianLayer.PointConnector.cubic(),
                     pointProvider = LineCartesianLayer.PointProvider.single(
                         LineCartesianLayer.point(
                             component = rememberShapeComponent(fill = fill(AppColors.Brass), shape = CorneredShape.Pill),
-                            size = 6.dp,
+                            size = multiDotSize,
                         ),
                     ),
                 )
@@ -393,7 +443,7 @@ fun DailyGoldPriceTrendChartCard(
                     pointProvider = LineCartesianLayer.PointProvider.single(
                         LineCartesianLayer.point(
                             component = rememberShapeComponent(fill = fill(AppColors.Trust), shape = CorneredShape.Pill),
-                            size = 6.dp,
+                            size = multiDotSize,
                         ),
                     ),
                 )
@@ -403,7 +453,7 @@ fun DailyGoldPriceTrendChartCard(
                     pointProvider = LineCartesianLayer.PointProvider.single(
                         LineCartesianLayer.point(
                             component = rememberShapeComponent(fill = fill(AppColors.Alert), shape = CorneredShape.Pill),
-                            size = 6.dp,
+                            size = multiDotSize,
                         ),
                     ),
                 )
@@ -421,7 +471,7 @@ fun DailyGoldPriceTrendChartCard(
                     pointProvider = LineCartesianLayer.PointProvider.single(
                         LineCartesianLayer.point(
                             component = rememberShapeComponent(fill = fill(AppColors.Brass), shape = CorneredShape.Pill),
-                            size = 7.dp,
+                            size = singleDotSize,
                         ),
                     ),
                 )
@@ -439,7 +489,7 @@ fun DailyGoldPriceTrendChartCard(
                     pointProvider = LineCartesianLayer.PointProvider.single(
                         LineCartesianLayer.point(
                             component = rememberShapeComponent(fill = fill(AppColors.Trust), shape = CorneredShape.Pill),
-                            size = 7.dp,
+                            size = singleDotSize,
                         ),
                     ),
                 )
@@ -457,7 +507,7 @@ fun DailyGoldPriceTrendChartCard(
                     pointProvider = LineCartesianLayer.PointProvider.single(
                         LineCartesianLayer.point(
                             component = rememberShapeComponent(fill = fill(AppColors.Alert), shape = CorneredShape.Pill),
-                            size = 7.dp,
+                            size = singleDotSize,
                         ),
                     ),
                 )
@@ -500,6 +550,18 @@ fun DailyGoldPriceTrendChartCard(
                                 textSize = 9.5.sp,
                             ),
                             valueFormatter = xAxisValueFormatter,
+                            itemPlacer = remember(plottedPoints.size) {
+                                HorizontalAxis.ItemPlacer.aligned(
+                                    spacing = {
+                                        when {
+                                            plottedPoints.size > 20 -> 5
+                                            plottedPoints.size > 10 -> 2
+                                            else -> 1
+                                        }
+                                    },
+                                    addExtremeLabelPadding = true,
+                                )
+                            },
                         ),
                         marker = marker,
                     ),

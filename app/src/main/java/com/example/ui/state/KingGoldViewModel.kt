@@ -45,6 +45,9 @@ import com.example.model.WithdrawalRequest
 import com.example.model.WithdrawalStatus
 import com.example.notifications.GoldPriceNotificationHelper
 import com.example.ui.components.GoldFeedStatus
+import com.example.ui.components.calculateHaversineDistanceKm
+import com.example.ui.components.hasValidMapCoordinates
+import com.example.ui.components.isValidMapCoordinatePair
 import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -87,6 +90,10 @@ data class KingGoldUiState(
     val selectedKaratFilter: Int? = null,
     val verifiedOnlyFilter: Boolean = true,
     val sortOption: ShopSortOption = ShopSortOption.NEAREST,
+    val searchAnchorLat: Double? = null,
+    val searchAnchorLon: Double? = null,
+    val searchAnchorLabel: String? = null,
+    val nearbyRadiusKm: Double? = null,
     val cart: List<CartItem> = emptyList(),
     val cartShop: Shop? = null,
     val selectedPickupSlotIndex: Int = 0,
@@ -141,8 +148,31 @@ data class KingGoldUiState(
 
     val filteredShops: List<Shop>
         get() {
+            val anchorLat = searchAnchorLat
+            val anchorLon = searchAnchorLon
+            val hasAnchor = anchorLat != null &&
+                anchorLon != null &&
+                isValidMapCoordinatePair(anchorLat, anchorLon)
             val q = searchQuery.trim().lowercase()
-            return shops.filter { shop ->
+            val withLiveDistances = if (hasAnchor) {
+                shops.map { shop ->
+                    if (hasValidMapCoordinates(shop)) {
+                        shop.copy(
+                            distanceKm = calculateHaversineDistanceKm(
+                                lat1 = anchorLat!!,
+                                lon1 = anchorLon!!,
+                                lat2 = shop.latitude,
+                                lon2 = shop.longitude,
+                            ),
+                        )
+                    } else {
+                        shop
+                    }
+                }
+            } else {
+                shops
+            }
+            return withLiveDistances.filter { shop ->
                 val matchesVerified = !verifiedOnlyFilter || shop.verified
                 val matchesFavorite = !favoritesOnlyFilter || favoriteShopIds.contains(shop.id)
                 val shopProducts = productsForShop(shop.id)
@@ -154,7 +184,12 @@ data class KingGoldUiState(
                     shop.area.lowercase().contains(q) ||
                     shop.address.lowercase().contains(q) ||
                     shopProducts.any { it.name.lowercase().contains(q) }
-                matchesVerified && matchesFavorite && matchesKarat && matchesQuery
+                val matchesRadius = if (hasAnchor && nearbyRadiusKm != null) {
+                    hasValidMapCoordinates(shop) && shop.distanceKm <= nearbyRadiusKm
+                } else {
+                    true
+                }
+                matchesVerified && matchesFavorite && matchesKarat && matchesQuery && matchesRadius
             }.let { list ->
                 when (sortOption) {
                     ShopSortOption.NEAREST -> list.sortedBy { it.distanceKm }
@@ -272,12 +307,13 @@ data class KingGoldUiState(
 
     val dailyGoldPriceTrend: List<DailyGoldPrice>
         get() = if (firestoreDailyGoldPrices.isNotEmpty()) {
-            firestoreDailyGoldPrices.sortedBy { it.dateKey }.takeLast(14)
+            firestoreDailyGoldPrices.sortedBy { it.dateKey }.takeLast(30)
         } else {
             KingGoldRepository.dailyGoldPriceFallbackSeries(
                 current24KPrice = gramPrice(24),
                 current21KPrice = gramPrice(21),
                 current18KPrice = gramPrice(18),
+                days = 30,
             )
         }
 
@@ -315,6 +351,7 @@ class KingGoldViewModel(
     userEmail: String? = null,
     private val on24KPriceDroppedBelowThreshold: ((current24K: Double, threshold: Double) -> Unit)? = null,
     private val onPriceThresholdTriggered: ((karat: Int, currentPrice: Double, threshold: Double, isAbove: Boolean) -> Unit)? = null,
+    private val onPricesSynced: ((prices: List<KaratPrice>, feedStatus: GoldFeedStatus) -> Unit)? = null,
     autoFetchPrices: Boolean = firestoreRepository != null,
 ) : ViewModel() {
 
@@ -513,6 +550,7 @@ class KingGoldViewModel(
                         prices = updatedPrices,
                     )
                 }
+                onPricesSynced?.invoke(updatedPrices, _uiState.value.goldFeedStatus)
                 evaluateAndNotifyPriceAlert()
             }
         }
@@ -623,6 +661,37 @@ class KingGoldViewModel(
                 selectedKaratFilter = karat,
                 verifiedOnlyFilter = verifiedOnly,
                 sortOption = sortOption,
+            )
+        }
+    }
+
+    fun updateSearchAnchor(
+        latitude: Double,
+        longitude: Double,
+        label: String,
+    ) {
+        if (!isValidMapCoordinatePair(latitude, longitude)) return
+        _uiState.update {
+            it.copy(
+                searchAnchorLat = latitude,
+                searchAnchorLon = longitude,
+                searchAnchorLabel = label,
+                sortOption = ShopSortOption.NEAREST,
+            )
+        }
+    }
+
+    fun updateNearbyRadiusKm(radiusKm: Double?) {
+        _uiState.update { it.copy(nearbyRadiusKm = radiusKm) }
+    }
+
+    fun clearSearchAnchor() {
+        _uiState.update {
+            it.copy(
+                searchAnchorLat = null,
+                searchAnchorLon = null,
+                searchAnchorLabel = null,
+                nearbyRadiusKm = null,
             )
         }
     }
@@ -1769,16 +1838,18 @@ class KingGoldViewModel(
                         KaratPrice(18, "عيار 18", q.price18KPerGramEgp, pctChange),
                         KaratPrice(0, "الجنيه", q.price21KPerGramEgp * 8.0, pctChange),
                     )
+                    val liveStatus = GoldFeedStatus.Live(
+                        usdPerOunce = q.usdPerTroyOunce,
+                        usdToEgpRate = q.usdToEgpRate,
+                        fetchedAtLabel = timeStr,
+                    )
                     _uiState.update {
                         it.copy(
                             prices = updatedPrices,
-                            goldFeedStatus = GoldFeedStatus.Live(
-                                usdPerOunce = q.usdPerTroyOunce,
-                                usdToEgpRate = q.usdToEgpRate,
-                                fetchedAtLabel = timeStr,
-                            ),
+                            goldFeedStatus = liveStatus,
                         )
                     }
+                    onPricesSynced?.invoke(updatedPrices, liveStatus)
                     evaluateAndNotifyPriceAlert()
                 }
                 is GlobalGoldFeedResult.Error -> {

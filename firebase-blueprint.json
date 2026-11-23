@@ -404,6 +404,10 @@
       "schema": { "$ref": "#/entities/PlatformPricingConfig" },
       "description": "Admin-controlled reference & valuation gold pricing configuration"
     },
+    "/platform_config/{configId}/history/{entryId}": {
+      "schema": { "$ref": "#/entities/PlatformPricingConfig" },
+      "description": "Historical daily snapshots of platform gold prices for 30-day Vico trend charts"
+    },
     "/merchants/{merchantId}": {
       "schema": { "$ref": "#/entities/MerchantStore" },
       "description": "Merchant store metadata & verification workflow"

@@ -35,6 +35,7 @@ import com.example.ui.state.AdminApprovalViewModel
 import com.example.ui.state.KingGoldViewModel
 import com.example.ui.state.MerchantRegistrationViewModel
 import com.example.ui.theme.KingGoldTheme
+import com.example.widget.GoldPriceAppWidgetProvider
 import com.google.firebase.Firebase
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
@@ -161,6 +162,9 @@ private fun rememberUserSessionViewModels(
                                 thresholdEgp = threshold,
                                 isAbove = isAbove,
                             )
+                        },
+                        onPricesSynced = { syncedPrices, feedStatus ->
+                            GoldPriceAppWidgetProvider.syncFromPrices(app, syncedPrices, feedStatus)
                         },
                     )
                 }

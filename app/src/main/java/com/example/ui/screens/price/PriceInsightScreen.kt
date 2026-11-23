@@ -27,8 +27,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.Calculate
 import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.NotificationsOff
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Widgets
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -73,6 +76,8 @@ import com.example.ui.components.formatCurrency
 import com.example.ui.state.KingGoldUiState
 import com.example.ui.theme.AppColors
 import com.example.ui.theme.AppText
+import com.example.widget.GoldPriceAppWidgetProvider
+import com.example.widget.PinWidgetResult
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -82,6 +87,8 @@ fun PriceInsightScreen(
     onSaveAlert: (enabled: Boolean, above: Boolean, karat: Int, target: String) -> Unit,
     onOpenAiAdvisor: (String?) -> Unit = {},
     onRecordTodayPrices: (() -> Unit)? = null,
+    onRefreshPrices: (() -> Unit)? = null,
+    onOpenCalculator: (() -> Unit)? = null,
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -159,7 +166,139 @@ fun PriceInsightScreen(
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 item {
-                    LivePriceTicker(prices = uiState.prices)
+                    LivePriceTicker(
+                        prices = uiState.prices,
+                        feedStatus = uiState.goldFeedStatus,
+                        onRefresh = onRefreshPrices,
+                    )
+                }
+
+                item {
+                    val cardShape = RoundedCornerShape(16.dp)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(cardShape)
+                            .background(Color.White)
+                            .border(1.dp, AppColors.Line, cardShape)
+                            .padding(16.dp)
+                            .testTag("home_widget_promo_card"),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(AppColors.Ink),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Widgets,
+                                    contentDescription = "ويدجت الشاشة الرئيسية",
+                                    tint = AppColors.BrassLight,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "ويدجت أسعار الذهب للشاشة الرئيسية",
+                                    style = AppText.display.copy(fontSize = 15.sp),
+                                )
+                                Text(
+                                    text = "تابع عيار 24 و21 و18 والجنيه مباشرة من شاشة هاتفك مع تحديث لحظي.",
+                                    style = AppText.body.copy(color = AppColors.Muted, fontSize = 11.5.sp),
+                                )
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Button(
+                                onClick = {
+                                    GoldPriceAppWidgetProvider.syncFromPrices(
+                                        context = context,
+                                        prices = uiState.prices,
+                                        feedStatus = uiState.goldFeedStatus,
+                                    )
+                                    val result = GoldPriceAppWidgetProvider.requestPinWidget(context)
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar(
+                                            when (result) {
+                                                PinWidgetResult.RequestLaunched ->
+                                                    "تم إرسال طلب إضافة ويدجت أسعار الذهب للشاشة الرئيسية"
+                                                PinWidgetResult.UnsupportedLauncher ->
+                                                    "اضغط مطولاً على الشاشة الرئيسية واختر Widgets لإضافة King Gold"
+                                            },
+                                        )
+                                    }
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp)
+                                    .testTag("pin_gold_widget_button"),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = AppColors.Ink,
+                                    contentColor = AppColors.BrassLight,
+                                ),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Widgets,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "تثبيت الويدجت",
+                                    style = AppText.body.copy(
+                                        color = AppColors.BrassLight,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.5.sp,
+                                    ),
+                                )
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    onRefreshPrices?.invoke()
+                                    GoldPriceAppWidgetProvider.syncFromPrices(
+                                        context = context,
+                                        prices = uiState.prices,
+                                        feedStatus = uiState.goldFeedStatus,
+                                    )
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar("تمت مزامنة الويدجت بأحدث أسعار العيارات")
+                                    }
+                                },
+                                modifier = Modifier
+                                    .height(48.dp)
+                                    .testTag("sync_gold_widget_button"),
+                                shape = RoundedCornerShape(12.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Refresh,
+                                    contentDescription = "مزامنة الويدجت الآن",
+                                    tint = AppColors.Brass,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "مزامنة",
+                                    style = AppText.body.copy(
+                                        color = AppColors.Ink,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.5.sp,
+                                    ),
+                                )
+                            }
+                        }
+                    }
                 }
 
                 item {
@@ -438,6 +577,34 @@ fun PriceInsightScreen(
                                 fontWeight = FontWeight.Bold,
                             ),
                         )
+                    }
+                }
+
+                if (onOpenCalculator != null) {
+                    item {
+                        OutlinedButton(
+                            onClick = onOpenCalculator,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .testTag("price_open_calculator_button"),
+                            shape = RoundedCornerShape(12.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Calculate,
+                                contentDescription = null,
+                                tint = AppColors.Brass,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "افتح حاسبة قيمة الذهب المباشرة",
+                                style = AppText.body.copy(
+                                    color = AppColors.Ink,
+                                    fontWeight = FontWeight.Bold,
+                                ),
+                            )
+                        }
                     }
                 }
 

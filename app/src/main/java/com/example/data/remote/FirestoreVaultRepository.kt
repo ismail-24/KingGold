@@ -22,6 +22,7 @@ import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
+import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.snapshots
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
@@ -114,6 +115,45 @@ class FirestoreVaultRepository(
                 } else null
             }
         }
+
+    fun observePricingHistoryLast30Days(limitCount: Long = 120L): Flow<List<PlatformPricingConfig>> =
+        wrapFlow("platform_config/pricing/history", OperationType.LIST) {
+            db.collection("platform_config")
+                .document("pricing")
+                .collection("history")
+                .orderBy("updatedAt", Query.Direction.DESCENDING)
+                .limit(limitCount)
+                .snapshots()
+                .map { snap ->
+                    snap.toObjects(
+                        PlatformPricingConfigRecord::class.java,
+                        DocumentSnapshot.ServerTimestampBehavior.ESTIMATE,
+                    ).map { it.toDomain() }
+                }
+        }
+
+    suspend fun fetchPricingHistoryLast30Days(limitCount: Long = 120L): Result<List<PlatformPricingConfig>> {
+        val histRef = db.collection("platform_config")
+            .document("pricing")
+            .collection("history")
+        return try {
+            val snap = histRef
+                .orderBy("updatedAt", Query.Direction.DESCENDING)
+                .limit(limitCount)
+                .get()
+                .await()
+            val items = snap.toObjects(
+                PlatformPricingConfigRecord::class.java,
+                DocumentSnapshot.ServerTimestampBehavior.ESTIMATE,
+            ).map { it.toDomain() }
+            Result.success(items)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.LIST, histRef.path)
+            Result.failure(e)
+        }
+    }
 
     fun observeUserSellRequests(uid: String): Flow<List<SellGoldRequest>> =
         wrapFlow("sell_requests?customerUid=$uid") {

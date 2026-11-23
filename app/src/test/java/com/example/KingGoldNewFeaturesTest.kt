@@ -286,6 +286,60 @@ class KingGoldNewFeaturesTest {
     }
 
     @Test
+    fun goldCalculatorScreen_usesLiveMarketFeedUsdRateAndPremiumModes() {
+        val vm = KingGoldViewModel(autoFetchPrices = false)
+        var refreshTriggered = false
+        var aiPrompt: String? = null
+        val liveState = vm.uiState.value.copy(
+            prices = listOf(
+                com.example.model.KaratPrice(24, "عيار 24", 6400.0, 0.5),
+                com.example.model.KaratPrice(21, "عيار 21", 5600.0, 0.5),
+                com.example.model.KaratPrice(18, "عيار 18", 4800.0, 0.5),
+                com.example.model.KaratPrice(0, "الجنيه", 44800.0, 0.5),
+            ),
+            goldFeedStatus = com.example.ui.components.GoldFeedStatus.Live(
+                usdPerOunce = 3200.0,
+                usdToEgpRate = 50.0,
+                fetchedAtLabel = "12:00 م",
+            ),
+        )
+
+        composeRule.setContent {
+            KingGoldTheme {
+                GoldCalculatorScreen(
+                    uiState = liveState,
+                    onBack = {},
+                    onOpenPriceInsight = {},
+                    onRefreshPrices = { refreshTriggered = true },
+                    onOpenAiAdvisor = { aiPrompt = it },
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("calculator_live_status_badge").assertIsDisplayed()
+        composeRule.onNodeWithTag("calculator_refresh_live_button").performClick()
+        assertTrue(refreshTriggered)
+
+        // Default 8g x 5,600 = 44,800.00 ج.م and USD = 44,800 / 50 = $896.00
+        composeRule.onNodeWithTag("calculator_result_value").performScrollTo().assertTextEquals("44,800.00 ج.م")
+        composeRule.onNodeWithTag("calculator_result_usd").performScrollTo().assertTextEquals("≈ $896.00 USD")
+
+        // Switch to 14K (6400 * 14/24 = 3733.33), weight 10g -> 37,333.30 ج.م + flat 1,000 fee = 38,333.30 ج.م
+        composeRule.onNodeWithTag("calculator_karat_14").performScrollTo().performClick()
+        composeRule.onNodeWithTag("calculator_weight_input").performScrollTo().performTextClearance()
+        composeRule.onNodeWithTag("calculator_weight_input").performTextInput("10")
+        composeRule.onNodeWithTag("calculator_premium_mode_flat_total").performScrollTo().performClick()
+        composeRule.onNodeWithTag("calculator_making_fee_input").performScrollTo().performTextClearance()
+        composeRule.onNodeWithTag("calculator_making_fee_input").performTextInput("1000")
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("calculator_result_value").performScrollTo().assertTextEquals("38,333.30 ج.م")
+        composeRule.onNodeWithTag("calculator_ask_ai_button").performScrollTo().performClick()
+        assertTrue(aiPrompt?.contains("عيار 14") == true)
+    }
+
+    @Test
     fun osmdroidConfiguration_andFcmNotificationIntents_doNotUseGoogleMaps() {
         val context = ApplicationProvider.getApplicationContext<android.app.Application>()
         configureOsmdroid(context)
@@ -483,6 +537,57 @@ class KingGoldNewFeaturesTest {
         composeRule.onNodeWithTag("admin_record_daily_price_button").performScrollTo().performClick()
         composeRule.waitForIdle()
         assertEquals(1, recordedClicks)
+    }
+
+    @Test
+    fun dailyGoldPriceTrendChartCard_visualizes30DayTrendAndSwitchesDateRanges() {
+        val thirtyDaySeries = com.example.data.KingGoldRepository.dailyGoldPriceFallbackSeries(
+            current24KPrice = 6200.0,
+            current21KPrice = 5425.0,
+            current18KPrice = 4650.0,
+            days = 30,
+        )
+        assertEquals(30, thirtyDaySeries.size)
+
+        composeRule.setContent {
+            KingGoldTheme {
+                androidx.compose.foundation.layout.Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                ) {
+                    com.example.ui.components.DailyGoldPriceTrendChartCard(
+                        dailyPrices = thirtyDaySeries,
+                        isSyncedFromFirestore = true,
+                    )
+                }
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("daily_gold_trend_chart_card").assertIsDisplayed()
+        composeRule.onNodeWithText("متزامن مع Firestore · 30 أيام").assertIsDisplayed()
+        composeRule.onNodeWithText("آخر 30 يوماً · عيار 24 و21 و18 (ج.م/جم)").assertIsDisplayed()
+        composeRule.onNodeWithTag("daily_chart_range_30D").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("daily_chart_range_14D").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("daily_chart_range_7D").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("daily_gold_vico_chart").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("الأدنى (عيار 24)").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("الأعلى (عيار 24)").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("التغير").performScrollTo().assertIsDisplayed()
+
+        // Switch from 30 days to 14 days, then 7 days, then back to 30 days
+        composeRule.onNodeWithTag("daily_chart_range_14D").performScrollTo().performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("آخر 14 يوماً · عيار 24 و21 و18 (ج.م/جم)").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("daily_gold_vico_chart").performScrollTo().assertIsDisplayed()
+
+        composeRule.onNodeWithTag("daily_chart_range_7D").performScrollTo().performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("آخر 7 يوماً · عيار 24 و21 و18 (ج.م/جم)").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("daily_gold_vico_chart").performScrollTo().assertIsDisplayed()
+
+        composeRule.onNodeWithTag("daily_chart_range_30D").performScrollTo().performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("آخر 30 يوماً · عيار 24 و21 و18 (ج.م/جم)").performScrollTo().assertIsDisplayed()
     }
 
     @Test
