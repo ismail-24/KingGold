@@ -44,26 +44,42 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Generate Keystore & Print Fingerprints (Temporary Setup Step)
-        run: |
-          if [ ! -f my-upload-key.jks ]; then
-            keytool -genkey -v -keystore my-upload-key.jks -storepass android123 -alias upload -keypass android123 -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Release,O=Android,C=US"
-          fi
-          echo "=== SHA-1 & SHA-256 FINGERPRINTS (Copy these to Firebase) ==="
-          keytool -list -v -keystore my-upload-key.jks -alias upload -storepass android123
-          echo "=== BASE64 KEYSTORE (Copy this to RELEASE_KEYSTORE_BASE64 Secret) ==="
-          base64 -w 0 my-upload-key.jks
-
-      - name: Decode Release Keystore from Secret (Fallback if Secret exists)
+      - name: Restore Existing Release Keystore and Print Fingerprints
         env:
           RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          if [ -n "$RELEASE_KEYSTORE_BASE64" ]; then
-            echo "$RELEASE_KEYSTORE_BASE64" | base64 --decode > my-upload-key.jks
-            echo "Using keystore from GitHub Secrets."
-          else
-            echo "Using auto-generated temporary keystore for this run."
+          set -euo pipefail
+
+          if [ -z "$RELEASE_KEYSTORE_BASE64" ]; then
+            echo "ERROR: RELEASE_KEYSTORE_BASE64 is missing."
+            exit 1
           fi
+
+          if [ -z "$STORE_PASSWORD" ] || [ -z "$KEY_PASSWORD" ]; then
+            echo "ERROR: Signing passwords are missing."
+            exit 1
+          fi
+
+          echo "$RELEASE_KEYSTORE_BASE64" | base64 --decode > my-upload-key.jks
+
+          if [ ! -s my-upload-key.jks ]; then
+            echo "ERROR: Keystore file is empty."
+            exit 1
+          fi
+
+          echo "Validating existing keystore..."
+
+          keytool -list -keystore my-upload-key.jks \
+            -storepass "$STORE_PASSWORD" > /dev/null
+
+          echo "=== EXISTING KEYSTORE FINGERPRINTS ==="
+
+          keytool -list -v \
+            -keystore my-upload-key.jks \
+            -storepass "$STORE_PASSWORD" \
+            -alias upload
 
       - name: Create google-services.json from Secret
         env:
@@ -86,7 +102,41 @@ jobs:
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: ./gradlew assembleRelease --stacktrace
+    
+      - name: Verify APK Signature Matches Keystore
+        run: |
+          set -euo pipefail
 
+          APK="app/build/outputs/apk/release/app-release.apk"
+
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)
+
+          if [ -z "$APKSIGNER" ]; then
+            echo "ERROR: apksigner not found."
+            exit 1
+          fi
+
+          KEY_SHA1=$(keytool -list -v \
+            -keystore my-upload-key.jks \
+            -storepass "$STORE_PASSWORD" \
+            -alias upload |
+            awk -F': ' '/SHA1:/ {print $2; exit}' |
+            tr -d ':' | tr '[:lower:]' '[:upper:]')
+
+          APK_SHA1=$("$APKSIGNER" verify --print-certs "$APK" |
+            awk -F': ' '/certificate SHA-1 digest:/ {print $2; exit}' |
+            tr -d ':' | tr '[:lower:]' '[:upper:]')
+
+          echo "Keystore SHA-1: $KEY_SHA1"
+          echo "APK SHA-1:      $APK_SHA1"
+
+          if [ -z "$KEY_SHA1" ] || [ "$KEY_SHA1" != "$APK_SHA1" ]; then
+            echo "ERROR: APK signature does not match the existing keystore!"
+            exit 1
+          fi
+
+          echo "SUCCESS: APK is signed with the expected keystore."
+          
       - name: Upload Release APK artifact
         uses: actions/upload-artifact@v4
         with:
