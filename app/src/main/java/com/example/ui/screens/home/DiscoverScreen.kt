@@ -34,6 +34,7 @@ import androidx.compose.material.icons.outlined.FormatListBulleted
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material.icons.outlined.NearMe
+import androidx.compose.material.icons.outlined.Newspaper
 import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Schedule
@@ -81,11 +82,13 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.model.MarketNewsTopic
 import com.example.model.MoneyUtils
 import com.example.model.Shop
 import com.example.model.ShopSortOption
 import com.example.ui.components.DailyGoldPriceTrendChartCard
 import com.example.ui.components.GoldShopsMapView
+import com.example.ui.components.MarketNewsSectionCard
 import com.example.ui.components.RealTimeGlobalGoldPriceBanner
 import com.example.ui.components.SealBadge
 import com.example.ui.components.ShopGoldMedallion
@@ -111,6 +114,9 @@ fun DiscoverScreen(
     onOpenVault: () -> Unit = {},
     onOpenSellGold: () -> Unit = {},
     onOpenGoldCalculator: () -> Unit = {},
+    onOpenMarketNews: () -> Unit = {},
+    onSelectMarketNewsTopic: (MarketNewsTopic) -> Unit = {},
+    onRefreshMarketNews: () -> Unit = {},
     onOpenMerchantPortal: () -> Unit = {},
     onOpenAdminCenter: () -> Unit = {},
     onOpenSupport: () -> Unit = {},
@@ -357,10 +363,16 @@ fun DiscoverScreen(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             DiscoverShortcutPill(
-                                label = "حاسبة الذهب",
+                                label = "حاسبة وتحويل",
                                 icon = Icons.Outlined.Calculate,
                                 onClick = onOpenGoldCalculator,
                                 modifier = Modifier.weight(1f).testTag("discover_shortcut_calculator"),
+                            )
+                            DiscoverShortcutPill(
+                                label = "أخبار السوق",
+                                icon = Icons.Outlined.Newspaper,
+                                onClick = onOpenMarketNews,
+                                modifier = Modifier.weight(1f).testTag("discover_shortcut_market_news"),
                             )
                             DiscoverShortcutPill(
                                 label = "بوابة التاجر",
@@ -547,6 +559,17 @@ fun DiscoverScreen(
                         )
                     }
                 }
+            }
+
+            item {
+                MarketNewsSectionCard(
+                    newsState = uiState.marketNewsState,
+                    selectedTopic = uiState.marketNewsTopic,
+                    onSelectTopic = onSelectMarketNewsTopic,
+                    onRefresh = onRefreshMarketNews,
+                    onOpenFullNews = onOpenMarketNews,
+                    maxArticlesInPreview = 2,
+                )
             }
 
             item {

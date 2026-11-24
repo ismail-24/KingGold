@@ -17,6 +17,10 @@ data class GlobalGoldQuote(
     val price21KPerGramUsd: Double,
     val price18KPerGramUsd: Double,
     val updatedAtIso: String,
+    val fxRatesPerUsd: Map<String, Double> = mapOf(
+        "USD" to 1.0,
+        "EGP" to usdToEgpRate,
+    ),
 )
 
 sealed interface GlobalGoldFeedResult {
@@ -46,9 +50,12 @@ object GlobalGoldPriceService {
                 ?: return@withContext GlobalGoldFeedResult.Error("تعذر الاتصال بسوق الذهب العالمي")
 
             val usdPerOz = spotResult.usdPerOz
-            val usdToEgp = fetchUsdToEgpRate()
+            val fxRates = fetchUsdFxRates().orEmpty().toMutableMap()
+            val usdToEgp = fxRates["EGP"]?.takeIf { it > 1.0 }
                 ?: spotResult.egpPerOz?.let { it / usdPerOz }
                 ?: return@withContext GlobalGoldFeedResult.Error("تعذر جلب سعر صرف الدولار مقابل الجنيه")
+            fxRates["USD"] = 1.0
+            fxRates["EGP"] = usdToEgp
 
             val usd24 = usdPerOz / TROY_OUNCE_IN_GRAMS
             val usd21 = usd24 * (21.0 / 24.0)
@@ -69,6 +76,7 @@ object GlobalGoldPriceService {
                     price21KPerGramUsd = usd21,
                     price18KPerGramUsd = usd18,
                     updatedAtIso = spotResult.updatedAtIso,
+                    fxRatesPerUsd = fxRates.toMap(),
                 ),
             )
         } catch (e: Exception) {
@@ -113,19 +121,41 @@ object GlobalGoldPriceService {
         return null
     }
 
-    private fun fetchUsdToEgpRate(): Double? {
+    private fun fetchUsdFxRates(): Map<String, Double>? {
         executeGet(USD_EGP_PRIMARY_URL)?.let { body ->
             val fxJson = JSONObject(body)
-            val egp = fxJson.optJSONObject("rates")?.optDouble("EGP", Double.NaN) ?: Double.NaN
-            if (!egp.isNaN() && egp > 1.0) return egp
+            val ratesObj = fxJson.optJSONObject("rates")
+            val parsed = parseRatesObject(ratesObj)
+            if (parsed.containsKey("EGP")) return parsed
         }
 
         executeGet(USD_EGP_CDN_URL)?.let { body ->
             val fxJson = JSONObject(body)
-            val egp = fxJson.optJSONObject("usd")?.optDouble("egp", Double.NaN) ?: Double.NaN
-            if (!egp.isNaN() && egp > 1.0) return egp
+            val usdObj = fxJson.optJSONObject("usd")
+            val parsed = parseRatesObject(usdObj)
+            if (parsed.containsKey("EGP")) return parsed
         }
         return null
+    }
+
+    private fun parseRatesObject(
+        jsonObject: JSONObject?,
+    ): Map<String, Double> {
+        if (jsonObject == null) return emptyMap()
+        val result = LinkedHashMap<String, Double>()
+        result["USD"] = 1.0
+        val keys = jsonObject.keys()
+        while (keys.hasNext()) {
+            val rawKey = keys.next()
+            val code = rawKey.uppercase(java.util.Locale.US)
+            if (code.length == 3 && code.all { it in 'A'..'Z' }) {
+                val rate = jsonObject.optDouble(rawKey, Double.NaN)
+                if (!rate.isNaN() && rate.isFinite() && rate > 0.0) {
+                    result[code] = rate
+                }
+            }
+        }
+        return result
     }
 
     private fun executeGet(url: String): String? {

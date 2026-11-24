@@ -45,6 +45,7 @@ import com.example.ui.screens.orders.RatingScreen
 import com.example.ui.components.GoldCalculatorScreen
 import com.example.ui.screens.orders.ReportIssueScreen
 import com.example.ui.screens.orders.VerifyPickupScreen
+import com.example.ui.screens.price.MarketNewsScreen
 import com.example.ui.screens.price.PriceInsightScreen
 import com.example.ui.screens.shop.ProductDetailScreen
 import com.example.ui.screens.shop.ProductListScreen
@@ -272,6 +273,25 @@ internal fun NavGraphBuilder.registerSecondaryDestinations(
                 onRecordTodayPrices = if (uiState.isAdmin) vm::recordTodayDailyGoldPrices else null,
                 onRefreshPrices = vm::refreshGlobalGoldPrices,
                 onOpenCalculator = { navController.navigateSingleTop(Routes.GOLD_CALCULATOR, isAuthorized) },
+                onOpenMarketNews = { navController.navigateSingleTop(Routes.MARKET_NEWS, isAuthorized) },
+                onBack = { navController.popBackSafely() },
+            )
+        }
+    }
+
+    composable(Routes.MARKET_NEWS) {
+        val isAuthorized = isAuthenticatedProvider()
+        AuthenticatedRoute(
+            isAuthenticated = isAuthorized,
+            viewModel = viewModelProvider(),
+            onUnauthorized = { navController.redirectToLogin() },
+        ) { vm ->
+            val uiState by vm.uiState.collectAsStateWithLifecycle()
+            MarketNewsScreen(
+                uiState = uiState,
+                onSelectTopic = vm::selectMarketNewsTopic,
+                onRefreshNews = { vm.refreshMarketNews() },
+                onOpenAiAdvisor = { prompt -> navController.navigateSingleTop(Routes.aiAdvisor(prompt), isAuthorized) },
                 onBack = { navController.popBackSafely() },
             )
         }

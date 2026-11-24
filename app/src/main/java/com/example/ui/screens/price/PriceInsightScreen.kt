@@ -28,6 +28,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Calculate
+import androidx.compose.material.icons.outlined.Newspaper
 import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.NotificationsOff
 import androidx.compose.material.icons.outlined.Refresh
@@ -89,6 +90,7 @@ fun PriceInsightScreen(
     onRecordTodayPrices: (() -> Unit)? = null,
     onRefreshPrices: (() -> Unit)? = null,
     onOpenCalculator: (() -> Unit)? = null,
+    onOpenMarketNews: (() -> Unit)? = null,
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -654,7 +656,35 @@ fun PriceInsightScreen(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "افتح حاسبة قيمة الذهب المباشرة",
+                                text = "افتح حاسبة ومحول الذهب المباشر",
+                                style = AppText.body.copy(
+                                    color = AppColors.Ink,
+                                    fontWeight = FontWeight.Bold,
+                                ),
+                            )
+                        }
+                    }
+                }
+
+                if (onOpenMarketNews != null) {
+                    item {
+                        OutlinedButton(
+                            onClick = onOpenMarketNews,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .testTag("price_open_market_news_button"),
+                            shape = RoundedCornerShape(12.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Newspaper,
+                                contentDescription = null,
+                                tint = AppColors.Brass,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "أخبار سوق الذهب المباشرة (بحث Google)",
                                 style = AppText.body.copy(
                                     color = AppColors.Ink,
                                     fontWeight = FontWeight.Bold,

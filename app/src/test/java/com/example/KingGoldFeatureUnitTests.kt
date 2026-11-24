@@ -107,4 +107,123 @@ class KingGoldFeatureUnitTests {
         assertEquals("اليوم", hist21.last().dayLabel)
         assertTrue(hist21.last().pricePerGram > 0.0)
     }
+
+    @Test
+    fun goldCurrencyConverter_detectsDeviceLocalCurrencyAndSupportsCustomLiveRates() {
+        val egp = com.example.model.GoldCurrencyConverter.detectDeviceLocalCurrency(java.util.Locale.forLanguageTag("ar-EG"))
+        assertEquals("EGP", egp.code)
+
+        val sar = com.example.model.GoldCurrencyConverter.detectDeviceLocalCurrency(java.util.Locale.forLanguageTag("ar-SA"))
+        assertEquals("SAR", sar.code)
+
+        val aed = com.example.model.GoldCurrencyConverter.detectDeviceLocalCurrency(java.util.Locale.forLanguageTag("ar-AE"))
+        assertEquals("AED", aed.code)
+
+        val usd = com.example.model.GoldCurrencyConverter.detectDeviceLocalCurrency(java.util.Locale.US)
+        assertEquals("USD", usd.code)
+
+        // Non-built-in currency (e.g. JPY) is detected dynamically when present in live FX map
+        val jpy = com.example.model.GoldCurrencyConverter.detectDeviceLocalCurrency(
+            locale = java.util.Locale.JAPAN,
+            liveFxRates = mapOf("JPY" to 152.0),
+        )
+        assertEquals("JPY", jpy.code)
+        assertEquals(152.0, jpy.defaultPerUsdRate, 0.01)
+    }
+
+    @Test
+    fun goldCurrencyConverter_convertsGramsToLocalCurrenciesUsingLiveMarketRates() {
+        val prices = listOf(
+            com.example.model.KaratPrice(24, "عيار 24", 6000.0, 0.0),
+            com.example.model.KaratPrice(21, "عيار 21", 5250.0, 0.0),
+            com.example.model.KaratPrice(18, "عيار 18", 4500.0, 0.0),
+        )
+        val fxRates = mapOf(
+            "USD" to 1.0,
+            "EGP" to 50.0,
+            "SAR" to 3.75,
+            "AED" to 3.67,
+            "EUR" to 0.90,
+        )
+
+        // 10g of 24K -> 6000 EGP/g = $120/g -> in SAR (3.75): 450 SAR/g -> 4,500.00 SAR
+        val sarCurrency = com.example.model.GoldCurrencyConverter.builtInCurrencies.first { it.code == "SAR" }
+        val sarResult = com.example.model.GoldCurrencyConverter.convert(
+            weightGrams = 10.0,
+            karat = 24,
+            prices = prices,
+            currency = sarCurrency,
+            usdToEgpRate = 50.0,
+            fxRatesPerUsd = fxRates,
+            usesLiveRates = true,
+        )
+        assertEquals(120.0, sarResult.gramPriceUsd, 0.01)
+        assertEquals(450.0, sarResult.gramPriceInCurrency, 0.01)
+        assertEquals(4500.0, sarResult.totalValueInCurrency, 0.01)
+        assertEquals(60000.0, sarResult.totalValueEgp, 0.01)
+        assertEquals(1200.0, sarResult.totalValueUsd, 0.01)
+
+        // Negative weights safely clamp to zero
+        val zeroResult = com.example.model.GoldCurrencyConverter.convert(
+            weightGrams = -5.0,
+            karat = 21,
+            prices = prices,
+            currency = sarCurrency,
+            usdToEgpRate = 50.0,
+            fxRatesPerUsd = fxRates,
+            usesLiveRates = true,
+        )
+        assertEquals(0.0, zeroResult.totalValueInCurrency, 0.01)
+    }
+
+    @Test
+    fun viewModel_fetchesMarketNewsByTopicAndSurfacesErrorsCleanly() {
+        var shouldFail = false
+        val requestedTopics = mutableListOf<com.example.model.MarketNewsTopic>()
+        val gateway = com.example.data.MarketNewsGateway { topic ->
+            requestedTopics.add(topic)
+            if (shouldFail) {
+                throw IllegalStateException("Google Search attestation error")
+            }
+            com.example.model.MarketNewsFeed(
+                topic = topic,
+                macroSummary = "ملخص ${topic.label}",
+                articles = listOf(
+                    com.example.model.MarketNewsArticle(
+                        id = "a1",
+                        title = "تحديث ${topic.label}",
+                        summary = "بيانات سوق الذهب العالمية المحدثة.",
+                        impact = com.example.model.NewsImpactDirection.BULLISH,
+                        regionTag = topic.label,
+                        publishedHint = "الآن",
+                        sourceTitle = "Kitco",
+                        sourceUrl = "https://www.kitco.com/news",
+                    ),
+                ),
+                groundingSources = listOf(
+                    com.example.model.MarketNewsSource("Kitco", "https://www.kitco.com/news", "kitco.com"),
+                ),
+                searchQueries = listOf("XAU USD gold news"),
+                fetchedAtLabel = "12:00 م",
+            )
+        }
+
+        val vm = KingGoldViewModel(
+            marketNewsGateway = gateway,
+            autoFetchPrices = false,
+        )
+        assertTrue(vm.uiState.value.marketNewsState is com.example.model.MarketNewsUiState.Idle)
+
+        vm.selectMarketNewsTopic(com.example.model.MarketNewsTopic.CENTRAL_BANKS)
+        testDispatcher.scheduler.advanceUntilIdle()
+        val successState = vm.uiState.value.marketNewsState as com.example.model.MarketNewsUiState.Success
+        assertEquals(com.example.model.MarketNewsTopic.CENTRAL_BANKS, successState.feed.topic)
+        assertEquals(listOf(com.example.model.MarketNewsTopic.CENTRAL_BANKS), requestedTopics)
+
+        shouldFail = true
+        vm.refreshMarketNews(com.example.model.MarketNewsTopic.GLOBAL_SPOT)
+        testDispatcher.scheduler.advanceUntilIdle()
+        val errorState = vm.uiState.value.marketNewsState as com.example.model.MarketNewsUiState.Error
+        assertTrue(errorState.message.contains("Google Search attestation error"))
+    }
 }

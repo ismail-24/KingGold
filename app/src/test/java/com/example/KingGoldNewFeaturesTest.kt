@@ -869,4 +869,226 @@ class KingGoldNewFeaturesTest {
         assertEquals(24, cached.karat)
         assertEquals("6400", cached.thresholdText)
     }
+
+    @Test
+    fun goldCalculatorScreen_localCurrencyConverterConvertsGramsAcrossCurrencies() {
+        val vm = KingGoldViewModel(autoFetchPrices = false)
+        val liveState = vm.uiState.value.copy(
+            prices = listOf(
+                com.example.model.KaratPrice(24, "عيار 24", 6000.0, 0.5),
+                com.example.model.KaratPrice(21, "عيار 21", 5250.0, 0.5),
+                com.example.model.KaratPrice(18, "عيار 18", 4500.0, 0.5),
+                com.example.model.KaratPrice(0, "الجنيه", 42000.0, 0.5),
+            ),
+            goldFeedStatus = com.example.ui.components.GoldFeedStatus.Live(
+                usdPerOunce = 3732.42,
+                usdToEgpRate = 50.0,
+                fetchedAtLabel = "01:30 م",
+                fxRatesPerUsd = mapOf(
+                    "USD" to 1.0,
+                    "EGP" to 50.0,
+                    "SAR" to 3.75,
+                    "AED" to 3.67,
+                    "EUR" to 0.90,
+                ),
+            ),
+        )
+
+        composeRule.setContent {
+            KingGoldTheme {
+                GoldCalculatorScreen(
+                    uiState = liveState,
+                    onBack = {},
+                    onOpenPriceInsight = {},
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("gold_currency_converter_card").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("converter_detected_locale_badge").performScrollTo().assertIsDisplayed()
+
+        // Enter 10g, choose 24K, choose SAR -> 6000 / 50 = $120/g -> 450 SAR/g -> 4,500.00 ر.س
+        composeRule.onNodeWithTag("converter_karat_24").performScrollTo().performClick()
+        composeRule.onNodeWithTag("converter_weight_input").performScrollTo().performTextClearance()
+        composeRule.onNodeWithTag("converter_weight_input").performTextInput("10")
+        composeRule.onNodeWithTag("converter_currency_chip_SAR").performScrollTo().performClick()
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("converter_result_value")
+            .performScrollTo()
+            .assertIsDisplayed()
+            .assertTextEquals("4,500.00 ر.س")
+        composeRule.onNodeWithTag("converter_gram_rate")
+            .performScrollTo()
+            .assertTextEquals("سعر الجرام (عيار 24): 450.00 ر.س")
+
+        // Switch to EGP and 20g -> 20 * 6,000 = 120,000.00 ج.م
+        composeRule.onNodeWithTag("converter_weight_input").performScrollTo().performTextClearance()
+        composeRule.onNodeWithTag("converter_weight_input").performTextInput("20")
+        composeRule.onNodeWithTag("converter_currency_chip_EGP").performScrollTo().performClick()
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("converter_result_value")
+            .performScrollTo()
+            .assertTextEquals("120,000.00 ج.م")
+    }
+
+    @Test
+    fun marketNewsScreen_rendersGoogleSearchFeedQueriesAndErrorRetry() {
+        assertTrue(Routes.isSupportedInternalRoute(Routes.MARKET_NEWS))
+        val vm = KingGoldViewModel(autoFetchPrices = false)
+        val sampleFeed = com.example.model.MarketNewsFeed(
+            topic = com.example.model.MarketNewsTopic.GLOBAL_SPOT,
+            macroSummary = "استقرار الأونصة العالمية بدعم طلب البنوك المركزية.",
+            articles = listOf(
+                com.example.model.MarketNewsArticle(
+                    id = "n1",
+                    title = "الذهب العالمي يحافظ على مكاسبه الأسبوعية",
+                    summary = "ارتفع الطلب الاستثماري على السبائك مع ترقب بيانات الفائدة.",
+                    impact = com.example.model.NewsImpactDirection.BULLISH,
+                    regionTag = "عالمي",
+                    publishedHint = "اليوم",
+                    sourceTitle = "Reuters",
+                    sourceUrl = "https://www.reuters.com/markets/gold",
+                ),
+            ),
+            groundingSources = listOf(
+                com.example.model.MarketNewsSource(
+                    title = "Reuters Gold Coverage",
+                    url = "https://www.reuters.com/markets/gold",
+                    domain = "reuters.com",
+                ),
+            ),
+            searchQueries = listOf("global gold spot price XAU USD news today"),
+            fetchedAtLabel = "03:40 م",
+        )
+        val clickedTopics = mutableListOf<com.example.model.MarketNewsTopic>()
+        var refreshCount = 0
+        var aiPrompt: String? = null
+
+        val successState = vm.uiState.value.copy(
+            marketNewsTopic = com.example.model.MarketNewsTopic.GLOBAL_SPOT,
+            marketNewsState = com.example.model.MarketNewsUiState.Success(sampleFeed),
+        )
+        composeRule.setContent {
+            KingGoldTheme {
+                com.example.ui.screens.price.MarketNewsScreen(
+                    uiState = successState,
+                    onSelectTopic = { clickedTopics.add(it) },
+                    onRefreshNews = { refreshCount++ },
+                    onOpenAiAdvisor = { aiPrompt = it },
+                    onBack = {},
+                    autoFetchIfIdle = false,
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("market_news_section_card").assertIsDisplayed()
+        composeRule.onNodeWithTag("market_news_macro_summary").assertIsDisplayed()
+        composeRule.onNodeWithTag("market_news_article_0").assertIsDisplayed()
+        composeRule.onNodeWithTag("market_news_grounding_chip_0").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("market_news_queries_card").performScrollTo().assertIsDisplayed()
+
+        composeRule.onNodeWithTag("market_news_topic_central_banks").performScrollTo().performClick()
+        assertEquals(listOf(com.example.model.MarketNewsTopic.CENTRAL_BANKS), clickedTopics)
+
+        composeRule.onNodeWithTag("market_news_ask_ai_button").performScrollTo().performClick()
+        assertTrue(aiPrompt?.contains("استقرار الأونصة العالمية") == true)
+
+        composeRule.onNodeWithTag("market_news_top_refresh_button").performClick()
+        assertEquals(1, refreshCount)
+    }
+
+    @Test
+    fun marketNewsSection_showsErrorStateAndTriggersRetry() {
+        var retried = false
+        composeRule.setContent {
+            KingGoldTheme {
+                com.example.ui.components.MarketNewsSectionCard(
+                    newsState = com.example.model.MarketNewsUiState.Error("تعذر الاتصال ببحث Google حالياً"),
+                    selectedTopic = com.example.model.MarketNewsTopic.ALL,
+                    onSelectTopic = {},
+                    onRefresh = { retried = true },
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("market_news_error_state").assertIsDisplayed()
+        composeRule.onNodeWithTag("market_news_retry_button").performClick()
+        assertTrue(retried)
+    }
+
+    @Test
+    fun marketNewsParser_parsesGroundedGeminiResponseAndFiltersUnsafeUrls() {
+        val rawJson = """
+            ```json
+            {
+              "macroSummary": "ارتفاع الذهب الفوري بدعم توقعات خفض الفائدة وتراجع الدولار.",
+              "articles": [
+                {
+                  "title": "الذهب يقترب من ذروة أسبوعية",
+                  "summary": "صعدت الأونصة العالمية بنسبة 0.8% مع زيادة الطلب التحوطي.",
+                  "impact": "BULLISH",
+                  "regionTag": "عالمي",
+                  "publishedHint": "اليوم",
+                  "sourceTitle": "Reuters",
+                  "sourceUrl": "javascript:alert(1)"
+                },
+                {
+                  "title": "الفيدرالي يراقب بيانات التضخم",
+                  "summary": "الأسواق تترقب محضر الفيدرالي لتحديد مسار العوائد.",
+                  "impact": "BEARISH",
+                  "regionTag": "الفيدرالي",
+                  "publishedHint": "منذ ساعتين",
+                  "sourceTitle": "Bloomberg",
+                  "sourceUrl": "https://www.bloomberg.com/markets/gold"
+                }
+              ]
+            }
+            ```
+        """.trimIndent()
+        val groundingSources = listOf(
+            com.example.model.MarketNewsSource(
+                title = "Reuters Commodities",
+                url = "https://www.reuters.com/markets/commodities/gold-latest",
+                domain = "reuters.com",
+            ),
+        )
+
+        assertTrue(com.example.data.MarketNewsParser.isSafeHttpUrl("https://www.reuters.com"))
+        assertTrue(com.example.data.MarketNewsParser.isSafeHttpUrl("http://example.com/news"))
+        assertFalse(com.example.data.MarketNewsParser.isSafeHttpUrl("javascript:alert(1)"))
+        assertFalse(com.example.data.MarketNewsParser.isSafeHttpUrl("ftp://unsafe-scheme.example.com/file"))
+
+        val feed = com.example.data.MarketNewsParser.parseRawText(
+            topic = com.example.model.MarketNewsTopic.ALL,
+            rawText = rawJson,
+            groundingSources = groundingSources,
+            searchQueries = listOf("gold spot price news today", "Fed rates gold"),
+            fetchedAtLabel = "11:40 ص",
+        )
+
+        assertEquals(2, feed.articles.size)
+        assertEquals(com.example.model.NewsImpactDirection.BULLISH, feed.articles[0].impact)
+        assertEquals("https://www.reuters.com/markets/commodities/gold-latest", feed.articles[0].sourceUrl)
+        assertEquals(com.example.model.NewsImpactDirection.BEARISH, feed.articles[1].impact)
+        assertEquals("https://www.bloomberg.com/markets/gold", feed.articles[1].sourceUrl)
+        assertEquals(1, feed.groundingSources.size)
+        assertEquals("reuters.com", feed.groundingSources.first().domain)
+        assertEquals(listOf("gold spot price news today", "Fed rates gold"), feed.searchQueries)
+
+        // Plain-text fallback parsing when response is unstructured prose
+        val proseFeed = com.example.data.MarketNewsParser.parseRawText(
+            topic = com.example.model.MarketNewsTopic.GLOBAL_SPOT,
+            rawText = "- ارتفعت أسعار الذهب الفورية مع تراجع مؤشر الدولار العالمي اليوم",
+            groundingSources = groundingSources,
+            searchQueries = emptyList(),
+            fetchedAtLabel = "11:45 ص",
+        )
+        assertEquals(1, proseFeed.articles.size)
+        assertEquals("https://www.reuters.com/markets/commodities/gold-latest", proseFeed.articles.first().sourceUrl)
+    }
 }

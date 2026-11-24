@@ -58,6 +58,7 @@ sealed interface GoldFeedStatus {
         val usdPerOunce: Double,
         val usdToEgpRate: Double,
         val fetchedAtLabel: String,
+        val fxRatesPerUsd: Map<String, Double> = emptyMap(),
     ) : GoldFeedStatus
     data class OfflineFallback(
         val errorMessage: String,

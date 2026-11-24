@@ -3,9 +3,11 @@ package com.example.ui.state
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.data.FirebaseMarketNewsGateway
 import com.example.data.GlobalGoldFeedResult
 import com.example.data.GlobalGoldPriceService
 import com.example.data.KingGoldRepository
+import com.example.data.MarketNewsGateway
 import com.example.data.remote.FirestoreKingGoldRepository
 import com.example.data.remote.FirestoreMarketplaceRepository
 import com.example.data.remote.FirestoreVaultRepository
@@ -23,6 +25,8 @@ import com.example.model.GoldOrder
 import com.example.model.KaratPrice
 import com.example.model.KycStatus
 import com.example.model.LedgerEntry
+import com.example.model.MarketNewsTopic
+import com.example.model.MarketNewsUiState
 import com.example.model.MerchantAuditLog
 import com.example.model.MerchantOrderView
 import com.example.model.MerchantPrivateDocs
@@ -72,6 +76,8 @@ data class KingGoldUiState(
     val otpCode: String = "",
     val prices: List<KaratPrice> = KingGoldRepository.prices,
     val goldFeedStatus: GoldFeedStatus = GoldFeedStatus.Loading,
+    val marketNewsTopic: MarketNewsTopic = MarketNewsTopic.ALL,
+    val marketNewsState: MarketNewsUiState = MarketNewsUiState.Idle,
     val platformPricing: PlatformPricingConfig = PlatformPricingConfig(),
     val hasRemotePricingConfig: Boolean = false,
     val staticShops: List<Shop> = KingGoldRepository.shops,
@@ -352,6 +358,7 @@ class KingGoldViewModel(
     private val on24KPriceDroppedBelowThreshold: ((current24K: Double, threshold: Double) -> Unit)? = null,
     private val onPriceThresholdTriggered: ((karat: Int, currentPrice: Double, threshold: Double, isAbove: Boolean) -> Unit)? = null,
     private val onPricesSynced: ((prices: List<KaratPrice>, feedStatus: GoldFeedStatus) -> Unit)? = null,
+    private val marketNewsGateway: MarketNewsGateway = FirebaseMarketNewsGateway(),
     autoFetchPrices: Boolean = firestoreRepository != null,
 ) : ViewModel() {
 
@@ -370,6 +377,7 @@ class KingGoldViewModel(
     private var priceLockTimerJob: Job? = null
     private var cartSyncJob: Job? = null
     private var merchantAuditJob: Job? = null
+    private var marketNewsJob: Job? = null
     private var hasLocalCartEdits = false
     private var lastNotifiedThresholdSignature: Triple<Int, Double, Double>? = null
 
@@ -385,6 +393,7 @@ class KingGoldViewModel(
         }
         if (autoFetchPrices) {
             refreshGlobalGoldPrices()
+            refreshMarketNews()
         }
     }
 
@@ -1881,6 +1890,7 @@ class KingGoldViewModel(
                         usdPerOunce = q.usdPerTroyOunce,
                         usdToEgpRate = q.usdToEgpRate,
                         fetchedAtLabel = timeStr,
+                        fxRatesPerUsd = q.fxRatesPerUsd,
                     )
                     _uiState.update {
                         it.copy(
@@ -1897,6 +1907,48 @@ class KingGoldViewModel(
                             goldFeedStatus = GoldFeedStatus.OfflineFallback(result.message),
                         )
                     }
+                }
+            }
+        }
+    }
+
+    fun selectMarketNewsTopic(topic: MarketNewsTopic) {
+        if (_uiState.value.marketNewsTopic == topic && _uiState.value.marketNewsState is MarketNewsUiState.Success) {
+            return
+        }
+        _uiState.update { it.copy(marketNewsTopic = topic) }
+        refreshMarketNews(topic)
+    }
+
+    fun refreshMarketNews(topic: MarketNewsTopic = _uiState.value.marketNewsTopic) {
+        marketNewsJob?.cancel()
+        _uiState.update {
+            it.copy(
+                marketNewsTopic = topic,
+                marketNewsState = MarketNewsUiState.Loading,
+            )
+        }
+        marketNewsJob = viewModelScope.launch {
+            try {
+                val feed = marketNewsGateway.fetchLatestGoldMarketNews(topic)
+                _uiState.update {
+                    it.copy(
+                        marketNewsTopic = topic,
+                        marketNewsState = MarketNewsUiState.Success(feed),
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        marketNewsState = MarketNewsUiState.Error(
+                            e.localizedMessage ?: "تعذّر جلب أخبار السوق عبر Google Search حالياً.",
+                        ),
+                    )
+                }
+                runCatching {
+                    Log.e(TAG, "Failed to load market news for topic=${topic.name}", e)
                 }
             }
         }

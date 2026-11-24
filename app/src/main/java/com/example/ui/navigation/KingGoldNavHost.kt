@@ -240,6 +240,9 @@ fun KingGoldNavHost(
                             navController.navigateToHomeTab(HomeTab.SELL_GOLD, isAuthorized)
                         },
                         onOpenGoldCalculator = { navController.navigateSingleTop(Routes.GOLD_CALCULATOR, isAuthorized) },
+                        onOpenMarketNews = { navController.navigateSingleTop(Routes.MARKET_NEWS, isAuthorized) },
+                        onSelectMarketNewsTopic = vm::selectMarketNewsTopic,
+                        onRefreshMarketNews = { vm.refreshMarketNews() },
                         onOpenMerchantPortal = { navController.navigateSingleTop(Routes.MERCHANT_PORTAL, isAuthorized) },
                         onOpenAdminCenter = { navController.navigateSingleTop(Routes.ADMIN_CENTER, isAuthorized) },
                         onOpenSupport = { navController.navigateSingleTop(Routes.SUPPORT, isAuthorized) },

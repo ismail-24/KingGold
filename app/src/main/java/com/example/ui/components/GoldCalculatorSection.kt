@@ -19,10 +19,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.AutoAwesome
@@ -137,7 +138,7 @@ fun GoldCalculatorScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = "حاسبة قيمة الذهب المباشرة",
+                        text = "حاسبة ومحول الذهب المباشر",
                         style = AppText.display.copy(fontSize = 19.sp),
                     )
                 },
@@ -184,66 +185,69 @@ fun GoldCalculatorScreen(
                 .navigationBarsPadding(),
             contentAlignment = Alignment.TopCenter,
         ) {
-            LazyColumn(
+            Column(
                 modifier = Modifier
                     .widthIn(max = 640.dp)
-                    .fillMaxSize(),
-                contentPadding = PaddingValues(18.dp),
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                item {
-                    GoldCalculatorCard(
-                        prices = uiState.prices,
-                        feedStatus = uiState.goldFeedStatus,
-                        onRefreshPrices = onRefreshPrices,
-                        onOpenPriceInsight = onOpenPriceInsight,
-                        onOpenAiAdvisor = onOpenAiAdvisor,
-                    )
-                }
+                GoldCalculatorCard(
+                    prices = uiState.prices,
+                    feedStatus = uiState.goldFeedStatus,
+                    onRefreshPrices = onRefreshPrices,
+                    onOpenPriceInsight = onOpenPriceInsight,
+                    onOpenAiAdvisor = onOpenAiAdvisor,
+                )
 
-                item {
-                    Card(
+                GoldCurrencyConverterCard(
+                    prices = uiState.prices,
+                    feedStatus = uiState.goldFeedStatus,
+                    onRefreshPrices = onRefreshPrices,
+                )
+
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("calculator_live_reference_card"),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    border = BorderStroke(1.dp, AppColors.Line),
+                ) {
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .testTag("calculator_live_reference_card"),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color.White),
-                        border = BorderStroke(1.dp, AppColors.Line),
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                            Text(
-                                text = "مرجع الأسعار المباشرة المستخدمة",
-                                style = AppText.display.copy(fontSize = 16.sp),
-                            )
-                            CALCULATOR_KARATS.forEach { karat ->
-                                val priceEgp = GoldPriceCalculator.marketPriceForKarat(uiState.prices, karat)
-                                val priceUsd = priceEgp / usdToEgp.coerceAtLeast(1.0)
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Text(
-                                        text = "سعر جرام عيار $karat",
-                                        style = AppText.body.copy(color = AppColors.Muted, fontSize = 13.sp),
-                                    )
-                                    Text(
-                                        text = "${formatCurrency(priceEgp)} ج.م · $${formatCurrency(priceUsd, 2)}",
-                                        style = AppText.body.copy(fontWeight = FontWeight.ExtraBold, fontSize = 13.sp),
-                                    )
-                                }
+                        Text(
+                            text = "مرجع الأسعار المباشرة المستخدمة",
+                            style = AppText.display.copy(fontSize = 16.sp),
+                        )
+                        CALCULATOR_KARATS.forEach { karat ->
+                            val priceEgp = GoldPriceCalculator.marketPriceForKarat(uiState.prices, karat)
+                            val priceUsd = priceEgp / usdToEgp.coerceAtLeast(1.0)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = "سعر جرام عيار $karat",
+                                    style = AppText.body.copy(color = AppColors.Muted, fontSize = 13.sp),
+                                )
+                                Text(
+                                    text = "${formatCurrency(priceEgp)} ج.م · $${formatCurrency(priceUsd, 2)}",
+                                    style = AppText.body.copy(fontWeight = FontWeight.ExtraBold, fontSize = 13.sp),
+                                )
                             }
-                            HorizontalDivider(color = AppColors.ParchmentDeep)
-                            Text(
-                                text = "الجنيه الذهب يزن 8 جرام عيار 21، والأونصة العالمية 31.1 جرام عيار 24.",
-                                style = AppText.body.copy(color = AppColors.Muted, fontSize = 12.sp),
-                            )
                         }
+                        HorizontalDivider(color = AppColors.ParchmentDeep)
+                        Text(
+                            text = "الجنيه الذهب يزن 8 جرام عيار 21، والأونصة العالمية 31.1 جرام عيار 24.",
+                            style = AppText.body.copy(color = AppColors.Muted, fontSize = 12.sp),
+                        )
                     }
                 }
             }
