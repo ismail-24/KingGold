@@ -114,33 +114,30 @@ fun ProductGoldArtwork(
                 center = Offset(cx * 0.92f, cy * 0.88f),
             )
 
-            when (category) {
-                "جنيهات وسبائك" -> {
-                    if (karat == 24) {
-                        // Gold bullion bar
-                        val barW = w * 0.48f
-                        val barH = h * 0.32f
-                        drawRoundRect(
-                            color = ink,
-                            topLeft = Offset(cx - barW / 2f, cy - barH / 2f),
-                            size = Size(barW, barH),
-                            cornerRadius = CornerRadius(6.dp.toPx(), 6.dp.toPx()),
-                            style = Stroke(width = stroke),
-                        )
-                        drawRoundRect(
-                            color = AppColors.Parchment.copy(alpha = 0.8f),
-                            topLeft = Offset(cx - barW * 0.3f, cy - barH * 0.25f),
-                            size = Size(barW * 0.6f, barH * 0.5f),
-                            cornerRadius = CornerRadius(3.dp.toPx(), 3.dp.toPx()),
-                        )
-                    } else {
-                        // Sovereign gold coin
-                        val r = size.minDimension * 0.28f
-                        drawCircle(color = ink, radius = r, center = Offset(cx, cy), style = Stroke(width = stroke))
-                        drawCircle(color = AppColors.Parchment.copy(alpha = 0.7f), radius = r * 0.62f, center = Offset(cx, cy), style = Stroke(width = stroke * 0.6f))
-                    }
+            when {
+                category.contains("سبيكة") || category.contains("سبائك") || (category.contains("جنيه") && karat == 24) -> {
+                    val barW = w * 0.48f
+                    val barH = h * 0.32f
+                    drawRoundRect(
+                        color = ink,
+                        topLeft = Offset(cx - barW / 2f, cy - barH / 2f),
+                        size = Size(barW, barH),
+                        cornerRadius = CornerRadius(6.dp.toPx(), 6.dp.toPx()),
+                        style = Stroke(width = stroke),
+                    )
+                    drawRoundRect(
+                        color = AppColors.Parchment.copy(alpha = 0.8f),
+                        topLeft = Offset(cx - barW * 0.3f, cy - barH * 0.25f),
+                        size = Size(barW * 0.6f, barH * 0.5f),
+                        cornerRadius = CornerRadius(3.dp.toPx(), 3.dp.toPx()),
+                    )
                 }
-                "خواتم" -> {
+                category.contains("جنيه") || category.contains("عملات") -> {
+                    val r = size.minDimension * 0.28f
+                    drawCircle(color = ink, radius = r, center = Offset(cx, cy), style = Stroke(width = stroke))
+                    drawCircle(color = AppColors.Parchment.copy(alpha = 0.7f), radius = r * 0.62f, center = Offset(cx, cy), style = Stroke(width = stroke * 0.6f))
+                }
+                category.contains("خواتم") -> {
                     val r = size.minDimension * 0.22f
                     drawCircle(color = ink, radius = r, center = Offset(cx, cy + r * 0.2f), style = Stroke(width = stroke))
                     val crown = Path().apply {
@@ -152,13 +149,36 @@ fun ProductGoldArtwork(
                     }
                     drawPath(crown, color = AppColors.Parchment)
                 }
-                "أساور" -> {
+                category.contains("أساور") || category.contains("غوايش") -> {
                     val r = size.minDimension * 0.26f
                     drawCircle(color = ink, radius = r, center = Offset(cx - r * 0.22f, cy), style = Stroke(width = stroke))
                     drawCircle(color = AppColors.Parchment.copy(alpha = 0.85f), radius = r * 0.85f, center = Offset(cx + r * 0.25f, cy), style = Stroke(width = stroke * 0.8f))
                 }
+                category.contains("حلق") || category.contains("أقراط") -> {
+                    val r = size.minDimension * 0.17f
+                    drawCircle(color = ink, radius = r, center = Offset(cx - r * 1.25f, cy), style = Stroke(width = stroke))
+                    drawCircle(color = AppColors.Parchment, radius = r, center = Offset(cx + r * 1.25f, cy), style = Stroke(width = stroke))
+                }
+                category.contains("أطقم") || category.contains("طقم") || category.contains("شبكة") -> {
+                    val outer = size.minDimension * 0.28f
+                    drawCircle(color = ink, radius = outer, center = Offset(cx, cy - outer * 0.1f), style = Stroke(width = stroke))
+                    drawCircle(color = AppColors.Parchment, radius = outer * 0.35f, center = Offset(cx - outer * 1.1f, cy + outer * 0.55f), style = Stroke(width = stroke * 0.8f))
+                    drawCircle(color = AppColors.Parchment, radius = outer * 0.35f, center = Offset(cx + outer * 1.1f, cy + outer * 0.55f), style = Stroke(width = stroke * 0.8f))
+                }
+                category.contains("تعليقات") || category.contains("تصاميم") || category.contains("دلاية") -> {
+                    val r = size.minDimension * 0.16f
+                    drawCircle(color = ink, radius = r * 0.45f, center = Offset(cx, cy - r * 1.4f), style = Stroke(width = stroke * 0.8f))
+                    val pendant = Path().apply {
+                        moveTo(cx, cy - r * 0.9f)
+                        lineTo(cx + r * 1.1f, cy + r * 0.2f)
+                        lineTo(cx, cy + r * 1.35f)
+                        lineTo(cx - r * 1.1f, cy + r * 0.2f)
+                        close()
+                    }
+                    drawPath(pendant, color = AppColors.Parchment.copy(alpha = 0.85f))
+                    drawPath(pendant, color = ink, style = Stroke(width = stroke))
+                }
                 else -> {
-                    // Fine chain links
                     val linkR = size.minDimension * 0.14f
                     drawCircle(color = ink, radius = linkR, center = Offset(cx - linkR * 1.1f, cy - linkR * 0.3f), style = Stroke(width = stroke))
                     drawCircle(color = AppColors.Parchment, radius = linkR, center = Offset(cx, cy), style = Stroke(width = stroke))

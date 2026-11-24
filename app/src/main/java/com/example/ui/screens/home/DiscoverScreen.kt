@@ -6,6 +6,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -19,6 +21,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -29,8 +32,10 @@ import androidx.compose.material.icons.outlined.AdminPanelSettings
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Calculate
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Directions
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.FormatListBulleted
+import androidx.compose.material.icons.outlined.LocationCity
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material.icons.outlined.NearMe
@@ -78,15 +83,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.MarketNewsTopic
 import com.example.model.MoneyUtils
+import com.example.model.ProductCategory
 import com.example.model.Shop
 import com.example.model.ShopSortOption
 import com.example.ui.components.DailyGoldPriceTrendChartCard
+import com.example.ui.components.GoldMarketplaceImage
 import com.example.ui.components.GoldShopsMapView
 import com.example.ui.components.MarketNewsSectionCard
 import com.example.ui.components.RealTimeGlobalGoldPriceBanner
@@ -96,8 +104,9 @@ import com.example.ui.components.VerifiedStrip
 import com.example.ui.state.KingGoldUiState
 import com.example.ui.theme.AppColors
 import com.example.ui.theme.AppText
+import com.example.ui.util.openDirections
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun DiscoverScreen(
     uiState: KingGoldUiState,
@@ -110,6 +119,8 @@ fun DiscoverScreen(
     onOpenShop: (Shop) -> Unit,
     onToggleFavoriteShop: (String) -> Unit,
     onToggleFavoritesOnlyFilter: (Boolean) -> Unit,
+    onSelectCityFilter: (String?) -> Unit = {},
+    onSelectCategoryFilter: (String?) -> Unit = {},
     onOpenProfile: () -> Unit = {},
     onOpenVault: () -> Unit = {},
     onOpenSellGold: () -> Unit = {},
@@ -125,6 +136,7 @@ fun DiscoverScreen(
     onUpdateNearbyRadius: (Double?) -> Unit = {},
     onClearSearchAnchor: () -> Unit = {},
 ) {
+    val context = LocalContext.current
     var showFilterSheet by remember { mutableStateOf(false) }
     var isMapView by rememberSaveable { mutableStateOf(false) }
 
@@ -692,6 +704,110 @@ fun DiscoverScreen(
                             }
                         }
                     }
+
+                    if (uiState.availableCities.isNotEmpty()) {
+                        LazyRow(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("discover_city_filter_row"),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            item(key = "city_all") {
+                                FilterChip(
+                                    selected = uiState.selectedCityFilter == null,
+                                    onClick = { onSelectCityFilter(null) },
+                                    modifier = Modifier.testTag("city_filter_all"),
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Outlined.LocationCity,
+                                            contentDescription = null,
+                                            tint = if (uiState.selectedCityFilter == null) AppColors.BrassLight else AppColors.Brass,
+                                            modifier = Modifier.size(15.dp),
+                                        )
+                                    },
+                                    label = {
+                                        Text(
+                                            text = "كل المدن",
+                                            style = AppText.body.copy(fontSize = 11.5.sp, fontWeight = FontWeight.Bold),
+                                        )
+                                    },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = AppColors.Ink,
+                                        selectedLabelColor = AppColors.BrassLight,
+                                        containerColor = Color.White,
+                                        labelColor = AppColors.Ink,
+                                    ),
+                                )
+                            }
+                            items(uiState.availableCities, key = { it }) { city ->
+                                val selected = uiState.selectedCityFilter.equals(city, ignoreCase = true)
+                                FilterChip(
+                                    selected = selected,
+                                    onClick = { onSelectCityFilter(if (selected) null else city) },
+                                    modifier = Modifier.testTag("city_filter_$city"),
+                                    label = {
+                                        Text(
+                                            text = city,
+                                            style = AppText.body.copy(fontSize = 11.5.sp, fontWeight = FontWeight.Bold),
+                                        )
+                                    },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = AppColors.Ink,
+                                        selectedLabelColor = AppColors.BrassLight,
+                                        containerColor = Color.White,
+                                        labelColor = AppColors.Ink,
+                                    ),
+                                )
+                            }
+                        }
+                    }
+
+                    LazyRow(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("discover_category_filter_row"),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        item(key = "cat_all") {
+                            FilterChip(
+                                selected = uiState.selectedCategoryFilter == null,
+                                onClick = { onSelectCategoryFilter(null) },
+                                modifier = Modifier.testTag("category_filter_all"),
+                                label = {
+                                    Text(
+                                        text = "كل الأقسام",
+                                        style = AppText.body.copy(fontSize = 11.5.sp, fontWeight = FontWeight.Bold),
+                                    )
+                                },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = AppColors.Brass,
+                                    selectedLabelColor = Color.White,
+                                    containerColor = AppColors.ParchmentDeep,
+                                    labelColor = AppColors.Ink,
+                                ),
+                            )
+                        }
+                        items(ProductCategory.allArabicLabels, key = { it }) { category ->
+                            val selected = uiState.selectedCategoryFilter == category
+                            FilterChip(
+                                selected = selected,
+                                onClick = { onSelectCategoryFilter(if (selected) null else category) },
+                                modifier = Modifier.testTag("category_filter_$category"),
+                                label = {
+                                    Text(
+                                        text = category,
+                                        style = AppText.body.copy(fontSize = 11.5.sp, fontWeight = FontWeight.Bold),
+                                    )
+                                },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = AppColors.Brass,
+                                    selectedLabelColor = Color.White,
+                                    containerColor = AppColors.ParchmentDeep,
+                                    labelColor = AppColors.Ink,
+                                ),
+                            )
+                        }
+                    }
                 }
             }
 
@@ -705,6 +821,8 @@ fun DiscoverScreen(
                         onResetFilters = {
                             onSearchChange("")
                             onToggleFavoritesOnlyFilter(false)
+                            onSelectCityFilter(null)
+                            onSelectCategoryFilter(null)
                             onClearSearchAnchor()
                             onApplyFilters(null, true, ShopSortOption.NEAREST)
                         },
@@ -731,7 +849,8 @@ fun DiscoverScreen(
                             .clip(RoundedCornerShape(16.dp))
                             .background(Color.White)
                             .border(1.dp, AppColors.Line, RoundedCornerShape(16.dp))
-                            .padding(24.dp),
+                            .padding(24.dp)
+                            .testTag("discover_empty_state"),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Text(
@@ -747,10 +866,32 @@ fun DiscoverScreen(
                             text = if (uiState.favoritesOnlyFilter) {
                                 "اضغط على أيقونة القلب في أي محل لحفظه هنا والوصول إليه بسرعة."
                             } else {
-                                "جرّب مسح البحث أو تغيير العيار من الفلاتر."
+                                "جرّب مسح البحث أو تغيير المدينة أو القسم أو العيار من الفلاتر."
                             },
                             style = AppText.body.copy(color = AppColors.Muted, fontSize = 12.5.sp),
                         )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Button(
+                            onClick = {
+                                onSearchChange("")
+                                onToggleFavoritesOnlyFilter(false)
+                                onSelectCityFilter(null)
+                                onSelectCategoryFilter(null)
+                                onClearSearchAnchor()
+                                onApplyFilters(null, true, ShopSortOption.NEAREST)
+                            },
+                            modifier = Modifier.testTag("discover_reset_filters_button"),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = AppColors.Ink,
+                                contentColor = AppColors.BrassLight,
+                            ),
+                        ) {
+                            Text(
+                                text = "إعادة ضبط الفلاتر",
+                                style = AppText.body.copy(color = AppColors.BrassLight, fontWeight = FontWeight.Bold),
+                            )
+                        }
                     }
                 }
             } else {
@@ -759,6 +900,15 @@ fun DiscoverScreen(
                         shop = shop,
                         isFavorite = uiState.favoriteShopIds.contains(shop.id),
                         onToggleFavorite = { onToggleFavoriteShop(shop.id) },
+                        onOpenDirections = {
+                            openDirections(
+                                context = context,
+                                address = shop.address,
+                                latitude = shop.latitude,
+                                longitude = shop.longitude,
+                                label = shop.name,
+                            ) {}
+                        },
                         onClick = { onOpenShop(shop) },
                     )
                 }
@@ -794,6 +944,7 @@ fun DiscoverScreen(
         var draftKarat by remember(uiState.selectedKaratFilter) { mutableStateOf(uiState.selectedKaratFilter) }
         var draftVerified by remember(uiState.verifiedOnlyFilter) { mutableStateOf(uiState.verifiedOnlyFilter) }
         var draftSort by remember(uiState.sortOption) { mutableStateOf(uiState.sortOption) }
+        var draftCity by remember(uiState.selectedCityFilter) { mutableStateOf(uiState.selectedCityFilter) }
 
         ModalBottomSheet(
             onDismissRequest = { showFilterSheet = false },
@@ -827,6 +978,37 @@ fun DiscoverScreen(
                                 selectedLabelColor = AppColors.BrassLight,
                             ),
                         )
+                    }
+                }
+
+                if (uiState.availableCities.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Text(
+                        text = "المدينة",
+                        style = AppText.body.copy(fontWeight = FontWeight.Bold),
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = draftCity == null,
+                            onClick = { draftCity = null },
+                            label = { Text("كل المدن", style = AppText.body.copy(fontSize = 12.sp)) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = AppColors.Ink,
+                                selectedLabelColor = AppColors.BrassLight,
+                            ),
+                        )
+                        uiState.availableCities.forEach { city ->
+                            FilterChip(
+                                selected = draftCity.equals(city, ignoreCase = true),
+                                onClick = { draftCity = city },
+                                label = { Text(city, style = AppText.body.copy(fontSize = 12.sp)) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = AppColors.Ink,
+                                    selectedLabelColor = AppColors.BrassLight,
+                                ),
+                            )
+                        }
                     }
                 }
 
@@ -871,6 +1053,7 @@ fun DiscoverScreen(
                 Button(
                     onClick = {
                         onApplyFilters(draftKarat, draftVerified, draftSort)
+                        onSelectCityFilter(draftCity)
                         showFilterSheet = false
                     },
                     modifier = Modifier
@@ -902,6 +1085,7 @@ private fun ShopTile(
     shop: Shop,
     isFavorite: Boolean,
     onToggleFavorite: () -> Unit,
+    onOpenDirections: () -> Unit,
     onClick: () -> Unit,
 ) {
     val shape = RoundedCornerShape(16.dp)
@@ -923,10 +1107,20 @@ private fun ShopTile(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                ShopGoldMedallion(
-                    shopId = shop.id,
-                    modifier = Modifier.size(54.dp),
+                GoldMarketplaceImage(
+                    imageUrl = shop.logoUrl ?: shop.coverImageUrl,
+                    base64Thumbnail = null,
+                    contentDescription = shop.name,
+                    modifier = Modifier.size(56.dp),
                     cornerRadius = 12.dp,
+                    isThumbnail = true,
+                    fallback = {
+                        ShopGoldMedallion(
+                            shopId = shop.id,
+                            modifier = Modifier.fillMaxSize(),
+                            cornerRadius = 12.dp,
+                        )
+                    },
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
@@ -949,6 +1143,13 @@ private fun ShopTile(
                             VerifiedStrip()
                         }
                     }
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Text(
+                        text = "${shop.city} · ${shop.area} · ${shop.verificationSourceLabel}",
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = AppText.body.copy(color = AppColors.Seal, fontSize = 11.sp, fontWeight = FontWeight.SemiBold),
+                    )
                     Spacer(modifier = Modifier.height(4.dp))
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -958,16 +1159,20 @@ private fun ShopTile(
                             Icon(
                                 imageVector = Icons.Outlined.Star,
                                 contentDescription = "التقييم",
-                                tint = AppColors.Brass,
+                                tint = if (shop.hasVerifiedRating) AppColors.Brass else AppColors.Muted,
                                 modifier = Modifier.size(14.dp),
                             )
                             Spacer(modifier = Modifier.width(3.dp))
                             Text(
-                                text = "${shop.rating} (${shop.reviews})",
+                                text = if (shop.hasVerifiedRating) {
+                                    "${shop.rating} (${shop.reviews})"
+                                } else {
+                                    "التقييم غير متاح"
+                                },
                                 style = AppText.body.copy(
-                                    color = AppColors.Ink,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp,
+                                    color = if (shop.hasVerifiedRating) AppColors.Ink else AppColors.Muted,
+                                    fontWeight = if (shop.hasVerifiedRating) FontWeight.Bold else FontWeight.Normal,
+                                    fontSize = 11.5.sp,
                                 ),
                             )
                         }
@@ -980,8 +1185,12 @@ private fun ShopTile(
                             )
                             Spacer(modifier = Modifier.width(3.dp))
                             Text(
-                                text = "مفتوح حتى ${shop.closesAt}",
-                                style = AppText.body.copy(color = AppColors.Muted, fontSize = 11.5.sp),
+                                text = if (shop.hasVerifiedHours) {
+                                    "مفتوح حتى ${shop.closesAt}"
+                                } else {
+                                    "ساعات العمل غير متوفرة"
+                                },
+                                style = AppText.body.copy(color = AppColors.Muted, fontSize = 11.sp),
                             )
                         }
                     }
@@ -1000,9 +1209,19 @@ private fun ShopTile(
                 }
             }
 
+            if (shop.description.isNotBlank()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = shop.description,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    style = AppText.body.copy(color = AppColors.Muted, fontSize = 12.sp, lineHeight = 17.sp),
+                )
+            }
+
             Spacer(modifier = Modifier.height(10.dp))
             HorizontalDivider(thickness = 0.8.dp, color = AppColors.ParchmentDeep)
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1026,11 +1245,11 @@ private fun ShopTile(
                         overflow = TextOverflow.Ellipsis,
                         style = AppText.body.copy(
                             color = AppColors.Ink.copy(alpha = 0.85f),
-                            fontSize = 12.5.sp,
+                            fontSize = 12.sp,
                         ),
                     )
                 }
-                Spacer(modifier = Modifier.width(10.dp))
+                Spacer(modifier = Modifier.width(8.dp))
                 Row(
                     modifier = Modifier
                         .clip(RoundedCornerShape(20.dp))
@@ -1052,6 +1271,19 @@ private fun ShopTile(
                             fontWeight = FontWeight.Bold,
                             fontSize = 11.5.sp,
                         ),
+                    )
+                }
+                IconButton(
+                    onClick = onOpenDirections,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag("shop_directions_${shop.id}"),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Directions,
+                        contentDescription = "الاتجاهات إلى ${shop.name}",
+                        tint = AppColors.Brass,
+                        modifier = Modifier.size(20.dp),
                     )
                 }
             }

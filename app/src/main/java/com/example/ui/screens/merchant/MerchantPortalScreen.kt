@@ -9,6 +9,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -78,6 +80,7 @@ import com.example.model.MerchantStatus
 import com.example.model.MerchantStore
 import com.example.model.MoneyUtils
 import com.example.model.OrderStatus
+import com.example.model.ProductCategory
 import com.example.ui.state.KingGoldUiState
 import com.example.ui.theme.AppColors
 import com.example.ui.theme.AppText
@@ -85,7 +88,7 @@ import com.example.ui.util.Base64ThumbnailImage
 import com.example.ui.util.ImageThumbnailCodec
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun MerchantPortalScreen(
     uiState: KingGoldUiState,
@@ -705,8 +708,11 @@ private fun ApprovedMerchantDashboard(
                 }
                 OutlinedTextField(value = pName, onValueChange = { pName = it; sheetError = null }, label = { Text("اسم القطعة") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                 OutlinedTextField(value = pDesc, onValueChange = { pDesc = it; sheetError = null }, label = { Text("الوصف والمواصفات") }, modifier = Modifier.fillMaxWidth())
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("خواتم", "أساور", "سلاسل", "جنيهات وسبائك").forEach { c ->
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    ProductCategory.allArabicLabels.forEach { c ->
                         FilterChip(selected = pCategory == c, onClick = { pCategory = c }, label = { Text(c, fontSize = 11.sp) })
                     }
                 }

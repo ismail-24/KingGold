@@ -189,21 +189,21 @@ class OsmMapNearbySearchTest {
     @Test
     fun viewModel_searchAnchorAndRadius_filtersAndComputesLiveDistances() {
         val vm = KingGoldViewModel(autoFetchPrices = false)
-        // Maadi Street 9 coordinate -> s1 (0.0 km), s2 (~0.5 km), s3 (~0.8 km)
-        vm.updateSearchAnchor(latitude = 29.9602, longitude = 31.2569, label = "موقعي الحالي")
-        vm.updateNearbyRadiusKm(0.2)
+        // El-Sagha coordinate -> s1 (0.0 km), s4/s5/s3 (~0.06 - 0.14 km), s2/s8/s6/s7 farther away
+        vm.updateSearchAnchor(latitude = 30.0481, longitude = 31.2614, label = "موقعي الحالي")
+        vm.updateNearbyRadiusKm(0.03)
 
         val immediate = vm.uiState.value.filteredShops
         assertEquals(listOf("s1"), immediate.map { it.id })
-        assertTrue(immediate.first().distanceKm <= 0.2)
+        assertTrue(immediate.first().distanceKm <= 0.03)
 
-        vm.updateNearbyRadiusKm(0.6)
-        val halfKm = vm.uiState.value.filteredShops
-        assertEquals(listOf("s1", "s2"), halfKm.map { it.id })
+        vm.updateNearbyRadiusKm(1.0)
+        val elSaghaCluster = vm.uiState.value.filteredShops
+        assertEquals(setOf("s1", "s3", "s4", "s5"), elSaghaCluster.map { it.id }.toSet())
 
-        // Clearing anchor restores all 3 static Cairo shops
+        // Clearing anchor restores all 8 verified Egyptian gold shops
         vm.clearSearchAnchor()
-        assertEquals(3, vm.uiState.value.filteredShops.size)
+        assertEquals(8, vm.uiState.value.filteredShops.size)
     }
 
     @Test

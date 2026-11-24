@@ -29,6 +29,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.outlined.CreditCard
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.Phone
 import androidx.compose.material.icons.outlined.Schedule
@@ -69,6 +71,7 @@ import com.example.model.KaratPrice
 import com.example.model.MoneyUtils
 import com.example.model.Product
 import com.example.model.Shop
+import com.example.ui.components.GoldMarketplaceImage
 import com.example.ui.components.LivePriceTicker
 import com.example.ui.components.ProductGoldArtwork
 import com.example.ui.components.ShopGoldMedallion
@@ -76,9 +79,9 @@ import com.example.ui.components.VerifiedStrip
 import com.example.ui.components.formatCurrency
 import com.example.ui.theme.AppColors
 import com.example.ui.theme.AppText
-import com.example.ui.util.Base64ThumbnailImage
 import com.example.ui.util.dialPhone
 import com.example.ui.util.openDirections
+import com.example.ui.util.openExternalWebsite
 import kotlinx.coroutines.launch
 
 @Composable
@@ -159,11 +162,41 @@ fun ShopDetailScreen(
                             .fillMaxWidth()
                             .height(190.dp),
                     ) {
-                        ShopGoldMedallion(
-                            shopId = shop.id,
+                        GoldMarketplaceImage(
+                            imageUrl = shop.coverImageUrl ?: shop.logoUrl,
+                            base64Thumbnail = null,
+                            contentDescription = shop.name,
                             modifier = Modifier.fillMaxSize(),
                             cornerRadius = 0.dp,
+                            isThumbnail = false,
+                            fallback = {
+                                ShopGoldMedallion(
+                                    shopId = shop.id,
+                                    modifier = Modifier.fillMaxSize(),
+                                    cornerRadius = 0.dp,
+                                )
+                            },
                         )
+                        if (shop.coverImageUrl.isNullOrBlank()) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.BottomStart)
+                                    .padding(12.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(AppColors.Ink.copy(alpha = 0.78f))
+                                    .padding(horizontal = 10.dp, vertical = 4.dp)
+                                    .testTag("shop_hero_photo_disclaimer"),
+                            ) {
+                                Text(
+                                    text = "لا تتوفر صورة واجهة موثّقة لهذا الفرع",
+                                    style = AppText.body.copy(
+                                        color = AppColors.Parchment,
+                                        fontSize = 10.5.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                    ),
+                                )
+                            }
+                        }
                         IconButton(
                             onClick = onBack,
                             modifier = Modifier
@@ -259,17 +292,39 @@ fun ShopDetailScreen(
                             if (shop.verified) VerifiedStrip()
                         }
 
+                        val ratingText = if (shop.hasVerifiedRating) {
+                            "${shop.rating} ★ (${shop.reviews} تقييم)"
+                        } else {
+                            "التقييم غير متاح"
+                        }
+                        val hoursShortText = if (shop.hasVerifiedHours) {
+                            "مفتوح حتى ${shop.closesAt}"
+                        } else {
+                            "ساعات العمل غير متوفرة"
+                        }
                         Text(
-                            text = "${shop.rating} ★ (${shop.reviews} تقييم) · ${shop.distanceKm} كم من موقعك · مفتوح حتى ${shop.closesAt}",
+                            text = "$ratingText · ${shop.distanceKm} كم من موقعك · $hoursShortText",
                             style = AppText.body.copy(color = AppColors.Muted, fontSize = 12.5.sp),
                         )
+
+                        Text(
+                            text = "${shop.city} · ${shop.area} · ${shop.verificationSourceLabel}",
+                            style = AppText.body.copy(color = AppColors.Seal, fontSize = 12.sp, fontWeight = FontWeight.Bold),
+                        )
+
+                        if (shop.description.isNotBlank()) {
+                            Text(
+                                text = shop.description,
+                                style = AppText.body.copy(color = AppColors.Ink.copy(alpha = 0.85f), fontSize = 13.sp, lineHeight = 19.sp),
+                            )
+                        }
 
                         LivePriceTicker(
                             prices = prices,
                             onTickerClick = onOpenPriceInsight,
                         )
 
-                        // Address, Working Hours, and Contact Phone Card
+                        // Address, Working Hours, Contact Phone, and Official Website Card
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(14.dp),
@@ -296,12 +351,19 @@ fun ShopDetailScreen(
                                     )
                                     TextButton(
                                         onClick = {
-                                            openDirections(context, shop.address) {
+                                            openDirections(
+                                                context = context,
+                                                address = shop.address,
+                                                latitude = shop.latitude,
+                                                longitude = shop.longitude,
+                                                label = shop.name,
+                                            ) {
                                                 scope.launch {
                                                     snackbarHostState.showSnackbar("العنوان: ${shop.address}")
                                                 }
                                             }
                                         },
+                                        modifier = Modifier.testTag("shop_directions_button"),
                                     ) {
                                         Text(
                                             text = "الاتجاهات",
@@ -343,7 +405,11 @@ fun ShopDetailScreen(
                                         )
                                         Spacer(modifier = Modifier.height(2.dp))
                                         Text(
-                                            text = shop.workingHours,
+                                            text = if (shop.hasVerifiedHours) {
+                                                shop.workingHours
+                                            } else {
+                                                "ساعات العمل غير متوفرة حالياً — يرجى التواصل مع الفرع قبل الزيارة."
+                                            },
                                             style = AppText.body.copy(
                                                 color = AppColors.Muted,
                                                 fontSize = 12.5.sp,
@@ -378,35 +444,99 @@ fun ShopDetailScreen(
                                                 fontSize = 12.5.sp,
                                             ),
                                         )
-                                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                                        if (shop.hasVerifiedPhone && shop.phone.isNotBlank()) {
+                                            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                                                Text(
+                                                    text = shop.phone,
+                                                    style = AppText.body.copy(
+                                                        color = AppColors.Ink,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        fontSize = 13.5.sp,
+                                                    ),
+                                                )
+                                            }
+                                        } else {
                                             Text(
-                                                text = shop.phone,
+                                                text = "غير متوفر حالياً",
                                                 style = AppText.body.copy(
-                                                    color = AppColors.Ink,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    fontSize = 13.5.sp,
+                                                    color = AppColors.Muted,
+                                                    fontSize = 12.5.sp,
                                                 ),
                                             )
                                         }
                                     }
-                                    TextButton(
-                                        onClick = {
-                                            dialPhone(context, shop.phone) {
-                                                scope.launch {
-                                                    snackbarHostState.showSnackbar("هاتف المحل: ${shop.phone}")
+                                    if (shop.hasVerifiedPhone && shop.phone.isNotBlank()) {
+                                        TextButton(
+                                            onClick = {
+                                                dialPhone(context, shop.phone) {
+                                                    scope.launch {
+                                                        snackbarHostState.showSnackbar("هاتف المحل: ${shop.phone}")
+                                                    }
                                                 }
-                                            }
-                                        },
-                                        modifier = Modifier.testTag("shop_call_button"),
+                                            },
+                                            modifier = Modifier.testTag("shop_call_button"),
+                                        ) {
+                                            Text(
+                                                text = "اتصل الآن",
+                                                style = AppText.body.copy(
+                                                    color = AppColors.Brass,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 13.sp,
+                                                ),
+                                            )
+                                        }
+                                    }
+                                }
+
+                                if (!shop.websiteUrl.isNullOrBlank()) {
+                                    HorizontalDivider(thickness = 0.8.dp, color = AppColors.ParchmentDeep)
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 4.dp)
+                                            .testTag("shop_website_row"),
+                                        verticalAlignment = Alignment.CenterVertically,
                                     ) {
-                                        Text(
-                                            text = "اتصل الآن",
-                                            style = AppText.body.copy(
-                                                color = AppColors.Brass,
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 13.sp,
-                                            ),
+                                        Icon(
+                                            imageVector = Icons.Outlined.Language,
+                                            contentDescription = "الموقع الرسمي",
+                                            tint = AppColors.Brass,
+                                            modifier = Modifier.size(18.dp),
                                         )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "الموقع الإلكتروني الرسمي",
+                                                style = AppText.body.copy(fontWeight = FontWeight.Bold, fontSize = 12.5.sp),
+                                            )
+                                            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                                                Text(
+                                                    text = shop.websiteUrl,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    style = AppText.body.copy(color = AppColors.Muted, fontSize = 12.sp),
+                                                )
+                                            }
+                                        }
+                                        TextButton(
+                                            onClick = {
+                                                openExternalWebsite(context, shop.websiteUrl) {
+                                                    scope.launch {
+                                                        snackbarHostState.showSnackbar(shop.websiteUrl)
+                                                    }
+                                                }
+                                            },
+                                            modifier = Modifier.testTag("shop_website_button"),
+                                        ) {
+                                            Text(
+                                                text = "زيارة الموقع",
+                                                style = AppText.body.copy(
+                                                    color = AppColors.Brass,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 13.sp,
+                                                ),
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -433,6 +563,28 @@ fun ShopDetailScreen(
                                     ),
                                 )
                             }
+                        }
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(AppColors.ParchmentDeep)
+                                .padding(horizontal = 10.dp, vertical = 7.dp)
+                                .testTag("shop_catalog_photo_disclosure"),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Info,
+                                contentDescription = null,
+                                tint = AppColors.Seal,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "صور الكتالوج توضّح الفئة والتصميم ما لم يُذكر أنها صورة موثّقة من التاجر، ولا تُعد إثباتاً للمخزون الفعلي بالمحل.",
+                                style = AppText.body.copy(color = AppColors.Seal, fontSize = 11.sp, lineHeight = 16.sp),
+                            )
                         }
 
                         if (products.isEmpty()) {
@@ -556,26 +708,24 @@ private fun GoldGalleryCard(
     ) {
         Column(modifier = Modifier.padding(10.dp)) {
             Box {
-                val thumb = product.imageThumbnails.firstOrNull()
-                if (!thumb.isNullOrBlank()) {
-                    Base64ThumbnailImage(
-                        encoded = thumb,
-                        contentDescription = product.name,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(104.dp)
-                            .clip(RoundedCornerShape(12.dp)),
-                    )
-                } else {
-                    ProductGoldArtwork(
-                        category = product.category,
-                        karat = product.karat,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(104.dp),
-                        cornerRadius = 12.dp,
-                    )
-                }
+                GoldMarketplaceImage(
+                    imageUrl = product.thumbnailUrl,
+                    base64Thumbnail = product.imageThumbnails.firstOrNull(),
+                    contentDescription = product.name,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(108.dp),
+                    cornerRadius = 12.dp,
+                    isThumbnail = true,
+                    fallback = {
+                        ProductGoldArtwork(
+                            category = product.category,
+                            karat = product.karat,
+                            modifier = Modifier.fillMaxSize(),
+                            cornerRadius = 12.dp,
+                        )
+                    },
+                )
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopStart)
@@ -605,7 +755,7 @@ private fun GoldGalleryCard(
                 ),
             )
             Text(
-                text = "${product.weightGrams} جم · ${if (product.stamped) "مدموغ" else product.category}",
+                text = "${product.weightGrams} جم · ${product.designStyle.ifBlank { product.category }}",
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 style = AppText.body.copy(color = AppColors.Muted, fontSize = 11.5.sp),
@@ -620,9 +770,11 @@ private fun GoldGalleryCard(
                 ),
             )
             Text(
-                text = "بدون مصنعية إضافية",
+                text = if (product.isPhotoVerifiedInventory) "صورة موثّقة من التاجر" else "صورة مرجعية للتصميم",
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 style = AppText.body.copy(
-                    color = AppColors.Trust,
+                    color = if (product.isPhotoVerifiedInventory) AppColors.Trust else AppColors.Seal,
                     fontWeight = FontWeight.Bold,
                     fontSize = 10.sp,
                 ),

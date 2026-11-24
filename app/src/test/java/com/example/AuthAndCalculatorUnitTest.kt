@@ -191,13 +191,17 @@ class AuthAndCalculatorUnitTest {
         assertEquals(30.0444, fallbackCenter.latitude, 0.0001)
 
         val vm = KingGoldViewModel(autoFetchPrices = false)
-        vm.updateSearchQuery("القاهرة")
-        assertEquals(3, vm.uiState.value.filteredShops.size)
+        vm.updateCityFilter("القاهرة")
+        assertEquals(6, vm.uiState.value.filteredShops.size)
+        vm.updateCityFilter(null)
+
+        vm.updateSearchQuery("الإسكندرية")
+        assertEquals(listOf("s7"), vm.uiState.value.filteredShops.map { it.id })
 
         vm.updateSearchQuery("مدينة غير موجودة")
         assertTrue(vm.uiState.value.filteredShops.isEmpty())
 
-        vm.updateSearchQuery("النور")
+        vm.updateSearchQuery("مركز تجارة السبائك")
         assertEquals(listOf("s1"), vm.uiState.value.filteredShops.map { it.id })
     }
 

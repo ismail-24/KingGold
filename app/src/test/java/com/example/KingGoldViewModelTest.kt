@@ -217,7 +217,7 @@ class KingGoldViewModelTest {
     @Test
     fun searchAndSorting_filtersShopsCorrectly() {
         val vm = KingGoldViewModel()
-        vm.updateSearchQuery("النور")
+        vm.updateSearchQuery("مركز تجارة السبائك")
         assertEquals(1, vm.uiState.value.filteredShops.size)
         assertEquals("s1", vm.uiState.value.filteredShops.first().id)
 

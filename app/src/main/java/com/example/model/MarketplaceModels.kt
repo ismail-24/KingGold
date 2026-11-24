@@ -44,13 +44,19 @@ data class MerchantStore(
         reviews = reviewsCount,
         distanceKm = 2.0,
         verified = status == MerchantStatus.APPROVED,
-        closesAt = "10:00 م",
+        closesAt = "",
+        workingHours = "",
         makingFeePerGram = 0.0,
         ownerUid = ownerUid,
         isDynamicMerchant = true,
         city = city,
         latitude = latitude,
         longitude = longitude,
+        description = description,
+        hasVerifiedRating = reviewsCount > 0 && rating > 0.0,
+        hasVerifiedPhone = contactPhone.isNotBlank(),
+        hasVerifiedHours = false,
+        verificationSourceLabel = if (status == MerchantStatus.APPROVED) "تاجر معتمد على المنصة" else "طلب تاجر قيد المراجعة",
     )
 }
 
@@ -105,6 +111,7 @@ data class MerchantProduct(
         description = description,
         imageThumbnails = imageThumbnails,
         merchantOwnerUid = ownerUid,
+        isPhotoVerifiedInventory = imageThumbnails.isNotEmpty(),
     )
 }
 

@@ -41,7 +41,7 @@ abstract class FirestoreEmulatorTestBase {
         databaseId = if (resId != 0) {
             context.getString(resId)
         } else {
-            "ai-studio-android-kinggold-898055f9-af3c-4188-bfda-068632d66744"
+            "ai-studio-android-kinggold-bc58cad2-94b8-4b97-b49c-a2df279a1209"
         }
 
         val app = if (FirebaseApp.getApps(context).isEmpty()) {

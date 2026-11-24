@@ -1,10 +1,29 @@
 package com.example.model
 
-enum class ProductCategory(val arabicLabel: String) {
-    COINS_AND_BARS("جنيهات وسبائك"),
-    RINGS("خواتم"),
-    BRACELETS("أساور"),
-    CHAINS("سلاسل"),
+enum class ProductCategory(
+    val arabicLabel: String,
+    val legacyAliases: Set<String> = emptySet(),
+) {
+    COINS("جنيهات وعملات ذهبية", setOf("جنيهات وسبائك", "جنيهات ذهب", "عملات")),
+    BARS_BULLION("سبائك ذهبية", setOf("سبائك", "جنيهات وسبائك")),
+    BRACELETS("أساور وغوايش", setOf("أساور", "غوايش")),
+    RINGS("خواتم", setOf("دبل", "خواتم ذهب")),
+    CHAINS("سلاسل وقلائد", setOf("سلاسل", "قلائد")),
+    EARRINGS("حلقان وأقراط", setOf("حلقان", "أقراط")),
+    JEWELRY_SETS("أطقم كاملة", setOf("أطقم", "شبكة")),
+    DESIGNS("تصاميم وتعليقات", setOf("تعليقات", "بروشات", "تصاميم تراثية وعصرية"));
+
+    fun matches(rawCategory: String): Boolean {
+        val normalized = rawCategory.trim()
+        if (normalized.isEmpty()) return false
+        if (normalized.equals(arabicLabel, ignoreCase = true)) return true
+        return legacyAliases.any { it.equals(normalized, ignoreCase = true) }
+    }
+
+    companion object {
+        val allArabicLabels: List<String>
+            get() = entries.map { it.arabicLabel }
+    }
 }
 
 data class KaratPrice(
@@ -46,13 +65,29 @@ data class Shop(
     val distanceKm: Double,
     val verified: Boolean,
     val closesAt: String,
-    val workingHours: String = "السبت – الخميس: 10:00 ص – $closesAt · الجمعة: 2:00 م – $closesAt",
+    val workingHours: String = if (closesAt.isNotBlank()) {
+        "السبت – الخميس: 10:00 ص – $closesAt · الجمعة: 2:00 م – $closesAt"
+    } else {
+        ""
+    },
     val makingFeePerGram: Double,
     val ownerUid: String = "",
     val isDynamicMerchant: Boolean = false,
     val city: String = "القاهرة",
     val latitude: Double = 0.0,
     val longitude: Double = 0.0,
+    val description: String = "",
+    val websiteUrl: String? = null,
+    val logoUrl: String? = null,
+    val coverImageUrl: String? = null,
+    val hasVerifiedRating: Boolean = rating > 0.0 && reviews > 0,
+    val hasVerifiedPhone: Boolean = phone.isNotBlank(),
+    val hasVerifiedHours: Boolean = closesAt.isNotBlank() && workingHours.isNotBlank(),
+    val verificationSourceLabel: String = when {
+        isDynamicMerchant -> "تاجر معتمد على المنصة"
+        verified -> "بيانات تجارية موثّقة"
+        else -> "بيانات غير موثّقة"
+    },
 )
 
 data class Product(
@@ -68,6 +103,12 @@ data class Product(
     val description: String = "",
     val imageThumbnails: List<String> = emptyList(),
     val merchantOwnerUid: String = "",
+    val designStyle: String = "",
+    val thumbnailUrl: String? = null,
+    val imageUrl: String? = null,
+    val galleryImageUrls: List<String> = emptyList(),
+    val isPhotoVerifiedInventory: Boolean = imageThumbnails.isNotEmpty(),
+    val imageSourceAttribution: String? = null,
 )
 
 data class CartItem(

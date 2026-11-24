@@ -39,6 +39,7 @@ import com.example.model.OrderStatus
 import com.example.model.PaymentMethod
 import com.example.model.PlatformPricingConfig
 import com.example.model.Product
+import com.example.model.ProductCategory
 import com.example.model.SellGoldRequest
 import com.example.model.SellRequestStatus
 import com.example.model.Shop
@@ -94,6 +95,8 @@ data class KingGoldUiState(
     val selectedMerchantAuditLogs: List<MerchantAuditLog> = emptyList(),
     val searchQuery: String = "",
     val selectedKaratFilter: Int? = null,
+    val selectedCityFilter: String? = null,
+    val selectedCategoryFilter: String? = null,
     val verifiedOnlyFilter: Boolean = true,
     val sortOption: ShopSortOption = ShopSortOption.NEAREST,
     val searchAnchorLat: Double? = null,
@@ -152,6 +155,12 @@ data class KingGoldUiState(
         }
     }
 
+    val availableCities: List<String>
+        get() = shops
+            .map { it.city.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+
     val filteredShops: List<Shop>
         get() {
             val anchorLat = searchAnchorLat
@@ -160,6 +169,11 @@ data class KingGoldUiState(
                 anchorLon != null &&
                 isValidMapCoordinatePair(anchorLat, anchorLon)
             val q = searchQuery.trim().lowercase()
+            val selectedCategoryEnum = selectedCategoryFilter?.let { filterLabel ->
+                ProductCategory.entries.firstOrNull {
+                    it.arabicLabel.equals(filterLabel.trim(), ignoreCase = true)
+                }
+            }
             val withLiveDistances = if (hasAnchor) {
                 shops.map { shop ->
                     if (hasValidMapCoordinates(shop)) {
@@ -181,25 +195,45 @@ data class KingGoldUiState(
             return withLiveDistances.filter { shop ->
                 val matchesVerified = !verifiedOnlyFilter || shop.verified
                 val matchesFavorite = !favoritesOnlyFilter || favoriteShopIds.contains(shop.id)
+                val matchesCity = selectedCityFilter == null ||
+                    shop.city.trim().equals(selectedCityFilter.trim(), ignoreCase = true)
                 val shopProducts = productsForShop(shop.id)
                 val matchesKarat = selectedKaratFilter == null ||
                     shopProducts.any { it.karat == selectedKaratFilter }
+                val matchesCategory = selectedCategoryFilter == null ||
+                    shopProducts.any { product ->
+                        selectedCategoryEnum?.matches(product.category) == true ||
+                            product.category.equals(selectedCategoryFilter, ignoreCase = true)
+                    }
                 val matchesQuery = q.isEmpty() ||
                     shop.name.lowercase().contains(q) ||
                     shop.city.lowercase().contains(q) ||
                     shop.area.lowercase().contains(q) ||
                     shop.address.lowercase().contains(q) ||
-                    shopProducts.any { it.name.lowercase().contains(q) }
+                    shop.description.lowercase().contains(q) ||
+                    shopProducts.any {
+                        it.name.lowercase().contains(q) ||
+                            it.category.lowercase().contains(q)
+                    }
                 val matchesRadius = if (hasAnchor && nearbyRadiusKm != null) {
                     hasValidMapCoordinates(shop) && shop.distanceKm <= nearbyRadiusKm
                 } else {
                     true
                 }
-                matchesVerified && matchesFavorite && matchesKarat && matchesQuery && matchesRadius
+                matchesVerified &&
+                    matchesFavorite &&
+                    matchesCity &&
+                    matchesCategory &&
+                    matchesKarat &&
+                    matchesQuery &&
+                    matchesRadius
             }.let { list ->
                 when (sortOption) {
                     ShopSortOption.NEAREST -> list.sortedBy { it.distanceKm }
-                    ShopSortOption.HIGHEST_RATED -> list.sortedByDescending { it.rating }
+                    ShopSortOption.HIGHEST_RATED -> list.sortedWith(
+                        compareByDescending<Shop> { if (it.hasVerifiedRating) it.rating else -1.0 }
+                            .thenBy { it.distanceKm },
+                    )
                     ShopSortOption.LOWEST_MAKING_FEE -> list.sortedBy { it.distanceKm }
                 }
             }
@@ -473,15 +507,19 @@ class KingGoldViewModel(
                         name = remoteCart.shopName.ifBlank { "محل شريك" },
                         area = "القاهرة",
                         address = "فرع معتمد",
-                        phone = "+201001234567",
-                        rating = 4.8,
-                        reviews = 1,
+                        phone = "",
+                        rating = 0.0,
+                        reviews = 0,
                         distanceKm = 2.0,
                         verified = true,
-                        closesAt = "9:00 م",
+                        closesAt = "",
+                        workingHours = "",
                         makingFeePerGram = 0.0,
                         ownerUid = remoteCart.merchantOwnerUid.orEmpty(),
                         isDynamicMerchant = !remoteCart.merchantOwnerUid.isNullOrBlank(),
+                        hasVerifiedRating = false,
+                        hasVerifiedPhone = false,
+                        hasVerifiedHours = false,
                     )
                 val remainingSec = ((remoteCart.priceLockExpiresAtMs - System.currentTimeMillis()) / 1000L)
                     .toInt()
@@ -672,6 +710,14 @@ class KingGoldViewModel(
                 sortOption = sortOption,
             )
         }
+    }
+
+    fun updateCityFilter(city: String?) {
+        _uiState.update { it.copy(selectedCityFilter = city?.takeIf { c -> c.isNotBlank() }) }
+    }
+
+    fun updateCategoryFilter(category: String?) {
+        _uiState.update { it.copy(selectedCategoryFilter = category?.takeIf { c -> c.isNotBlank() }) }
     }
 
     fun updateSearchAnchor(
@@ -933,6 +979,7 @@ class KingGoldViewModel(
                         shop.copy(
                             reviews = totalReviews,
                             rating = (Math.round(newRating * 10.0) / 10.0),
+                            hasVerifiedRating = true,
                         )
                     } else {
                         shop

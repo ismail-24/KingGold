@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -23,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.ShoppingBag
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -56,16 +59,16 @@ import com.example.data.KingGoldRepository
 import com.example.model.MoneyUtils
 import com.example.model.Product
 import com.example.model.Shop
+import com.example.ui.components.GoldMarketplaceImage
 import com.example.ui.components.LedgerCard
 import com.example.ui.components.LedgerLine
 import com.example.ui.components.ProductGoldArtwork
 import com.example.ui.components.formatCurrency
 import com.example.ui.theme.AppColors
 import com.example.ui.theme.AppText
-import com.example.ui.util.Base64ThumbnailImage
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ProductDetailScreen(
     shop: Shop,
@@ -217,38 +220,145 @@ fun ProductDetailScreen(
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 item {
-                    if (product.imageThumbnails.isNotEmpty()) {
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            items(product.imageThumbnails) { b64 ->
-                                Base64ThumbnailImage(
-                                    encoded = b64,
-                                    contentDescription = product.name,
-                                    modifier = Modifier
-                                        .width(280.dp)
-                                        .height(180.dp)
-                                        .clip(RoundedCornerShape(18.dp)),
-                                )
+                    val highResUrls = remember(product) {
+                        (product.galleryImageUrls + listOfNotNull(product.imageUrl)).distinct()
+                    }
+                    when {
+                        product.imageThumbnails.isNotEmpty() -> {
+                            LazyRow(
+                                modifier = Modifier.testTag("product_detail_gallery"),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                items(product.imageThumbnails) { b64 ->
+                                    GoldMarketplaceImage(
+                                        imageUrl = null,
+                                        base64Thumbnail = b64,
+                                        contentDescription = product.name,
+                                        modifier = Modifier
+                                            .width(296.dp)
+                                            .height(210.dp),
+                                        cornerRadius = 18.dp,
+                                        isThumbnail = false,
+                                        fallback = {
+                                            ProductGoldArtwork(
+                                                category = product.category,
+                                                karat = product.karat,
+                                                modifier = Modifier.fillMaxSize(),
+                                                cornerRadius = 18.dp,
+                                            )
+                                        },
+                                    )
+                                }
                             }
                         }
-                    } else {
-                        ProductGoldArtwork(
-                            category = product.category,
-                            karat = product.karat,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(180.dp),
-                            cornerRadius = 18.dp,
-                        )
+                        highResUrls.size > 1 -> {
+                            LazyRow(
+                                modifier = Modifier.testTag("product_detail_gallery"),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                items(highResUrls, key = { it }) { url ->
+                                    GoldMarketplaceImage(
+                                        imageUrl = url,
+                                        base64Thumbnail = null,
+                                        contentDescription = product.name,
+                                        modifier = Modifier
+                                            .width(296.dp)
+                                            .height(210.dp),
+                                        cornerRadius = 18.dp,
+                                        isThumbnail = false,
+                                        fallback = {
+                                            ProductGoldArtwork(
+                                                category = product.category,
+                                                karat = product.karat,
+                                                modifier = Modifier.fillMaxSize(),
+                                                cornerRadius = 18.dp,
+                                            )
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                        highResUrls.size == 1 -> {
+                            GoldMarketplaceImage(
+                                imageUrl = highResUrls.first(),
+                                base64Thumbnail = null,
+                                contentDescription = product.name,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(220.dp)
+                                    .testTag("product_detail_gallery"),
+                                cornerRadius = 18.dp,
+                                isThumbnail = false,
+                                fallback = {
+                                    ProductGoldArtwork(
+                                        category = product.category,
+                                        karat = product.karat,
+                                        modifier = Modifier.fillMaxSize(),
+                                        cornerRadius = 18.dp,
+                                    )
+                                },
+                            )
+                        }
+                        else -> {
+                            ProductGoldArtwork(
+                                category = product.category,
+                                karat = product.karat,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(190.dp),
+                                cornerRadius = 18.dp,
+                            )
+                        }
                     }
                 }
 
                 item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
                         InfoPill("عيار ${product.karat}", AppColors.ParchmentDeep, AppColors.Ink)
+                        InfoPill(product.category, AppColors.ParchmentDeep, AppColors.Seal)
+                        if (product.designStyle.isNotBlank()) {
+                            InfoPill(product.designStyle, AppColors.ParchmentDeep, AppColors.Ink)
+                        }
                         if (product.stamped) {
                             InfoPill("مدموغ ✓", AppColors.TrustSoft, AppColors.Trust)
                         }
                         InfoPill("متاح ${product.availablePieces} قطع", AppColors.ParchmentDeep, AppColors.Ink)
+                    }
+                }
+
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (product.isPhotoVerifiedInventory) AppColors.TrustSoft else AppColors.ParchmentDeep)
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                            .testTag("product_photo_disclosure"),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Info,
+                            contentDescription = null,
+                            tint = if (product.isPhotoVerifiedInventory) AppColors.Trust else AppColors.Seal,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (product.isPhotoVerifiedInventory) {
+                                "صورة مرفوعة وموثّقة من التاجر للقطعة المعروضة."
+                            } else {
+                                val sourceText = product.imageSourceAttribution ?: "مصدر مرجعي موثّق"
+                                "صورة توضيحية للفئة والتصميم ($sourceText) — لا تضمن توفر نفس القطعة حرفياً في جرد المتجر قبل تأكيد المحل."
+                            },
+                            style = AppText.body.copy(
+                                color = if (product.isPhotoVerifiedInventory) AppColors.Trust else AppColors.Seal,
+                                fontSize = 11.5.sp,
+                                lineHeight = 16.sp,
+                            ),
+                        )
                     }
                 }
 
@@ -258,8 +368,14 @@ fun ProductDetailScreen(
                             text = product.name,
                             style = AppText.display.copy(fontSize = 24.sp),
                         )
+                        val shopMeta = buildList {
+                            add(shop.name)
+                            if (shop.verified) add("موثّق")
+                            if (shop.hasVerifiedRating) add("${shop.rating} ★")
+                            add("${shop.distanceKm} كم")
+                        }.joinToString(" · ")
                         Text(
-                            text = "${shop.name} · موثّق · ${shop.rating} ★ ${shop.distanceKm} كم",
+                            text = shopMeta,
                             style = AppText.body.copy(color = AppColors.Muted),
                         )
                         if (product.description.isNotBlank()) {

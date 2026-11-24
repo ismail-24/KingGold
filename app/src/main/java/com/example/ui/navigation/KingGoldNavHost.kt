@@ -230,6 +230,8 @@ fun KingGoldNavHost(
                         onOpenShop = { shop -> navController.navigateSingleTop(Routes.shopDetail(shop.id), isAuthorized) },
                         onToggleFavoriteShop = vm::toggleFavoriteShop,
                         onToggleFavoritesOnlyFilter = vm::toggleFavoritesOnlyFilter,
+                        onSelectCityFilter = vm::updateCityFilter,
+                        onSelectCategoryFilter = vm::updateCategoryFilter,
                         onOpenProfile = { navController.navigateSingleTop(Routes.PROFILE, isAuthorized) },
                         onOpenVault = {
                             vm.clearActionMessages()
