@@ -3,6 +3,7 @@ package com.example.ui.screens.home
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,8 +22,8 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
@@ -122,8 +123,10 @@ fun DiscoverScreen(
     onSelectCityFilter: (String?) -> Unit = {},
     onSelectCategoryFilter: (String?) -> Unit = {},
     onOpenProfile: () -> Unit = {},
+    onOpenSavedShops: () -> Unit = {},
     onOpenVault: () -> Unit = {},
     onOpenSellGold: () -> Unit = {},
+    onOpenNearbyMap: () -> Unit = {},
     onOpenGoldCalculator: () -> Unit = {},
     onOpenMarketNews: () -> Unit = {},
     onSelectMarketNewsTopic: (MarketNewsTopic) -> Unit = {},
@@ -135,6 +138,7 @@ fun DiscoverScreen(
     onUpdateSearchAnchor: (Double, Double, String) -> Unit = { _, _, _ -> },
     onUpdateNearbyRadius: (Double?) -> Unit = {},
     onClearSearchAnchor: () -> Unit = {},
+    onUserLocationResolved: (Double, Double) -> Unit = { _, _ -> },
 ) {
     val context = LocalContext.current
     var showFilterSheet by remember { mutableStateOf(false) }
@@ -150,7 +154,8 @@ fun DiscoverScreen(
         LazyColumn(
             modifier = Modifier
                 .widthIn(max = 640.dp)
-                .fillMaxSize(),
+                .fillMaxSize()
+                .testTag("discover_lazy_column"),
             contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 14.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -215,6 +220,36 @@ fun DiscoverScreen(
                                 contentDescription = "تفاصيل الأسعار",
                                 tint = AppColors.Brass,
                             )
+                        }
+                        IconButton(
+                            onClick = onOpenSavedShops,
+                            modifier = Modifier.testTag("discover_saved_shops_button"),
+                        ) {
+                            if (uiState.favoriteShopIds.isNotEmpty()) {
+                                BadgedBox(
+                                    badge = {
+                                        Badge(containerColor = AppColors.Alert) {
+                                            Text(
+                                                text = uiState.favoriteShopIds.size.toString(),
+                                                color = Color.White,
+                                                fontSize = 10.sp,
+                                            )
+                                        }
+                                    },
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Favorite,
+                                        contentDescription = "محلات الذهب المحفوظة",
+                                        tint = AppColors.Alert,
+                                    )
+                                }
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Outlined.FavoriteBorder,
+                                    contentDescription = "محلات الذهب المحفوظة",
+                                    tint = AppColors.Ink,
+                                )
+                            }
                         }
                         IconButton(
                             onClick = onOpenProfile,
@@ -600,23 +635,32 @@ fun DiscoverScreen(
                             } else {
                                 "محلات قريبة منك · $count محل"
                             },
+                            modifier = Modifier.weight(1f),
                             style = AppText.display.copy(fontSize = 16.sp),
                         )
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(AppColors.ParchmentDeep)
-                                .padding(horizontal = 8.dp, vertical = 4.dp),
-                        ) {
-                            Text(
-                                text = uiState.sortOption.label,
-                                style = AppText.body.copy(
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = AppColors.Seal,
-                                ),
-                            )
-                        }
+                        FilterChip(
+                            selected = false,
+                            onClick = onOpenNearbyMap,
+                            modifier = Modifier.testTag("discover_shortcut_nearby_map"),
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Outlined.Map,
+                                    contentDescription = "فتح خريطة المحلات الرئيسية",
+                                    tint = AppColors.Brass,
+                                    modifier = Modifier.size(15.dp),
+                                )
+                            },
+                            label = {
+                                Text(
+                                    text = "خريطة المحلات",
+                                    style = AppText.body.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold),
+                                )
+                            },
+                            colors = FilterChipDefaults.filterChipColors(
+                                containerColor = Color.White,
+                                labelColor = AppColors.Ink,
+                            ),
+                        )
                     }
 
                     Row(
@@ -706,40 +750,40 @@ fun DiscoverScreen(
                     }
 
                     if (uiState.availableCities.isNotEmpty()) {
-                        LazyRow(
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState())
                                 .testTag("discover_city_filter_row"),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            item(key = "city_all") {
-                                FilterChip(
-                                    selected = uiState.selectedCityFilter == null,
-                                    onClick = { onSelectCityFilter(null) },
-                                    modifier = Modifier.testTag("city_filter_all"),
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = Icons.Outlined.LocationCity,
-                                            contentDescription = null,
-                                            tint = if (uiState.selectedCityFilter == null) AppColors.BrassLight else AppColors.Brass,
-                                            modifier = Modifier.size(15.dp),
-                                        )
-                                    },
-                                    label = {
-                                        Text(
-                                            text = "كل المدن",
-                                            style = AppText.body.copy(fontSize = 11.5.sp, fontWeight = FontWeight.Bold),
-                                        )
-                                    },
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = AppColors.Ink,
-                                        selectedLabelColor = AppColors.BrassLight,
-                                        containerColor = Color.White,
-                                        labelColor = AppColors.Ink,
-                                    ),
-                                )
-                            }
-                            items(uiState.availableCities, key = { it }) { city ->
+                            FilterChip(
+                                selected = uiState.selectedCityFilter == null,
+                                onClick = { onSelectCityFilter(null) },
+                                modifier = Modifier.testTag("city_filter_all"),
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Outlined.LocationCity,
+                                        contentDescription = null,
+                                        tint = if (uiState.selectedCityFilter == null) AppColors.BrassLight else AppColors.Brass,
+                                        modifier = Modifier.size(15.dp),
+                                    )
+                                },
+                                label = {
+                                    Text(
+                                        text = "كل المدن",
+                                        style = AppText.body.copy(fontSize = 11.5.sp, fontWeight = FontWeight.Bold),
+                                    )
+                                },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = AppColors.Ink,
+                                    selectedLabelColor = AppColors.BrassLight,
+                                    containerColor = Color.White,
+                                    labelColor = AppColors.Ink,
+                                ),
+                            )
+                            uiState.availableCities.forEach { city ->
                                 val selected = uiState.selectedCityFilter.equals(city, ignoreCase = true)
                                 FilterChip(
                                     selected = selected,
@@ -762,32 +806,32 @@ fun DiscoverScreen(
                         }
                     }
 
-                    LazyRow(
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
                             .testTag("discover_category_filter_row"),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        item(key = "cat_all") {
-                            FilterChip(
-                                selected = uiState.selectedCategoryFilter == null,
-                                onClick = { onSelectCategoryFilter(null) },
-                                modifier = Modifier.testTag("category_filter_all"),
-                                label = {
-                                    Text(
-                                        text = "كل الأقسام",
-                                        style = AppText.body.copy(fontSize = 11.5.sp, fontWeight = FontWeight.Bold),
-                                    )
-                                },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = AppColors.Brass,
-                                    selectedLabelColor = Color.White,
-                                    containerColor = AppColors.ParchmentDeep,
-                                    labelColor = AppColors.Ink,
-                                ),
-                            )
-                        }
-                        items(ProductCategory.allArabicLabels, key = { it }) { category ->
+                        FilterChip(
+                            selected = uiState.selectedCategoryFilter == null,
+                            onClick = { onSelectCategoryFilter(null) },
+                            modifier = Modifier.testTag("category_filter_all"),
+                            label = {
+                                Text(
+                                    text = "كل الأقسام",
+                                    style = AppText.body.copy(fontSize = 11.5.sp, fontWeight = FontWeight.Bold),
+                                )
+                            },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = AppColors.Brass,
+                                selectedLabelColor = Color.White,
+                                containerColor = AppColors.ParchmentDeep,
+                                labelColor = AppColors.Ink,
+                            ),
+                        )
+                        ProductCategory.allArabicLabels.forEach { category ->
                             val selected = uiState.selectedCategoryFilter == category
                             FilterChip(
                                 selected = selected,
@@ -839,6 +883,15 @@ fun DiscoverScreen(
                         searchAnchorLabel = uiState.searchAnchorLabel,
                         onUpdateSearchAnchor = onUpdateSearchAnchor,
                         onClearSearchAnchor = onClearSearchAnchor,
+                        selectedKarat = uiState.selectedKaratFilter,
+                        shopKaratsProvider = { shop ->
+                            uiState.productsForShop(shop.id).map { it.karat }.toSet()
+                        },
+                        userLocationLat = uiState.userLocationLat,
+                        userLocationLon = uiState.userLocationLon,
+                        onUserLocationResolved = onUserLocationResolved,
+                        autoCenterOnUserLocation = true,
+                        initialLocationDenied = uiState.locationPermissionDeniedOnStartup,
                     )
                 }
             } else if (uiState.filteredShops.isEmpty()) {

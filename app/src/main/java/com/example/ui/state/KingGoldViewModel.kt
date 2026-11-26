@@ -53,6 +53,8 @@ import com.example.ui.components.GoldFeedStatus
 import com.example.ui.components.calculateHaversineDistanceKm
 import com.example.ui.components.hasValidMapCoordinates
 import com.example.ui.components.isValidMapCoordinatePair
+import com.example.ui.components.matchesShopSearchAndKarat
+import com.example.ui.components.parseShopSearchQuery
 import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -103,6 +105,9 @@ data class KingGoldUiState(
     val searchAnchorLon: Double? = null,
     val searchAnchorLabel: String? = null,
     val nearbyRadiusKm: Double? = null,
+    val userLocationLat: Double? = null,
+    val userLocationLon: Double? = null,
+    val locationPermissionDeniedOnStartup: Boolean = false,
     val cart: List<CartItem> = emptyList(),
     val cartShop: Shop? = null,
     val selectedPickupSlotIndex: Int = 0,
@@ -120,6 +125,8 @@ data class KingGoldUiState(
     val fcmToken: String? = null,
     val favoriteShopIds: Set<String> = emptySet(),
     val favoritesOnlyFilter: Boolean = false,
+    val focusedMapShopId: String? = null,
+    val focusMapShopCounter: Int = 0,
     val wallet: WalletSummary = WalletSummary(),
     val ledgerEntries: List<LedgerEntry> = emptyList(),
     val sellRequests: List<SellGoldRequest> = emptyList(),
@@ -168,7 +175,7 @@ data class KingGoldUiState(
             val hasAnchor = anchorLat != null &&
                 anchorLon != null &&
                 isValidMapCoordinatePair(anchorLat, anchorLon)
-            val q = searchQuery.trim().lowercase()
+            val parsedQuery = parseShopSearchQuery(searchQuery)
             val selectedCategoryEnum = selectedCategoryFilter?.let { filterLabel ->
                 ProductCategory.entries.firstOrNull {
                     it.arabicLabel.equals(filterLabel.trim(), ignoreCase = true)
@@ -198,23 +205,22 @@ data class KingGoldUiState(
                 val matchesCity = selectedCityFilter == null ||
                     shop.city.trim().equals(selectedCityFilter.trim(), ignoreCase = true)
                 val shopProducts = productsForShop(shop.id)
-                val matchesKarat = selectedKaratFilter == null ||
-                    shopProducts.any { it.karat == selectedKaratFilter }
+                val shopKarats = shopProducts.map { it.karat }.toSet()
                 val matchesCategory = selectedCategoryFilter == null ||
                     shopProducts.any { product ->
                         selectedCategoryEnum?.matches(product.category) == true ||
                             product.category.equals(selectedCategoryFilter, ignoreCase = true)
                     }
-                val matchesQuery = q.isEmpty() ||
-                    shop.name.lowercase().contains(q) ||
-                    shop.city.lowercase().contains(q) ||
-                    shop.area.lowercase().contains(q) ||
-                    shop.address.lowercase().contains(q) ||
-                    shop.description.lowercase().contains(q) ||
-                    shopProducts.any {
-                        it.name.lowercase().contains(q) ||
-                            it.category.lowercase().contains(q)
-                    }
+                val matchesQueryAndKarat = matchesShopSearchAndKarat(
+                    shop = shop,
+                    shopKarats = shopKarats,
+                    parsedQuery = parsedQuery,
+                    selectedKarat = selectedKaratFilter,
+                    extraSearchableText = shopProducts.flatMap {
+                        listOf(it.name, it.category, it.designStyle)
+                    },
+                    hasKaratsMetadata = true,
+                )
                 val matchesRadius = if (hasAnchor && nearbyRadiusKm != null) {
                     hasValidMapCoordinates(shop) && shop.distanceKm <= nearbyRadiusKm
                 } else {
@@ -224,8 +230,7 @@ data class KingGoldUiState(
                     matchesFavorite &&
                     matchesCity &&
                     matchesCategory &&
-                    matchesKarat &&
-                    matchesQuery &&
+                    matchesQueryAndKarat &&
                     matchesRadius
             }.let { list ->
                 when (sortOption) {
@@ -751,6 +756,24 @@ class KingGoldViewModel(
         }
     }
 
+    fun updateUserLocation(
+        latitude: Double,
+        longitude: Double,
+    ) {
+        if (!isValidMapCoordinatePair(latitude, longitude)) return
+        _uiState.update {
+            it.copy(
+                userLocationLat = latitude,
+                userLocationLon = longitude,
+                locationPermissionDeniedOnStartup = false,
+            )
+        }
+    }
+
+    fun markLocationPermissionDenied() {
+        _uiState.update { it.copy(locationPermissionDeniedOnStartup = true) }
+    }
+
     fun toggleFavoritesOnlyFilter(favoritesOnly: Boolean) {
         _uiState.update { it.copy(favoritesOnlyFilter = favoritesOnly) }
     }
@@ -765,6 +788,17 @@ class KingGoldViewModel(
             state.copy(favoriteShopIds = updatedFavorites)
         }
         syncPreferencesToFirestore(_uiState.value)
+    }
+
+    fun focusShopOnMap(shopId: String) {
+        _uiState.update { state ->
+            state.copy(
+                focusedMapShopId = shopId,
+                focusMapShopCounter = state.focusMapShopCounter + 1,
+                favoritesOnlyFilter = false,
+                searchQuery = "",
+            )
+        }
     }
 
     fun addToCart(shop: Shop, product: Product) {

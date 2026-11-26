@@ -12,11 +12,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Explore
+import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Sell
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.Explore
+import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.ReceiptLong
 import androidx.compose.material.icons.outlined.Sell
@@ -49,6 +51,7 @@ enum class HomeTab(
     val tag: String,
 ) {
     DISCOVER("home", "استكشف", Icons.Filled.Explore, Icons.Outlined.Explore, "tab_discover"),
+    MAP("nearby_map", "الخريطة", Icons.Filled.Map, Icons.Outlined.Map, "tab_map"),
     VAULT("vault", "خزنتي", Icons.Filled.AccountBalanceWallet, Icons.Outlined.AccountBalanceWallet, "tab_vault"),
     SELL_GOLD("sell_gold", "بيع ذهبك", Icons.Filled.Sell, Icons.Outlined.Sell, "tab_sell_gold"),
     ORDERS("orders", "طلباتي", Icons.Filled.ReceiptLong, Icons.Outlined.ReceiptLong, "tab_orders"),
@@ -144,9 +147,10 @@ fun HomeNavigationShell(
                                         Text(
                                             text = tab.label,
                                             maxLines = 1,
+                                            softWrap = false,
                                             overflow = TextOverflow.Ellipsis,
                                             style = AppText.body.copy(
-                                                fontSize = 10.sp,
+                                                fontSize = 9.5.sp,
                                                 fontWeight = FontWeight.Bold,
                                             ),
                                         )

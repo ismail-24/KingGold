@@ -1,6 +1,8 @@
 package com.example
 
 import android.app.Application
+import android.view.View
+import android.view.ViewGroup
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasScrollToNodeAction
@@ -13,10 +15,16 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTextClearance
+import androidx.compose.ui.test.performTextInput
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.rememberNavController
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.KingGoldRepository
 import com.example.data.MarketplaceCatalogData
 import com.example.model.ProductCategory
+import com.example.ui.navigation.KingGoldNavHost
+import com.example.ui.navigation.Routes
 import com.example.ui.screens.home.DiscoverScreen
 import com.example.ui.screens.shop.ProductDetailScreen
 import com.example.ui.screens.shop.ProductListScreen
@@ -31,6 +39,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.osmdroid.views.MapView
+import org.osmdroid.views.overlay.Marker
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.File
@@ -145,14 +155,19 @@ class MarketplaceAuditAndCatalogTest {
         assertEquals(6, vm.uiState.value.filteredShops.size)
     }
 
-    @Test
-    fun discoverAndShopAndProductScreens_displayTruthfulInfoDisclosuresAndPagination() {
-        val vm = KingGoldViewModel(autoFetchPrices = false)
-        val firstShop = vm.uiState.value.shops.first()
-        val firstProducts = vm.uiState.value.productsForShop(firstShop.id)
-        val firstProduct = firstProducts.first()
+    private fun findOsmMapView(root: View): MapView? {
+        if (root is MapView) return root
+        if (root is ViewGroup) {
+            for (i in 0 until root.childCount) {
+                findOsmMapView(root.getChildAt(i))?.let { return it }
+            }
+        }
+        return null
+    }
 
-        // 1) DiscoverScreen displays city filters, category filters, and truthful unavailable labels
+    @Test
+    fun discoverScreen_displaysCityCategoryFiltersAndTruthfulDisclosures() {
+        val vm = KingGoldViewModel(autoFetchPrices = false)
         composeRule.setContent {
             KingGoldTheme {
                 DiscoverScreen(
@@ -173,17 +188,21 @@ class MarketplaceAuditAndCatalogTest {
             }
         }
         composeRule.waitForIdle()
-        composeRule.onNode(hasScrollToNodeAction())
+        composeRule.onNodeWithTag("discover_lazy_column")
             .performScrollToNode(hasTestTag("discover_city_filter_row"))
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("city_filter_الإسكندرية").assertIsDisplayed()
-        composeRule.onNode(hasScrollToNodeAction())
+        composeRule.onNodeWithTag("discover_lazy_column")
             .performScrollToNode(hasTestTag("shop_card_s1"))
         composeRule.waitForIdle()
         composeRule.onAllNodesWithText("التقييم غير متاح").onFirst().assertIsDisplayed()
         composeRule.onAllNodesWithText("ساعات العمل غير متوفرة").onFirst().assertIsDisplayed()
+    }
 
-        // 2) ProductListScreen paginates 18 products incrementally (shows 8 first + load more button)
+    @Test
+    fun productListScreen_paginates18ProductsIncrementally() {
+        val vm = KingGoldViewModel(autoFetchPrices = false)
+        val firstShop = vm.uiState.value.shops.first()
         composeRule.setContent {
             KingGoldTheme {
                 ProductListScreen(
@@ -198,18 +217,28 @@ class MarketplaceAuditAndCatalogTest {
             }
         }
         composeRule.waitForIdle()
+        composeRule.onNodeWithText("18 قطعة متاحة · عرض 8").assertIsDisplayed()
         composeRule.onNodeWithTag("product_card_p1").assertIsDisplayed()
-        composeRule.onNodeWithTag("product_list_lazy_column")
-            .performScrollToNode(hasTestTag("product_list_load_more_button"))
-        composeRule.waitForIdle()
-        composeRule.onNodeWithTag("product_list_load_more_button").performClick()
-        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("product_card_p16").assertDoesNotExist()
+
         composeRule.onNodeWithTag("product_list_lazy_column")
             .performScrollToNode(hasTestTag("product_card_p16"))
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("product_card_p16").assertIsDisplayed()
+        composeRule.onNodeWithTag("product_list_lazy_column")
+            .performScrollToNode(hasTestTag("product_card_p18"))
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("product_card_p18").assertIsDisplayed()
+        composeRule.onNodeWithText("18 قطعة متاحة · عرض 18").assertIsDisplayed()
+    }
 
-        // 3) ShopDetailScreen shows catalog photo disclaimer & website action
+    @Test
+    fun shopDetailAndProductDetail_displayTruthfulPhotoDisclosures() {
+        val vm = KingGoldViewModel(autoFetchPrices = false)
+        val firstShop = vm.uiState.value.shops.first()
+        val firstProducts = vm.uiState.value.productsForShop(firstShop.id)
+        val firstProduct = firstProducts.first()
+
         composeRule.setContent {
             KingGoldTheme {
                 ShopDetailScreen(
@@ -225,16 +254,26 @@ class MarketplaceAuditAndCatalogTest {
         }
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("shop_hero_photo_disclaimer").assertIsDisplayed()
-        composeRule.onNode(hasScrollToNodeAction())
-            .performScrollToNode(hasTestTag("shop_website_button"))
-        composeRule.waitForIdle()
-        composeRule.onNodeWithTag("shop_website_button").assertIsDisplayed()
-        composeRule.onNode(hasScrollToNodeAction())
-            .performScrollToNode(hasTestTag("shop_catalog_photo_disclosure"))
-        composeRule.waitForIdle()
-        composeRule.onNodeWithTag("shop_catalog_photo_disclosure").assertIsDisplayed()
+        composeRule.onNodeWithTag("shop_website_button")
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeRule.onNodeWithTag("shop_catalog_photo_disclosure")
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeRule.onNodeWithTag("shop_collection_gallery")
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeRule.onNodeWithText(firstProduct.name)
+            .performScrollTo()
+            .assertIsDisplayed()
+    }
 
-        // 4) ProductDetailScreen shows inventory photo attribution disclosure
+    @Test
+    fun productDetailScreen_showsInventoryPhotoAttributionDisclosure() {
+        val vm = KingGoldViewModel(autoFetchPrices = false)
+        val firstShop = vm.uiState.value.shops.first()
+        val firstProduct = vm.uiState.value.productsForShop(firstShop.id).first()
+
         composeRule.setContent {
             KingGoldTheme {
                 ProductDetailScreen(
@@ -249,5 +288,75 @@ class MarketplaceAuditAndCatalogTest {
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("product_photo_disclosure").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("أضف للسلة").assertIsDisplayed()
+    }
+
+    @Test
+    fun nearbyMapMainTab_displaysInteractiveOsmdroidMapCityFilterAndShopNavigation() {
+        val vm = KingGoldViewModel(autoFetchPrices = false)
+        lateinit var controller: NavHostController
+        assertTrue(Routes.isSupportedInternalRoute(Routes.NEARBY_MAP))
+
+        composeRule.setContent {
+            KingGoldTheme {
+                controller = rememberNavController()
+                KingGoldNavHost(
+                    viewModel = vm,
+                    navController = controller,
+                    onSignOut = {},
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        // Navigate via main Map tab
+        composeRule.onNodeWithTag("tab_map").performClick()
+        composeRule.waitForIdle()
+        assertEquals(Routes.NEARBY_MAP, controller.currentDestination?.route)
+
+        composeRule.onNodeWithTag("nearby_map_main_screen").assertIsDisplayed()
+        composeRule.onNodeWithTag("map_search_input").assertIsDisplayed()
+        composeRule.onNodeWithTag("map_karat_filter_row").assertIsDisplayed()
+        composeRule.onNodeWithTag("osm_map_view").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("map_selected_shop_card").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("map_selected_directions_button").performScrollTo().assertIsDisplayed()
+
+        val rootView = composeRule.activity.window.decorView.rootView
+        val mapView = findOsmMapView(rootView)
+        assertNotNull(mapView)
+        assertEquals(8, mapView!!.overlays.filterIsInstance<Marker>().size)
+
+        // Search by shop name in top Map search bar -> narrows markers to L'azurde branches (s2, s6)
+        composeRule.onNodeWithTag("map_search_input").performTextInput("لازوردي")
+        composeRule.waitForIdle()
+        assertEquals(setOf("s2", "s6"), mapView.overlays.filterIsInstance<Marker>().map { it.id }.toSet())
+
+        composeRule.onNodeWithTag("map_search_input").performTextClearance()
+        composeRule.waitForIdle()
+        assertEquals(8, mapView.overlays.filterIsInstance<Marker>().size)
+
+        // Filter by Alexandria on the main map screen -> narrows markers to s7 only
+        composeRule.onNodeWithTag("map_city_filter_الإسكندرية").performScrollTo().performClick()
+        composeRule.waitForIdle()
+        val alexMarkers = mapView.overlays.filterIsInstance<Marker>()
+        assertEquals(listOf("s7"), alexMarkers.map { it.id })
+
+        // Open selected shop directly from the map preview card -> navigates to ShopDetailScreen
+        composeRule.onNodeWithTag("map_open_shop_button").performScrollTo().performClick()
+        composeRule.waitForIdle()
+        assertTrue(controller.currentDestination?.route?.startsWith("shop_detail/") == true)
+
+        // Back from ShopDetail -> returns to Nearby Map main screen; Back again -> returns to Discover without exiting
+        composeRule.runOnUiThread {
+            composeRule.activity.onBackPressedDispatcher.onBackPressed()
+        }
+        composeRule.waitForIdle()
+        assertEquals(Routes.NEARBY_MAP, controller.currentDestination?.route)
+
+        composeRule.runOnUiThread {
+            composeRule.activity.onBackPressedDispatcher.onBackPressed()
+        }
+        composeRule.waitForIdle()
+        assertFalse(composeRule.activity.isFinishing)
+        assertEquals(Routes.HOME, controller.currentDestination?.route)
     }
 }

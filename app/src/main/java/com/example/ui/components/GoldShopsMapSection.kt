@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -29,6 +30,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.CenterFocusStrong
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Directions
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.LocationOff
 import androidx.compose.material.icons.outlined.LocationOn
@@ -73,6 +75,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -82,6 +85,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.model.Shop
 import com.example.ui.theme.AppColors
 import com.example.ui.theme.AppText
+import com.example.ui.util.openDirections
 import org.osmdroid.events.MapEventsReceiver
 import org.osmdroid.tileprovider.MapTileProviderBasic
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
@@ -111,6 +115,18 @@ fun GoldShopsMapView(
     searchAnchorLabel: String? = null,
     onUpdateSearchAnchor: ((Double, Double, String) -> Unit)? = null,
     onClearSearchAnchor: (() -> Unit)? = null,
+    mapHeight: Dp = 245.dp,
+    selectedKarat: Int? = null,
+    shopKaratsProvider: ((Shop) -> Set<Int>)? = null,
+    showSearchHeader: Boolean = true,
+    findNearMyLocationSignal: Int = 0,
+    userLocationLat: Double? = null,
+    userLocationLon: Double? = null,
+    onUserLocationResolved: ((Double, Double) -> Unit)? = null,
+    autoCenterOnUserLocation: Boolean = true,
+    initialLocationDenied: Boolean = false,
+    focusedShopId: String? = null,
+    focusShopSignal: Int = 0,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -136,6 +152,8 @@ fun GoldShopsMapView(
         effectiveAnchorLat,
         effectiveAnchorLon,
         effectiveNearbyRadiusKm,
+        selectedKarat,
+        shopKaratsProvider,
     ) {
         filterAndSortShopsForMap(
             shops = shops,
@@ -144,6 +162,8 @@ fun GoldShopsMapView(
             anchorLat = effectiveAnchorLat,
             anchorLon = effectiveAnchorLon,
             nearbyRadiusKm = effectiveNearbyRadiusKm,
+            selectedKarat = selectedKarat,
+            shopKaratsProvider = shopKaratsProvider,
         )
     }
 
@@ -152,17 +172,36 @@ fun GoldShopsMapView(
     val unmappableCount = partition.unmappable.size
 
     var selectedShopId by remember(mappableShops) {
-        mutableStateOf(mappableShops.firstOrNull()?.id)
+        mutableStateOf(
+            focusedShopId?.takeIf { targetId -> mappableShops.any { it.id == targetId } }
+                ?: mappableShops.firstOrNull()?.id,
+        )
+    }
+    var userSelectedShopCounter by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(focusedShopId, focusShopSignal, mappableShops) {
+        if (!focusedShopId.isNullOrBlank() && mappableShops.any { it.id == focusedShopId }) {
+            selectedShopId = focusedShopId
+            userSelectedShopCounter++
+        }
     }
     var recenterSignal by remember { mutableIntStateOf(0) }
     var networkCheckTick by remember { mutableIntStateOf(0) }
     var layerMode by rememberSaveable { mutableStateOf(MapLayerMode.STANDARD) }
     var hasLocationPermission by remember { mutableStateOf(hasAnyLocationPermission(context)) }
-    var locationPermissionDenied by remember { mutableStateOf(false) }
+    var locationPermissionDenied by rememberSaveable {
+        mutableStateOf(initialLocationDenied && !hasAnyLocationPermission(context))
+    }
+    var localUserLat by rememberSaveable { mutableStateOf<Double?>(null) }
+    var localUserLon by rememberSaveable { mutableStateOf<Double?>(null) }
+    var hasAutoCenteredOnUser by rememberSaveable { mutableStateOf(false) }
     var pendingCenterOnMyLocation by remember { mutableStateOf(false) }
     var pendingNearbyMyLocationSearch by remember { mutableStateOf(false) }
     var locationHintMessage by remember { mutableStateOf<String?>(null) }
     val isOnline = remember(networkCheckTick) { isNetworkAvailable(context) }
+
+    val effectiveUserLat = userLocationLat ?: localUserLat
+    val effectiveUserLon = userLocationLon ?: localUserLon
 
     val selectedShop = remember(mappableShops, selectedShopId) {
         mappableShops.firstOrNull { it.id == selectedShopId } ?: mappableShops.firstOrNull()
@@ -206,11 +245,28 @@ fun GoldShopsMapView(
         configureOsmdroid(context)
     }
 
+    LaunchedEffect(initialLocationDenied) {
+        if (initialLocationDenied && !hasAnyLocationPermission(context)) {
+            locationPermissionDenied = true
+        }
+    }
+
     val tileProvider = remember(context) {
         configureOsmdroid(context)
         MapTileProviderBasic(context.applicationContext, TileSourceFactory.MAPNIK)
     }
     val mapView = remember(context, tileProvider) {
+        val startupUserPoint = if (autoCenterOnUserLocation && hasLocationPermission) {
+            if (effectiveUserLat != null && effectiveUserLon != null &&
+                isValidMapCoordinatePair(effectiveUserLat, effectiveUserLon)
+            ) {
+                GeoPoint(effectiveUserLat, effectiveUserLon)
+            } else {
+                resolveBestKnownLocation(context)
+            }
+        } else {
+            null
+        }
         MapView(context, tileProvider).apply {
             setTileSource(TileSourceFactory.MAPNIK)
             setUseDataConnection(isOnline)
@@ -220,8 +276,8 @@ fun GoldShopsMapView(
             minZoomLevel = 4.0
             maxZoomLevel = 19.0
             zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
-            controller.setZoom(13.5)
-            controller.setCenter(defaultCenterForShops(mappableShops))
+            controller.setZoom(if (startupUserPoint != null) 14.5 else 13.5)
+            controller.setCenter(startupUserPoint ?: defaultCenterForShops(mappableShops))
             setOnTouchListener { view, event ->
                 val disallow = event.actionMasked != android.view.MotionEvent.ACTION_UP &&
                     event.actionMasked != android.view.MotionEvent.ACTION_CANCEL
@@ -248,21 +304,39 @@ fun GoldShopsMapView(
         }
     }
 
+    fun recordResolvedUserPosition(geo: GeoPoint) {
+        if (!isValidMapCoordinatePair(geo.latitude, geo.longitude)) return
+        localUserLat = geo.latitude
+        localUserLon = geo.longitude
+        locationPermissionDenied = false
+        onUserLocationResolved?.invoke(geo.latitude, geo.longitude)
+    }
+
     fun resolveImmediateUserGeoPoint(): GeoPoint? {
+        val stateFix = if (effectiveUserLat != null && effectiveUserLon != null &&
+            isValidMapCoordinatePair(effectiveUserLat, effectiveUserLon)
+        ) {
+            GeoPoint(effectiveUserLat, effectiveUserLon)
+        } else {
+            null
+        }
         val overlayFix = myLocationOverlay.myLocation?.takeIf {
             isValidMapCoordinatePair(it.latitude, it.longitude)
         }
-        return overlayFix ?: resolveBestKnownLocation(context)
+        return overlayFix ?: resolveBestKnownLocation(context) ?: stateFix
     }
 
     fun centerMapOnUserLocation(applyAsNearbySearchAnchor: Boolean) {
         runCatching { myLocationOverlay.enableMyLocation() }
         val currentFix = resolveImmediateUserGeoPoint()
         if (currentFix != null) {
+            recordResolvedUserPosition(currentFix)
             if (mapView.zoomLevelDouble < 14.5) {
                 mapView.controller.setZoom(15.0)
             }
+            mapView.controller.setCenter(currentFix)
             mapView.controller.animateTo(currentFix)
+            hasAutoCenteredOnUser = true
             if (applyAsNearbySearchAnchor) {
                 applyAnchorAndDefaultRadius(currentFix.latitude, currentFix.longitude, "موقعي الحالي")
             }
@@ -270,16 +344,33 @@ fun GoldShopsMapView(
             if (applyAsNearbySearchAnchor) {
                 locationHintMessage = "جاري انتظار إشارة GPS لموقعك — يمكنك تحريك الخريطة والضغط على «البحث في هذه المنطقة»."
             }
+            requestCurrentLocationFix(context) { liveGeo ->
+                if (liveGeo != null) {
+                    recordResolvedUserPosition(liveGeo)
+                    if (mapView.zoomLevelDouble < 14.5) {
+                        mapView.controller.setZoom(15.0)
+                    }
+                    mapView.controller.setCenter(liveGeo)
+                    mapView.controller.animateTo(liveGeo)
+                    hasAutoCenteredOnUser = true
+                    if (applyAsNearbySearchAnchor) {
+                        applyAnchorAndDefaultRadius(liveGeo.latitude, liveGeo.longitude, "موقعي الحالي")
+                    }
+                }
+            }
             myLocationOverlay.runOnFirstFix {
                 mapView.post {
                     val firstFix = myLocationOverlay.myLocation?.takeIf {
                         isValidMapCoordinatePair(it.latitude, it.longitude)
                     } ?: resolveBestKnownLocation(context)
                     firstFix?.let { geo ->
+                        recordResolvedUserPosition(geo)
                         if (mapView.zoomLevelDouble < 14.5) {
                             mapView.controller.setZoom(15.0)
                         }
+                        mapView.controller.setCenter(geo)
                         mapView.controller.animateTo(geo)
+                        hasAutoCenteredOnUser = true
                         if (applyAsNearbySearchAnchor) {
                             applyAnchorAndDefaultRadius(geo.latitude, geo.longitude, "موقعي الحالي")
                         }
@@ -360,18 +451,26 @@ fun GoldShopsMapView(
         )
     }
 
+    LaunchedEffect(findNearMyLocationSignal) {
+        if (findNearMyLocationSignal > 0) {
+            triggerFindNearMyLocation()
+        }
+    }
+
     Column(
         modifier = modifier
             .fillMaxWidth()
             .testTag("gold_shops_map_container"),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        MapSearchBarHeader(
-            searchQuery = effectiveSearchQuery,
-            onSearchQueryChange = updateQuery,
-            onFindNearMyLocation = ::triggerFindNearMyLocation,
-            isMyLocationActive = effectiveAnchorLabel == "موقعي الحالي",
-        )
+        if (showSearchHeader) {
+            MapSearchBarHeader(
+                searchQuery = effectiveSearchQuery,
+                onSearchQueryChange = updateQuery,
+                onFindNearMyLocation = ::triggerFindNearMyLocation,
+                isMyLocationActive = effectiveAnchorLabel == "موقعي الحالي",
+            )
+        }
 
         if (mappableShops.isNotEmpty()) {
             LazyRow(
@@ -382,7 +481,10 @@ fun GoldShopsMapView(
                     val isSelected = selectedShop?.id == shop.id
                     FilterChip(
                         selected = isSelected,
-                        onClick = { selectedShopId = shop.id },
+                        onClick = {
+                            selectedShopId = shop.id
+                            userSelectedShopCounter++
+                        },
                         modifier = Modifier.testTag("map_shop_chip_${shop.id}"),
                         label = {
                             Text(
@@ -414,7 +516,7 @@ fun GoldShopsMapView(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(245.dp)
+                .height(mapHeight)
                 .clip(RoundedCornerShape(18.dp))
                 .border(1.dp, AppColors.Line, RoundedCornerShape(18.dp))
                 .background(AppColors.ParchmentDeep),
@@ -438,7 +540,7 @@ fun GoldShopsMapView(
                 mapView.invalidate()
             }
 
-            LaunchedEffect(hasLocationPermission, myLocationOverlay, mapView) {
+            LaunchedEffect(hasLocationPermission, autoCenterOnUserLocation, myLocationOverlay, mapView) {
                 if (!mapView.overlays.contains(mapEventsOverlay)) {
                     mapView.overlays.add(0, mapEventsOverlay)
                 }
@@ -452,6 +554,18 @@ fun GoldShopsMapView(
                         pendingCenterOnMyLocation = false
                         pendingNearbyMyLocationSearch = false
                         centerMapOnUserLocation(applyAsNearbySearchAnchor = triggerNearby)
+                    } else if (autoCenterOnUserLocation && (effectiveUserLat == null || effectiveUserLon == null)) {
+                        requestCurrentLocationFix(context) { liveGeo ->
+                            liveGeo?.let(::recordResolvedUserPosition)
+                        }
+                        myLocationOverlay.runOnFirstFix {
+                            mapView.post {
+                                val firstFix = myLocationOverlay.myLocation?.takeIf {
+                                    isValidMapCoordinatePair(it.latitude, it.longitude)
+                                } ?: resolveBestKnownLocation(context)
+                                firstFix?.let(::recordResolvedUserPosition)
+                            }
+                        }
                     }
                 } else {
                     runCatching {
@@ -465,7 +579,10 @@ fun GoldShopsMapView(
 
             val currentOnSelect by rememberUpdatedState<(String) -> Unit> { clickedId ->
                 selectedShopId = clickedId
+                userSelectedShopCounter++
             }
+            val currentOnToggleFavorite by rememberUpdatedState(onToggleFavoriteShop)
+            val currentOnOpenShop by rememberUpdatedState(onOpenShop)
 
             DisposableEffect(lifecycleOwner, mapView, myLocationOverlay) {
                 val observer = LifecycleEventObserver { _, event ->
@@ -477,6 +594,11 @@ fun GoldShopsMapView(
                             if (granted) {
                                 locationPermissionDenied = false
                                 runCatching { myLocationOverlay.enableMyLocation() }
+                                if (autoCenterOnUserLocation && (effectiveUserLat == null || effectiveUserLon == null)) {
+                                    requestCurrentLocationFix(context) { liveGeo ->
+                                        liveGeo?.let(::recordResolvedUserPosition)
+                                    }
+                                }
                             }
                         }
                         Lifecycle.Event.ON_PAUSE -> {
@@ -519,6 +641,7 @@ fun GoldShopsMapView(
                             )
                         },
                         selectedShop?.id,
+                        favoriteShopIds.sorted(),
                         hasLocationPermission,
                         effectiveAnchorLat,
                         effectiveAnchorLon,
@@ -538,14 +661,27 @@ fun GoldShopsMapView(
                             searchAnchorLat = effectiveAnchorLat,
                             searchAnchorLon = effectiveAnchorLon,
                             nearbyRadiusKm = effectiveNearbyRadiusKm,
+                            favoriteShopIds = favoriteShopIds,
+                            onToggleFavorite = { shopId -> currentOnToggleFavorite(shopId) },
+                            onOpenShop = { shop -> currentOnOpenShop(shop) },
                             onSelect = currentOnSelect,
                         )
                     }
                 },
             )
 
-            // Fit bounds or focus anchor/shop whenever shop list, anchor, or recenter changes
-            LaunchedEffect(mappableShops, effectiveAnchorLat, effectiveAnchorLon, recenterSignal) {
+            // Center on user's current position at startup when available, or fit bounds/anchor on filter/recenter
+            LaunchedEffect(
+                mappableShops,
+                effectiveAnchorLat,
+                effectiveAnchorLon,
+                effectiveUserLat,
+                effectiveUserLon,
+                recenterSignal,
+                effectiveSearchQuery,
+                selectedKarat,
+                autoCenterOnUserLocation,
+            ) {
                 val anchorGeo = if (
                     effectiveAnchorLat != null &&
                     effectiveAnchorLon != null &&
@@ -555,11 +691,40 @@ fun GoldShopsMapView(
                 } else {
                     null
                 }
+                val userGeo = if (
+                    effectiveUserLat != null &&
+                    effectiveUserLon != null &&
+                    isValidMapCoordinatePair(effectiveUserLat, effectiveUserLon)
+                ) {
+                    GeoPoint(effectiveUserLat, effectiveUserLon)
+                } else {
+                    null
+                }
+                val shouldAutoCenterOnUser = autoCenterOnUserLocation &&
+                    userGeo != null &&
+                    anchorGeo == null &&
+                    recenterSignal == 0 &&
+                    effectiveSearchQuery.isBlank() &&
+                    selectedKarat == null &&
+                    userSelectedShopCounter == 0
+
                 when {
+                    shouldAutoCenterOnUser -> {
+                        mapView.controller.setZoom(14.5)
+                        mapView.controller.setCenter(userGeo)
+                        mapView.controller.animateTo(userGeo)
+                        hasAutoCenteredOnUser = true
+                    }
                     mappableShops.size == 1 && anchorGeo == null -> {
                         val only = mappableShops.first()
                         mapView.controller.setZoom(15.0)
+                        mapView.controller.setCenter(GeoPoint(only.latitude, only.longitude))
                         mapView.controller.animateTo(GeoPoint(only.latitude, only.longitude))
+                    }
+                    anchorGeo != null && mappableShops.isEmpty() -> {
+                        mapView.controller.setZoom(14.5)
+                        mapView.controller.setCenter(anchorGeo)
+                        mapView.controller.animateTo(anchorGeo)
                     }
                     mappableShops.isNotEmpty() -> {
                         val points = buildList {
@@ -576,9 +741,10 @@ fun GoldShopsMapView(
                             }
                         }
                     }
-                    anchorGeo != null -> {
-                        mapView.controller.setZoom(13.0)
-                        mapView.controller.animateTo(anchorGeo)
+                    userGeo != null && autoCenterOnUserLocation -> {
+                        mapView.controller.setZoom(14.5)
+                        mapView.controller.setCenter(userGeo)
+                        mapView.controller.animateTo(userGeo)
                     }
                     else -> {
                         mapView.controller.setZoom(12.0)
@@ -587,10 +753,12 @@ fun GoldShopsMapView(
                 }
             }
 
-            LaunchedEffect(selectedShop?.id) {
-                selectedShop?.let { shop ->
-                    if (hasValidMapCoordinates(shop)) {
-                        mapView.controller.animateTo(GeoPoint(shop.latitude, shop.longitude))
+            LaunchedEffect(selectedShop?.id, userSelectedShopCounter) {
+                if (userSelectedShopCounter > 0) {
+                    selectedShop?.let { shop ->
+                        if (hasValidMapCoordinates(shop)) {
+                            mapView.controller.animateTo(GeoPoint(shop.latitude, shop.longitude))
+                        }
                     }
                 }
             }
@@ -977,10 +1145,20 @@ fun GoldShopsMapView(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        ShopGoldMedallion(
-                            shopId = selectedShop.id,
+                        GoldMarketplaceImage(
+                            imageUrl = selectedShop.logoUrl ?: selectedShop.coverImageUrl,
+                            base64Thumbnail = null,
+                            contentDescription = selectedShop.name,
                             modifier = Modifier.size(48.dp),
                             cornerRadius = 10.dp,
+                            isThumbnail = true,
+                            fallback = {
+                                ShopGoldMedallion(
+                                    shopId = selectedShop.id,
+                                    modifier = Modifier.fillMaxSize(),
+                                    cornerRadius = 10.dp,
+                                )
+                            },
                         )
                         Spacer(modifier = Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
@@ -1000,27 +1178,92 @@ fun GoldShopsMapView(
                                 Icon(
                                     imageVector = Icons.Outlined.Star,
                                     contentDescription = null,
-                                    tint = AppColors.Brass,
+                                    tint = if (selectedShop.hasVerifiedRating) AppColors.Brass else AppColors.Muted,
                                     modifier = Modifier.size(13.dp),
                                 )
                                 Spacer(modifier = Modifier.width(3.dp))
+                                val ratingLabel = if (selectedShop.hasVerifiedRating) {
+                                    "${selectedShop.rating} (${selectedShop.reviews})"
+                                } else {
+                                    "التقييم غير متاح"
+                                }
+                                val metaSuffix = buildString {
+                                    append(" · ${selectedShop.city} - ${selectedShop.area}")
+                                    if (selectedShop.makingFeePerGram > 0.0) {
+                                        append(" · مصنعية ${selectedShop.makingFeePerGram.toInt()} ج.م/جم")
+                                    }
+                                }
                                 Text(
-                                    text = "${selectedShop.rating} (${selectedShop.reviews}) · مصنعية ${selectedShop.makingFeePerGram.toInt()} ج.م/جم",
+                                    text = ratingLabel + metaSuffix,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                     style = AppText.body.copy(color = AppColors.Muted, fontSize = 11.5.sp),
                                 )
                             }
                         }
-                        IconButton(
+                        Surface(
                             onClick = { onToggleFavoriteShop(selectedShop.id) },
                             modifier = Modifier
                                 .size(48.dp)
                                 .testTag("map_selected_favorite_button"),
+                            shape = CircleShape,
+                            color = if (isFavorite) AppColors.AlertSoft else AppColors.ParchmentDeep,
+                            border = BorderStroke(
+                                1.dp,
+                                if (isFavorite) AppColors.Alert.copy(alpha = 0.45f) else AppColors.Line,
+                            ),
                         ) {
-                            Icon(
-                                imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                                contentDescription = if (isFavorite) "إزالة من المفضلة" else "إضافة للمفضلة",
-                                tint = if (isFavorite) AppColors.Brass else AppColors.Muted,
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                                    contentDescription = if (isFavorite) "إزالة من المفضلة" else "إضافة للمفضلة",
+                                    tint = if (isFavorite) AppColors.Alert else AppColors.Ink,
+                                    modifier = Modifier.size(22.dp),
+                                )
+                            }
+                        }
+                    }
+
+                    val selectedShopKarats = remember(selectedShop.id, shopKaratsProvider) {
+                        shopKaratsProvider?.invoke(selectedShop).orEmpty().sortedDescending()
+                    }
+                    if (selectedShopKarats.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("map_selected_shop_karats"),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = "الأعيرة:",
+                                style = AppText.body.copy(
+                                    color = AppColors.Muted,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                ),
                             )
+                            selectedShopKarats.forEach { karat ->
+                                val isMatchedKarat = selectedKarat == karat
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = if (isMatchedKarat) AppColors.Ink else AppColors.ParchmentDeep,
+                                    border = BorderStroke(
+                                        1.dp,
+                                        if (isMatchedKarat) AppColors.Brass else AppColors.Brass.copy(alpha = 0.35f),
+                                    ),
+                                ) {
+                                    Text(
+                                        text = "عيار $karat",
+                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                                        style = AppText.body.copy(
+                                            color = if (isMatchedKarat) AppColors.BrassLight else AppColors.Ink,
+                                            fontSize = 10.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                        ),
+                                    )
+                                }
+                            }
                         }
                     }
 
@@ -1063,26 +1306,67 @@ fun GoldShopsMapView(
                         }
                     }
 
-                    Button(
-                        onClick = { onOpenShop(selectedShop) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp)
-                            .testTag("map_open_shop_button"),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = AppColors.Ink,
-                            contentColor = AppColors.BrassLight,
-                        ),
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            text = "دخول المتجر وتصفح المشغولات",
-                            style = AppText.body.copy(
-                                color = AppColors.BrassLight,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.5.sp,
+                        Button(
+                            onClick = { onOpenShop(selectedShop) },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp)
+                                .testTag("map_open_shop_button"),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = AppColors.Ink,
+                                contentColor = AppColors.BrassLight,
                             ),
-                        )
+                        ) {
+                            Text(
+                                text = "دخول المتجر وتصفح المشغولات",
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                style = AppText.body.copy(
+                                    color = AppColors.BrassLight,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                ),
+                            )
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                openDirections(
+                                    context = context,
+                                    address = selectedShop.address,
+                                    latitude = selectedShop.latitude,
+                                    longitude = selectedShop.longitude,
+                                    label = selectedShop.name,
+                                ) {}
+                            },
+                            modifier = Modifier
+                                .height(48.dp)
+                                .testTag("map_selected_directions_button"),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, AppColors.Brass),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Directions,
+                                contentDescription = "الاتجاهات إلى ${selectedShop.name}",
+                                tint = AppColors.Brass,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "الاتجاهات",
+                                style = AppText.body.copy(
+                                    color = AppColors.Ink,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp,
+                                ),
+                            )
+                        }
                     }
                 }
             }

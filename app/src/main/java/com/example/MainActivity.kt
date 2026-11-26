@@ -123,6 +123,7 @@ private fun AppContent(
         isAuthenticated = currentUser != null,
         pendingRoute = pendingRoute,
         onPendingRouteConsumed = onPendingRouteConsumed,
+        requestLocationOnStart = true,
         onSignOut = {
             GoogleAuthHelper.signOut(
                 credentialManager = credentialManager,

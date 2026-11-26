@@ -9,12 +9,23 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
+import android.graphics.drawable.GradientDrawable
 import android.location.Location
 import android.location.LocationManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.text.TextUtils
+import android.util.TypedValue
+import android.view.Gravity
+import android.view.View
+import android.view.ViewGroup
+import android.widget.ImageButton
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.TextView
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -27,10 +38,11 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.LocationSearching
 import androidx.compose.material.icons.outlined.MyLocation
@@ -54,11 +66,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.createBitmap
+import androidx.core.location.LocationManagerCompat
+import androidx.core.os.CancellationSignal
 import com.example.model.Shop
 import com.example.ui.theme.AppColors
 import com.example.ui.theme.AppText
@@ -71,6 +86,7 @@ import org.osmdroid.util.MapTileIndex
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polygon
+import org.osmdroid.views.overlay.infowindow.InfoWindow
 import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 import java.io.File
@@ -98,6 +114,19 @@ val MAP_RADIUS_OPTIONS: List<MapRadiusOption> = listOf(
     MapRadiusOption(5.0, "5 كم", "map_radius_chip_5"),
     MapRadiusOption(15.0, "15 كم", "map_radius_chip_15"),
     MapRadiusOption(50.0, "50 كم", "map_radius_chip_50"),
+)
+
+data class MapKaratOption(
+    val karat: Int?,
+    val label: String,
+    val testTag: String,
+)
+
+val MAP_KARAT_OPTIONS: List<MapKaratOption> = listOf(
+    MapKaratOption(null, "كل الأعيرة", "map_karat_chip_all"),
+    MapKaratOption(24, "عيار 24", "map_karat_chip_24"),
+    MapKaratOption(21, "عيار 21", "map_karat_chip_21"),
+    MapKaratOption(18, "عيار 18", "map_karat_chip_18"),
 )
 
 internal val SATELLITE_TILE_SOURCE: OnlineTileSourceBase = object : OnlineTileSourceBase(
@@ -174,6 +203,125 @@ fun calculateHaversineDistanceKm(
     return round(rawKm * 10.0) / 10.0
 }
 
+private val ARABIC_DIGIT_MAP = mapOf(
+    '٠' to '0', '١' to '1', '٢' to '2', '٣' to '3', '٤' to '4',
+    '٥' to '5', '٦' to '6', '٧' to '7', '٨' to '8', '٩' to '9',
+    '۰' to '0', '۱' to '1', '۲' to '2', '۳' to '3', '۴' to '4',
+    '۵' to '5', '۶' to '6', '۷' to '7', '۸' to '8', '۹' to '9',
+)
+
+private val EXPLICIT_KARAT_PHRASE_REGEX = Regex(
+    """(?:(?:ذهب|gold)\s+)?(?:عيار|عيّار|karat|kt|k)\s*[:\-]?\s*(24|21|18|14)\b|\b(24|21|18|14)\s*(?:k|kt|ق|قيراط)(?:\s+(?:ذهب|gold))?\b""",
+)
+private val STANDALONE_KARAT_REGEX = Regex("""(?:^|\s)(24|21|18|14)(?:\s|$)""")
+private val GOLD_PREFIX_WITH_KARAT_REGEX = Regex("""(?:^|\s)(?:ذهب|gold)(?:\s|$)""")
+
+data class ParsedMapSearchQuery(
+    val normalizedRaw: String,
+    val detectedKarat: Int?,
+    val remainingText: String,
+)
+
+fun normalizeShopSearchText(input: String): String {
+    if (input.isBlank()) return ""
+    val sb = StringBuilder(input.length)
+    for (ch in input) {
+        sb.append(ARABIC_DIGIT_MAP[ch] ?: ch)
+    }
+    return sb.toString()
+        .trim()
+        .lowercase(Locale.ROOT)
+        .replace(Regex("""\s+"""), " ")
+}
+
+fun parseShopSearchQuery(query: String): ParsedMapSearchQuery {
+    val normalized = normalizeShopSearchText(query)
+    if (normalized.isEmpty()) {
+        return ParsedMapSearchQuery(
+            normalizedRaw = "",
+            detectedKarat = null,
+            remainingText = "",
+        )
+    }
+
+    val explicitMatch = EXPLICIT_KARAT_PHRASE_REGEX.find(normalized)
+    if (explicitMatch != null) {
+        val karatStr = explicitMatch.groupValues.drop(1).firstOrNull { it.isNotEmpty() }
+        val karat = karatStr?.toIntOrNull()
+        val stripped = normalized.removeRange(explicitMatch.range)
+            .replace(GOLD_PREFIX_WITH_KARAT_REGEX, " ")
+            .replace(Regex("""\s+"""), " ")
+            .trim()
+        return ParsedMapSearchQuery(
+            normalizedRaw = normalized,
+            detectedKarat = karat,
+            remainingText = stripped,
+        )
+    }
+
+    val standaloneMatch = STANDALONE_KARAT_REGEX.find(normalized)
+    if (standaloneMatch != null) {
+        val karat = standaloneMatch.groupValues[1].toIntOrNull()
+        val stripped = normalized.removeRange(standaloneMatch.range)
+            .replace(GOLD_PREFIX_WITH_KARAT_REGEX, " ")
+            .replace(Regex("""\s+"""), " ")
+            .trim()
+        return ParsedMapSearchQuery(
+            normalizedRaw = normalized,
+            detectedKarat = karat,
+            remainingText = stripped,
+        )
+    }
+
+    return ParsedMapSearchQuery(
+        normalizedRaw = normalized,
+        detectedKarat = null,
+        remainingText = normalized,
+    )
+}
+
+private fun matchesShopText(
+    shop: Shop,
+    query: String,
+    extraSearchableText: List<String> = emptyList(),
+): Boolean {
+    if (query.isEmpty()) return true
+    return normalizeShopSearchText(shop.name).contains(query) ||
+        normalizeShopSearchText(shop.city).contains(query) ||
+        normalizeShopSearchText(shop.area).contains(query) ||
+        normalizeShopSearchText(shop.address).contains(query) ||
+        normalizeShopSearchText(shop.description).contains(query) ||
+        extraSearchableText.any { normalizeShopSearchText(it).contains(query) }
+}
+
+fun matchesShopSearchAndKarat(
+    shop: Shop,
+    shopKarats: Set<Int>,
+    parsedQuery: ParsedMapSearchQuery,
+    selectedKarat: Int? = null,
+    extraSearchableText: List<String> = emptyList(),
+    hasKaratsMetadata: Boolean = true,
+): Boolean {
+    val matchesSelectedKarat = if (hasKaratsMetadata) {
+        selectedKarat == null || shopKarats.contains(selectedKarat)
+    } else {
+        true
+    }
+    if (!matchesSelectedKarat) return false
+    if (parsedQuery.normalizedRaw.isEmpty()) return true
+
+    val matchesRawText = matchesShopText(shop, parsedQuery.normalizedRaw, extraSearchableText)
+    val detectedKarat = parsedQuery.detectedKarat
+    if (detectedKarat == null || !hasKaratsMetadata) {
+        return matchesRawText
+    }
+
+    val matchesDetectedKarat = shopKarats.contains(detectedKarat)
+    val matchesRemainingText = parsedQuery.remainingText.isEmpty() ||
+        matchesShopText(shop, parsedQuery.remainingText, extraSearchableText)
+    return matchesRawText || (matchesDetectedKarat && matchesRemainingText)
+}
+
 fun filterAndSortShopsForMap(
     shops: List<Shop>,
     searchQuery: String,
@@ -182,11 +330,13 @@ fun filterAndSortShopsForMap(
     anchorLon: Double?,
     nearbyRadiusKm: Double?,
     sortByNearest: Boolean = true,
+    selectedKarat: Int? = null,
+    shopKaratsProvider: ((Shop) -> Set<Int>)? = null,
 ): List<Shop> {
     val hasAnchor = anchorLat != null &&
         anchorLon != null &&
         isValidMapCoordinatePair(anchorLat, anchorLon)
-    val normalizedQuery = searchQuery.trim().lowercase()
+    val parsedQuery = parseShopSearchQuery(searchQuery)
 
     val shopsWithDistance = if (hasAnchor) {
         shops.map { shop ->
@@ -208,17 +358,20 @@ fun filterAndSortShopsForMap(
 
     val filtered = shopsWithDistance.filter { shop ->
         val matchesVerified = !verifiedOnly || shop.verified
-        val matchesQuery = normalizedQuery.isEmpty() ||
-            shop.name.lowercase().contains(normalizedQuery) ||
-            shop.city.lowercase().contains(normalizedQuery) ||
-            shop.area.lowercase().contains(normalizedQuery) ||
-            shop.address.lowercase().contains(normalizedQuery)
+        val shopKarats = shopKaratsProvider?.invoke(shop).orEmpty()
+        val matchesQueryAndKarat = matchesShopSearchAndKarat(
+            shop = shop,
+            shopKarats = shopKarats,
+            parsedQuery = parsedQuery,
+            selectedKarat = selectedKarat,
+            hasKaratsMetadata = shopKaratsProvider != null,
+        )
         val matchesRadius = if (hasAnchor && nearbyRadiusKm != null) {
             hasValidMapCoordinates(shop) && shop.distanceKm <= nearbyRadiusKm
         } else {
             true
         }
-        matchesVerified && matchesQuery && matchesRadius
+        matchesVerified && matchesQueryAndKarat && matchesRadius
     }
 
     return if (sortByNearest && hasAnchor) {
@@ -271,6 +424,52 @@ fun resolveBestKnownLocation(context: Context): GeoPoint? {
         }
     }
     return best?.let { GeoPoint(it.latitude, it.longitude) }
+}
+
+@SuppressLint("MissingPermission")
+fun requestCurrentLocationFix(
+    context: Context,
+    cancellationSignal: CancellationSignal? = null,
+    onResolved: (GeoPoint?) -> Unit,
+) {
+    if (!hasAnyLocationPermission(context)) {
+        onResolved(null)
+        return
+    }
+    val bestKnown = resolveBestKnownLocation(context)
+    if (bestKnown != null) {
+        onResolved(bestKnown)
+        return
+    }
+    val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+    if (lm == null) {
+        onResolved(null)
+        return
+    }
+    val provider = listOf(
+        LocationManager.GPS_PROVIDER,
+        LocationManager.NETWORK_PROVIDER,
+    ).firstOrNull { name ->
+        runCatching { lm.isProviderEnabled(name) }.getOrDefault(false)
+    } ?: LocationManager.NETWORK_PROVIDER
+
+    val started = runCatching {
+        LocationManagerCompat.getCurrentLocation(
+            lm,
+            provider,
+            cancellationSignal,
+            ContextCompat.getMainExecutor(context),
+        ) { location ->
+            val point = location?.takeIf {
+                isValidMapCoordinatePair(it.latitude, it.longitude)
+            }?.let { GeoPoint(it.latitude, it.longitude) }
+            onResolved(point)
+        }
+        true
+    }.getOrDefault(false)
+    if (!started) {
+        onResolved(null)
+    }
 }
 
 fun createConfiguredMyLocationOverlay(context: Context, mapView: MapView): MyLocationNewOverlay {
@@ -337,6 +536,164 @@ internal fun createGoldShopMarkerDrawable(
     return BitmapDrawable(context.resources, bitmap)
 }
 
+internal fun createHeartIconDrawable(
+    context: Context,
+    isFavorite: Boolean,
+): Drawable {
+    val density = context.resources.displayMetrics.density
+    val sizePx = (24f * density).toInt().coerceAtLeast(24)
+    val bitmap = createBitmap(sizePx, sizePx)
+    val canvas = Canvas(bitmap)
+    val w = sizePx.toFloat()
+    val h = sizePx.toFloat()
+
+    val heartPath = Path().apply {
+        moveTo(w * 0.50f, h * 0.84f)
+        cubicTo(w * 0.16f, h * 0.62f, w * 0.08f, h * 0.36f, w * 0.24f, h * 0.22f)
+        cubicTo(w * 0.36f, h * 0.12f, w * 0.48f, h * 0.20f, w * 0.50f, h * 0.29f)
+        cubicTo(w * 0.52f, h * 0.20f, w * 0.64f, h * 0.12f, w * 0.76f, h * 0.22f)
+        cubicTo(w * 0.92f, h * 0.36f, w * 0.84f, h * 0.62f, w * 0.50f, h * 0.84f)
+        close()
+    }
+
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        if (isFavorite) {
+            color = android.graphics.Color.rgb(180, 45, 45)
+            style = Paint.Style.FILL
+        } else {
+            color = android.graphics.Color.rgb(112, 103, 95)
+            style = Paint.Style.STROKE
+            strokeWidth = (1.9f * density).coerceAtLeast(1.5f)
+            strokeJoin = Paint.Join.ROUND
+            strokeCap = Paint.Cap.ROUND
+        }
+    }
+    canvas.drawPath(heartPath, paint)
+    return BitmapDrawable(context.resources, bitmap)
+}
+
+internal class GoldShopMarkerInfoWindow(
+    mapView: MapView,
+    private val shop: Shop,
+    private val isFavorite: Boolean,
+    private val onToggleFavorite: ((String) -> Unit)?,
+    private val onOpenShop: ((Shop) -> Unit)? = null,
+) : InfoWindow(buildMarkerBubbleView(mapView.context), mapView) {
+
+    override fun onOpen(item: Any?) {
+        val root = mView as? LinearLayout ?: return
+        val ctx = root.context
+        val titleView = root.findViewWithTag<TextView>("marker_info_title")
+        val snippetView = root.findViewWithTag<TextView>("marker_info_snippet")
+        val textCol = root.findViewWithTag<LinearLayout>("marker_info_text_col")
+        val favoriteBtn = root.findViewWithTag<ImageButton>("marker_info_favorite_${shop.id}")
+            ?: root.findViewWithTag<ImageButton>("marker_info_favorite_btn")
+
+        titleView?.text = shop.name
+        val statusLabel = if (shop.verified) "معتمد" else "قيد التحقق"
+        snippetView?.text = "${shop.area}، ${shop.city} · ${shop.distanceKm} كم · $statusLabel"
+
+        textCol?.setOnClickListener {
+            onOpenShop?.invoke(shop)
+        }
+
+        favoriteBtn?.apply {
+            tag = "marker_info_favorite_${shop.id}"
+            contentDescription = if (isFavorite) "إزالة من المفضلة" else "إضافة للمفضلة"
+            setImageDrawable(createHeartIconDrawable(ctx, isFavorite))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(
+                    if (isFavorite) {
+                        android.graphics.Color.rgb(252, 232, 232)
+                    } else {
+                        android.graphics.Color.rgb(245, 239, 228)
+                    },
+                )
+            }
+            setOnClickListener {
+                onToggleFavorite?.invoke(shop.id)
+            }
+        }
+    }
+
+    override fun onClose() {
+        val root = mView as? LinearLayout ?: return
+        root.findViewWithTag<View>("marker_info_text_col")?.setOnClickListener(null)
+        root.findViewWithTag<View>("marker_info_favorite_${shop.id}")?.setOnClickListener(null)
+    }
+
+    companion object {
+        private fun dp(context: Context, value: Int): Int =
+            (value * context.resources.displayMetrics.density).toInt().coerceAtLeast(1)
+
+        private fun buildMarkerBubbleView(context: Context): View {
+            val container = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                layoutDirection = View.LAYOUT_DIRECTION_RTL
+                setPadding(dp(context, 12), dp(context, 8), dp(context, 10), dp(context, 8))
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    cornerRadius = dp(context, 14).toFloat()
+                    setColor(android.graphics.Color.WHITE)
+                    setStroke(dp(context, 1), android.graphics.Color.rgb(181, 138, 46))
+                }
+                elevation = dp(context, 4).toFloat()
+                layoutParams = ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                )
+            }
+
+            val textColumn = LinearLayout(context).apply {
+                tag = "marker_info_text_col"
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                ).apply {
+                    marginEnd = dp(context, 8)
+                }
+            }
+
+            val titleView = TextView(context).apply {
+                tag = "marker_info_title"
+                setTextColor(android.graphics.Color.rgb(20, 20, 22))
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                maxLines = 1
+                maxWidth = dp(context, 190)
+                ellipsize = TextUtils.TruncateAt.END
+            }
+
+            val snippetView = TextView(context).apply {
+                tag = "marker_info_snippet"
+                setTextColor(android.graphics.Color.rgb(107, 99, 91))
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+                maxLines = 1
+                maxWidth = dp(context, 190)
+                ellipsize = TextUtils.TruncateAt.END
+            }
+
+            textColumn.addView(titleView)
+            textColumn.addView(snippetView)
+
+            val minTap = dp(context, 40)
+            val favoriteButton = ImageButton(context).apply {
+                tag = "marker_info_favorite_btn"
+                scaleType = ImageView.ScaleType.CENTER_INSIDE
+                layoutParams = LinearLayout.LayoutParams(minTap, minTap)
+                setPadding(dp(context, 8), dp(context, 8), dp(context, 8), dp(context, 8))
+            }
+
+            container.addView(textColumn)
+            container.addView(favoriteButton)
+            return container
+        }
+    }
+}
+
 fun createGoldShopMarker(
     mapView: MapView,
     shop: Shop,
@@ -344,19 +701,30 @@ fun createGoldShopMarker(
     selectedIcon: Drawable,
     verifiedIcon: Drawable,
     defaultIcon: Drawable,
+    isFavorite: Boolean = false,
+    onToggleFavorite: ((String) -> Unit)? = null,
+    onOpenShop: ((Shop) -> Unit)? = null,
     onSelect: (String) -> Unit,
 ): Marker = Marker(mapView).apply {
     id = shop.id
     position = GeoPoint(shop.latitude, shop.longitude)
     title = shop.name
     val sourceLabel = if (shop.verified) "معتمد" else "قيد التحقق"
-    snippet = "${shop.area}، ${shop.city} · ${shop.distanceKm} كم · $sourceLabel"
+    val savedSuffix = if (isFavorite) " · محفوظ" else ""
+    snippet = "${shop.area}، ${shop.city} · ${shop.distanceKm} كم · $sourceLabel$savedSuffix"
     setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
     icon = when {
         isSelected -> selectedIcon
         shop.verified -> verifiedIcon
         else -> defaultIcon
     }
+    infoWindow = GoldShopMarkerInfoWindow(
+        mapView = mapView,
+        shop = shop,
+        isFavorite = isFavorite,
+        onToggleFavorite = onToggleFavorite,
+        onOpenShop = onOpenShop,
+    )
     setOnMarkerClickListener { marker, _ ->
         onSelect(shop.id)
         marker.showInfoWindow()
@@ -376,8 +744,12 @@ fun syncGoldShopMarkers(
     searchAnchorLat: Double? = null,
     searchAnchorLon: Double? = null,
     nearbyRadiusKm: Double? = null,
+    favoriteShopIds: Set<String> = emptySet(),
+    onToggleFavorite: ((String) -> Unit)? = null,
+    onOpenShop: ((Shop) -> Unit)? = null,
     onSelect: (String) -> Unit,
 ): Int {
+    InfoWindow.closeAllInfoWindowsOn(mapView)
     mapView.overlays.removeAll { it is Marker || it is Polygon }
 
     if (searchAnchorLat != null && searchAnchorLon != null &&
@@ -412,6 +784,9 @@ fun syncGoldShopMarkers(
             selectedIcon = selectedIcon,
             verifiedIcon = verifiedIcon,
             defaultIcon = defaultIcon,
+            isFavorite = favoriteShopIds.contains(shop.id),
+            onToggleFavorite = onToggleFavorite,
+            onOpenShop = onOpenShop,
             onSelect = onSelect,
         )
         mapView.overlays.add(marker)
@@ -452,7 +827,7 @@ internal fun MapSearchBarHeader(
                 .testTag("map_search_input"),
             placeholder = {
                 Text(
-                    text = "ابحث عن محل ذهب موثّق على الخريطة...",
+                    text = "ابحث باسم المحل أو العيار (مثل: 24، 21، 18)...",
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     style = AppText.body.copy(color = AppColors.Muted, fontSize = 12.sp),
@@ -461,7 +836,7 @@ internal fun MapSearchBarHeader(
             leadingIcon = {
                 Icon(
                     imageVector = Icons.Outlined.Search,
-                    contentDescription = "بحث على الخريطة",
+                    contentDescription = "بحث باسم المحل أو عيار الذهب",
                     tint = AppColors.Brass,
                 )
             },
@@ -482,6 +857,7 @@ internal fun MapSearchBarHeader(
                 null
             },
             singleLine = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             shape = RoundedCornerShape(12.dp),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedContainerColor = Color.White,
@@ -518,6 +894,60 @@ internal fun MapSearchBarHeader(
                 labelColor = AppColors.Ink,
             ),
         )
+    }
+}
+
+@Composable
+internal fun MapKaratFilterRow(
+    selectedKarat: Int?,
+    onSelectKarat: (Int?) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .testTag("map_karat_filter_row"),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        MAP_KARAT_OPTIONS.forEach { option ->
+            val selected = selectedKarat == option.karat
+            FilterChip(
+                selected = selected,
+                onClick = {
+                    val next = if (option.karat != null && selected) null else option.karat
+                    onSelectKarat(next)
+                },
+                modifier = Modifier
+                    .minimumInteractiveComponentSize()
+                    .testTag(option.testTag),
+                leadingIcon = if (option.karat != null) {
+                    {
+                        Icon(
+                            imageVector = Icons.Outlined.AutoAwesome,
+                            contentDescription = null,
+                            tint = if (selected) AppColors.BrassLight else AppColors.Brass,
+                            modifier = Modifier.size(14.dp),
+                        )
+                    }
+                } else {
+                    null
+                },
+                label = {
+                    Text(
+                        text = option.label,
+                        style = AppText.body.copy(fontSize = 11.5.sp, fontWeight = FontWeight.Bold),
+                    )
+                },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = AppColors.Ink,
+                    selectedLabelColor = AppColors.BrassLight,
+                    containerColor = Color.White,
+                    labelColor = AppColors.Ink,
+                ),
+            )
+        }
     }
 }
 

@@ -153,7 +153,8 @@ fun ShopDetailScreen(
             LazyColumn(
                 modifier = Modifier
                     .widthIn(max = 640.dp)
-                    .fillMaxSize(),
+                    .fillMaxSize()
+                    .testTag("shop_detail_lazy_column"),
                 contentPadding = PaddingValues(bottom = 24.dp),
             ) {
                 item {

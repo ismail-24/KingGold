@@ -26,6 +26,7 @@ import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.AdminPanelSettings
 import androidx.compose.material.icons.outlined.Badge
 import androidx.compose.material.icons.outlined.CreditCard
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Sell
@@ -66,6 +67,7 @@ import com.example.ui.theme.AppText
 fun AccountScreen(
     uiState: KingGoldUiState,
     onOpenProfile: () -> Unit = {},
+    onOpenSavedShops: () -> Unit = {},
     onOpenVault: () -> Unit = {},
     onOpenSellGold: () -> Unit = {},
     onOpenMerchantPortal: () -> Unit = {},
@@ -224,6 +226,20 @@ fun AccountScreen(
                         modifier = Modifier.testTag("account_admin_approval_tile"),
                     )
                 }
+            }
+
+            item {
+                AccountMenuTile(
+                    icon = Icons.Outlined.FavoriteBorder,
+                    title = "محلات الذهب المحفوظة",
+                    subtitle = if (uiState.favoriteShopIds.isEmpty()) {
+                        "احفظ محلاتك المفضلة للوصول إليها سريعاً"
+                    } else {
+                        "${uiState.favoriteShopIds.size} محل محفوظ في المفضلة"
+                    },
+                    onClick = onOpenSavedShops,
+                    modifier = Modifier.testTag("account_saved_shops_tile"),
+                )
             }
 
             item {

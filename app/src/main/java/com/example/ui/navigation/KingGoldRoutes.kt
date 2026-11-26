@@ -9,6 +9,7 @@ object Routes {
     const val SPLASH = "splash"
     const val LOGIN = "login"
     const val HOME = "home"
+    const val NEARBY_MAP = "nearby_map"
     const val VAULT = "vault"
     const val SELL_GOLD = "sell_gold"
     const val ORDERS = "orders"
@@ -27,6 +28,7 @@ object Routes {
     const val CART = "cart"
     const val CHECKOUT = "checkout"
     const val SHOP_DETAIL = "shop_detail/{shopId}"
+    const val SAVED_SHOPS = "saved_shops"
     const val PRODUCT_LIST = "product_list/{shopId}?category={category}"
     const val PRODUCT_DETAIL = "product_detail/{shopId}/{productId}"
     const val SUCCESS = "success/{orderId}"
@@ -57,6 +59,7 @@ object Routes {
 
     private val staticInternalRoutes = setOf(
         HOME,
+        NEARBY_MAP,
         VAULT,
         SELL_GOLD,
         ORDERS,
@@ -73,6 +76,7 @@ object Routes {
         GOLD_CALCULATOR,
         CART,
         CHECKOUT,
+        SAVED_SHOPS,
         "ai_advisor",
     )
 

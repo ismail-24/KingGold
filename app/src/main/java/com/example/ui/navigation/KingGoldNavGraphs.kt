@@ -49,6 +49,7 @@ import com.example.ui.screens.price.MarketNewsScreen
 import com.example.ui.screens.price.PriceInsightScreen
 import com.example.ui.screens.shop.ProductDetailScreen
 import com.example.ui.screens.shop.ProductListScreen
+import com.example.ui.screens.shop.SavedShopsScreen
 import com.example.ui.screens.shop.ShopDetailScreen
 import com.example.ui.state.AdminApprovalViewModel
 import com.example.ui.state.KingGoldViewModel
@@ -209,6 +210,30 @@ internal fun NavGraphBuilder.registerSecondaryDestinations(
                 onOpenShop = { shop -> navController.navigateSingleTop(Routes.shopDetail(shop.id), isAuthorized) },
                 onToggleFavoriteShop = vm::toggleFavoriteShop,
                 onSignOut = onSignOut,
+            )
+        }
+    }
+
+    composable(Routes.SAVED_SHOPS) {
+        val isAuthorized = isAuthenticatedProvider()
+        AuthenticatedRoute(
+            isAuthenticated = isAuthorized,
+            viewModel = viewModelProvider(),
+            onUnauthorized = { navController.redirectToLogin() },
+        ) { vm ->
+            val uiState by vm.uiState.collectAsStateWithLifecycle()
+            SavedShopsScreen(
+                uiState = uiState,
+                onBack = { navController.popBackSafely() },
+                onOpenShop = { shop -> navController.navigateSingleTop(Routes.shopDetail(shop.id), isAuthorized) },
+                onToggleFavoriteShop = vm::toggleFavoriteShop,
+                onFocusShopOnMap = { shop ->
+                    vm.focusShopOnMap(shop.id)
+                    navController.navigateToHomeTab(HomeTab.MAP, isAuthenticated = isAuthorized, clearBackToHome = true)
+                },
+                onBrowseMap = {
+                    navController.navigateToHomeTab(HomeTab.MAP, isAuthenticated = isAuthorized, clearBackToHome = true)
+                },
             )
         }
     }

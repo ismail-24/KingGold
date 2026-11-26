@@ -1,5 +1,8 @@
 package com.example.ui.navigation
 
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.background
@@ -24,12 +27,15 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.notifications.FcmRegistrationManager
+import com.example.ui.components.hasAnyLocationPermission
+import com.example.ui.components.requestCurrentLocationFix
 import com.example.ui.screens.SplashScreen
 import com.example.ui.screens.auth.LoginScreen
 import com.example.ui.screens.home.AccountScreen
 import com.example.ui.screens.home.DiscoverScreen
 import com.example.ui.screens.home.HomeNavigationShell
 import com.example.ui.screens.home.HomeTab
+import com.example.ui.screens.home.NearbyShopsMapScreen
 import com.example.ui.screens.home.OrdersScreen
 import com.example.ui.screens.sell.SellGoldScreen
 import com.example.ui.screens.vault.VaultWalletScreen
@@ -51,6 +57,7 @@ fun KingGoldNavHost(
     isAuthenticated: Boolean = viewModel != null,
     pendingRoute: String? = null,
     onPendingRouteConsumed: () -> Unit = {},
+    requestLocationOnStart: Boolean = false,
     splashContent: @Composable (onFinished: () -> Unit) -> Unit = { onFinished ->
         SplashScreen(onFinished = onFinished)
     },
@@ -92,6 +99,41 @@ fun KingGoldNavHost(
         navController.addOnDestinationChangedListener(guardListener)
         onDispose {
             navController.removeOnDestinationChangedListener(guardListener)
+        }
+    }
+
+    var hasPromptedStartupLocationPermission by rememberSaveable { mutableStateOf(false) }
+    val startupLocationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions(),
+    ) { results ->
+        val granted = results[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+            results[Manifest.permission.ACCESS_COARSE_LOCATION] == true ||
+            hasAnyLocationPermission(context)
+        if (granted) {
+            requestCurrentLocationFix(context) { geo ->
+                geo?.let { viewModel?.updateUserLocation(it.latitude, it.longitude) }
+            }
+        } else {
+            viewModel?.markLocationPermissionDenied()
+        }
+    }
+
+    LaunchedEffect(splashCompleted, isAuthorized, viewModel, requestLocationOnStart) {
+        if (!splashCompleted || !isAuthorized || viewModel == null) return@LaunchedEffect
+        if (hasAnyLocationPermission(context)) {
+            if (viewModel.uiState.value.userLocationLat == null) {
+                requestCurrentLocationFix(context) { geo ->
+                    geo?.let { viewModel.updateUserLocation(it.latitude, it.longitude) }
+                }
+            }
+        } else if (requestLocationOnStart && !hasPromptedStartupLocationPermission) {
+            hasPromptedStartupLocationPermission = true
+            startupLocationPermissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                ),
+            )
         }
     }
 
@@ -233,6 +275,7 @@ fun KingGoldNavHost(
                         onSelectCityFilter = vm::updateCityFilter,
                         onSelectCategoryFilter = vm::updateCategoryFilter,
                         onOpenProfile = { navController.navigateSingleTop(Routes.PROFILE, isAuthorized) },
+                        onOpenSavedShops = { navController.navigateSingleTop(Routes.SAVED_SHOPS, isAuthorized) },
                         onOpenVault = {
                             vm.clearActionMessages()
                             navController.navigateToHomeTab(HomeTab.VAULT, isAuthorized)
@@ -240,6 +283,10 @@ fun KingGoldNavHost(
                         onOpenSellGold = {
                             vm.clearActionMessages()
                             navController.navigateToHomeTab(HomeTab.SELL_GOLD, isAuthorized)
+                        },
+                        onOpenNearbyMap = {
+                            vm.clearActionMessages()
+                            navController.navigateToHomeTab(HomeTab.MAP, isAuthorized)
                         },
                         onOpenGoldCalculator = { navController.navigateSingleTop(Routes.GOLD_CALCULATOR, isAuthorized) },
                         onOpenMarketNews = { navController.navigateSingleTop(Routes.MARKET_NEWS, isAuthorized) },
@@ -252,6 +299,39 @@ fun KingGoldNavHost(
                         onUpdateSearchAnchor = vm::updateSearchAnchor,
                         onUpdateNearbyRadius = vm::updateNearbyRadiusKm,
                         onClearSearchAnchor = vm::clearSearchAnchor,
+                        onUserLocationResolved = vm::updateUserLocation,
+                    )
+                }
+            }
+
+            composable(
+                route = Routes.NEARBY_MAP,
+                enterTransition = { EnterTransition.None },
+                exitTransition = { ExitTransition.None },
+                popEnterTransition = { EnterTransition.None },
+                popExitTransition = { ExitTransition.None },
+            ) {
+                AuthenticatedRoute(
+                    isAuthenticated = isAuthorized,
+                    viewModel = viewModel,
+                    onUnauthorized = { navController.redirectToLogin() },
+                ) { vm ->
+                    val uiState by vm.uiState.collectAsStateWithLifecycle()
+                    NearbyShopsMapScreen(
+                        uiState = uiState,
+                        onSearchChange = vm::updateSearchQuery,
+                        onApplyFilters = vm::updateFilters,
+                        onSelectCityFilter = vm::updateCityFilter,
+                        onToggleFavoritesOnlyFilter = vm::toggleFavoritesOnlyFilter,
+                        onOpenCart = { navController.navigateSingleTop(Routes.CART, isAuthorized) },
+                        onOpenShop = { shop -> navController.navigateSingleTop(Routes.shopDetail(shop.id), isAuthorized) },
+                        onToggleFavoriteShop = vm::toggleFavoriteShop,
+                        onUpdateSearchAnchor = vm::updateSearchAnchor,
+                        onUpdateNearbyRadius = vm::updateNearbyRadiusKm,
+                        onClearSearchAnchor = vm::clearSearchAnchor,
+                        onUserLocationResolved = vm::updateUserLocation,
+                        onFocusShopOnMap = vm::focusShopOnMap,
+                        onOpenSavedShopsScreen = { navController.navigateSingleTop(Routes.SAVED_SHOPS, isAuthorized) },
                     )
                 }
             }
@@ -353,6 +433,7 @@ fun KingGoldNavHost(
                     AccountScreen(
                         uiState = uiState,
                         onOpenProfile = { navController.navigateSingleTop(Routes.PROFILE, isAuthorized) },
+                        onOpenSavedShops = { navController.navigateSingleTop(Routes.SAVED_SHOPS, isAuthorized) },
                         onOpenVault = {
                             vm.clearActionMessages()
                             navController.navigateToHomeTab(HomeTab.VAULT, isAuthorized)
