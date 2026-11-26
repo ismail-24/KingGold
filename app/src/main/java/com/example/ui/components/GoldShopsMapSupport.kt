@@ -23,6 +23,7 @@ import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -40,10 +41,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.LocationSearching
 import androidx.compose.material.icons.outlined.MyLocation
 import androidx.compose.material.icons.outlined.Radar
@@ -61,10 +64,16 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -74,6 +83,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.graphics.createBitmap
 import androidx.core.location.LocationManagerCompat
 import androidx.core.os.CancellationSignal
+import com.example.R
 import com.example.model.Shop
 import com.example.ui.theme.AppColors
 import com.example.ui.theme.AppText
@@ -811,89 +821,162 @@ internal fun MapSearchBarHeader(
     onSearchQueryChange: (String) -> Unit,
     onFindNearMyLocation: () -> Unit,
     isMyLocationActive: Boolean,
+    searchHistory: List<String> = emptyList(),
+    catalogHints: List<String> = emptyList(),
+    selectedCategory: String? = null,
+    onSubmitSearch: (String) -> Unit = {},
+    onRemoveSearchHistoryItem: (String) -> Unit = {},
+    onClearSearchHistory: () -> Unit = {},
+    onSelectCategoryFilter: ((String) -> Unit)? = null,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag("map_search_controls_card"),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = onSearchQueryChange,
-            modifier = Modifier
-                .weight(1f)
-                .testTag("map_search_input"),
-            placeholder = {
-                Text(
-                    text = "ابحث باسم المحل أو العيار (مثل: 24، 21، 18)...",
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = AppText.body.copy(color = AppColors.Muted, fontSize = 12.sp),
-                )
-            },
-            leadingIcon = {
-                Icon(
-                    imageVector = Icons.Outlined.Search,
-                    contentDescription = "بحث باسم المحل أو عيار الذهب",
-                    tint = AppColors.Brass,
-                )
-            },
-            trailingIcon = if (searchQuery.isNotEmpty()) {
-                {
-                    IconButton(
-                        onClick = { onSearchQueryChange("") },
-                        modifier = Modifier.testTag("map_search_clear"),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Close,
-                            contentDescription = "مسح بحث الخريطة",
-                            tint = AppColors.Muted,
-                        )
-                    }
-                }
-            } else {
-                null
-            },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            shape = RoundedCornerShape(12.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = Color.White,
-                unfocusedContainerColor = Color.White,
-                focusedBorderColor = AppColors.Brass,
-                unfocusedBorderColor = AppColors.Line,
-            ),
-        )
+    val focusManager = LocalFocusManager.current
+    var showHistorySuggestions by remember { mutableStateOf(false) }
 
-        FilterChip(
-            selected = isMyLocationActive,
-            onClick = onFindNearMyLocation,
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(
             modifier = Modifier
-                .heightIn(min = 48.dp)
-                .testTag("map_nearby_my_location_button"),
-            leadingIcon = {
-                Icon(
-                    imageVector = Icons.Outlined.MyLocation,
-                    contentDescription = "محلات قريبة من موقعي",
-                    tint = if (isMyLocationActive) AppColors.BrassLight else AppColors.Brass,
-                    modifier = Modifier.size(16.dp),
-                )
-            },
-            label = {
-                Text(
-                    text = "قريب من موقعي",
-                    style = AppText.body.copy(fontSize = 11.5.sp, fontWeight = FontWeight.Bold),
-                )
-            },
-            colors = FilterChipDefaults.filterChipColors(
-                selectedContainerColor = AppColors.Ink,
-                selectedLabelColor = AppColors.BrassLight,
-                containerColor = Color.White,
-                labelColor = AppColors.Ink,
-            ),
-        )
+                .fillMaxWidth()
+                .testTag("map_search_controls_card"),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = onSearchQueryChange,
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag("map_search_input"),
+                placeholder = {
+                    Text(
+                        text = "ابحث باسم المحل أو العيار (مثل: 24، 21، 18)...",
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = AppText.body.copy(color = AppColors.Muted, fontSize = 12.sp),
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Outlined.Search,
+                        contentDescription = "بحث باسم المحل أو عيار الذهب",
+                        tint = AppColors.Brass,
+                    )
+                },
+                trailingIcon = if (searchQuery.isNotEmpty()) {
+                    {
+                        IconButton(
+                            onClick = { onSearchQueryChange("") },
+                            modifier = Modifier.testTag("map_search_clear"),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Close,
+                                contentDescription = "مسح بحث الخريطة",
+                                tint = AppColors.Muted,
+                            )
+                        }
+                    }
+                } else {
+                    {
+                        IconButton(
+                            onClick = { showHistorySuggestions = !showHistorySuggestions },
+                            modifier = Modifier
+                                .size(48.dp)
+                                .testTag("map_search_history_button"),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.History,
+                                contentDescription = stringResource(R.string.search_history_open_cd),
+                                tint = if (showHistorySuggestions) AppColors.Brass else AppColors.Muted,
+                            )
+                        }
+                    }
+                },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(
+                    onSearch = {
+                        onSubmitSearch(searchQuery)
+                        showHistorySuggestions = false
+                        focusManager.clearFocus()
+                    },
+                ),
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = Color.White,
+                    unfocusedContainerColor = Color.White,
+                    focusedBorderColor = AppColors.Brass,
+                    unfocusedBorderColor = AppColors.Line,
+                ),
+            )
+
+            FilterChip(
+                selected = isMyLocationActive,
+                onClick = onFindNearMyLocation,
+                modifier = Modifier
+                    .heightIn(min = 48.dp)
+                    .testTag("map_nearby_my_location_button"),
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Outlined.MyLocation,
+                        contentDescription = "محلات قريبة من موقعي",
+                        tint = if (isMyLocationActive) AppColors.BrassLight else AppColors.Brass,
+                        modifier = Modifier.size(16.dp),
+                    )
+                },
+                label = {
+                    Text(
+                        text = "قريب من موقعي",
+                        style = AppText.body.copy(fontSize = 11.5.sp, fontWeight = FontWeight.Bold),
+                    )
+                },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = AppColors.Ink,
+                    selectedLabelColor = AppColors.BrassLight,
+                    containerColor = Color.White,
+                    labelColor = AppColors.Ink,
+                ),
+            )
+        }
+
+        AnimatedVisibility(visible = showHistorySuggestions) {
+            SearchHistorySuggestionsPanel(
+                query = searchQuery,
+                searchHistory = searchHistory,
+                selectedCategory = selectedCategory,
+                catalogHints = catalogHints,
+                onSelectHistoryQuery = { query ->
+                    onSearchQueryChange(query)
+                    onSubmitSearch(query)
+                    showHistorySuggestions = false
+                    focusManager.clearFocus()
+                },
+                onRemoveHistoryQuery = onRemoveSearchHistoryItem,
+                onClearHistory = onClearSearchHistory,
+                onSelectCategory = { category ->
+                    if (onSelectCategoryFilter != null) {
+                        onSelectCategoryFilter(category.arabicLabel)
+                    } else {
+                        onSearchQueryChange(category.arabicLabel)
+                    }
+                    onSubmitSearch(category.arabicLabel)
+                    showHistorySuggestions = false
+                    focusManager.clearFocus()
+                },
+                onSelectCatalogHint = { item ->
+                    onSearchQueryChange(item)
+                    onSubmitSearch(item)
+                    showHistorySuggestions = false
+                    focusManager.clearFocus()
+                },
+                onDismiss = {
+                    showHistorySuggestions = false
+                    focusManager.clearFocus()
+                },
+                tagPrefix = "map_search",
+            )
+        }
     }
 }
 

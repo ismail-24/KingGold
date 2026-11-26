@@ -6,8 +6,11 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.FirebaseMarketNewsGateway
 import com.example.data.GlobalGoldFeedResult
 import com.example.data.GlobalGoldPriceService
+import com.example.data.InMemorySearchHistoryStore
 import com.example.data.KingGoldRepository
 import com.example.data.MarketNewsGateway
+import com.example.data.SearchHistoryHelper
+import com.example.data.SearchHistoryStore
 import com.example.data.remote.FirestoreKingGoldRepository
 import com.example.data.remote.FirestoreMarketplaceRepository
 import com.example.data.remote.FirestoreVaultRepository
@@ -96,6 +99,7 @@ data class KingGoldUiState(
     val selectedMerchantDocs: MerchantPrivateDocs? = null,
     val selectedMerchantAuditLogs: List<MerchantAuditLog> = emptyList(),
     val searchQuery: String = "",
+    val searchHistory: List<String> = emptyList(),
     val selectedKaratFilter: Int? = null,
     val selectedCityFilter: String? = null,
     val selectedCategoryFilter: String? = null,
@@ -168,6 +172,17 @@ data class KingGoldUiState(
             .map { it.city.trim() }
             .filter { it.isNotBlank() }
             .distinct()
+
+    val allCatalogSearchHints: List<String>
+        get() = buildList {
+            shops.forEach { shop ->
+                add(shop.name)
+                if (shop.city.isNotBlank()) add(shop.city)
+                productsForShop(shop.id).forEach { product ->
+                    add(product.name)
+                }
+            }
+        }.distinct()
 
     val filteredShops: List<Shop>
         get() {
@@ -403,6 +418,7 @@ class KingGoldViewModel(
     private val onPricesSynced: ((prices: List<KaratPrice>, feedStatus: GoldFeedStatus) -> Unit)? = null,
     private val marketNewsGateway: MarketNewsGateway = FirebaseMarketNewsGateway(),
     autoFetchPrices: Boolean = firestoreRepository != null,
+    private val searchHistoryStore: SearchHistoryStore = InMemorySearchHistoryStore(),
 ) : ViewModel() {
 
     private val isAdminUser = userEmail.equals(ADMIN_EMAIL, ignoreCase = true)
@@ -425,6 +441,11 @@ class KingGoldViewModel(
     private var lastNotifiedThresholdSignature: Triple<Int, Double, Double>? = null
 
     init {
+        viewModelScope.launch {
+            searchHistoryStore.historyFlow.collect { history ->
+                _uiState.update { it.copy(searchHistory = history) }
+            }
+        }
         if (firestoreRepository != null && currentUserId != null) {
             startFirestoreSync(firestoreRepository, currentUserId)
         }
@@ -705,6 +726,36 @@ class KingGoldViewModel(
 
     fun updateSearchQuery(query: String) {
         _uiState.update { it.copy(searchQuery = query) }
+    }
+
+    fun recordSearchHistory(query: String) {
+        val cleaned = SearchHistoryHelper.normalizeQuery(query)
+        if (cleaned.length < SearchHistoryHelper.MIN_QUERY_LENGTH) return
+        _uiState.update { state ->
+            state.copy(searchHistory = SearchHistoryHelper.addQuery(state.searchHistory, cleaned))
+        }
+        viewModelScope.launch {
+            val persisted = searchHistoryStore.recordQuery(cleaned)
+            _uiState.update { it.copy(searchHistory = persisted) }
+        }
+    }
+
+    fun removeSearchHistoryItem(query: String) {
+        _uiState.update { state ->
+            state.copy(searchHistory = SearchHistoryHelper.removeQuery(state.searchHistory, query))
+        }
+        viewModelScope.launch {
+            val persisted = searchHistoryStore.removeQuery(query)
+            _uiState.update { it.copy(searchHistory = persisted) }
+        }
+    }
+
+    fun clearSearchHistory() {
+        _uiState.update { it.copy(searchHistory = emptyList()) }
+        viewModelScope.launch {
+            val persisted = searchHistoryStore.clearHistory()
+            _uiState.update { it.copy(searchHistory = persisted) }
+        }
     }
 
     fun updateFilters(

@@ -1,5 +1,6 @@
 package com.example.ui.screens.shop
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -17,6 +18,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Close
@@ -55,10 +58,13 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -68,6 +74,7 @@ import com.example.model.Product
 import com.example.model.ProductCategory
 import com.example.model.Shop
 import com.example.ui.components.GoldProductEditorialCard
+import com.example.ui.components.SearchHistorySuggestionsPanel
 import com.example.ui.components.formatCurrency
 import com.example.ui.state.KingGoldUiState
 import com.example.ui.theme.AppColors
@@ -90,8 +97,13 @@ fun ProductListScreen(
     onToggleFavoriteProduct: (Product) -> Unit = {},
     onAddToCart: (Product) -> Unit,
     onOpenCart: () -> Unit,
+    onSubmitSearch: (String) -> Unit = {},
+    onRemoveSearchHistoryItem: (String) -> Unit = {},
+    onClearSearchHistory: () -> Unit = {},
 ) {
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
+    var showSearchSuggestions by remember { mutableStateOf(false) }
     val products = remember(shop.id, uiState.activeMerchantProducts) {
         uiState.productsForShop(shop.id)
     }
@@ -276,10 +288,16 @@ fun ProductListScreen(
             ) {
                 OutlinedTextField(
                     value = searchQuery,
-                    onValueChange = { searchQuery = it },
+                    onValueChange = {
+                        searchQuery = it
+                        showSearchSuggestions = true
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 14.dp, vertical = 4.dp)
+                        .onFocusChanged { focusState ->
+                            showSearchSuggestions = focusState.isFocused
+                        }
                         .testTag("product_list_search_input"),
                     placeholder = {
                         Text(
@@ -296,7 +314,10 @@ fun ProductListScreen(
                     },
                     trailingIcon = if (searchQuery.isNotEmpty()) {
                         {
-                            IconButton(onClick = { searchQuery = "" }) {
+                            IconButton(
+                                onClick = { searchQuery = "" },
+                                modifier = Modifier.testTag("product_list_search_clear"),
+                            ) {
                                 Icon(
                                     imageVector = Icons.Outlined.Close,
                                     contentDescription = "مسح البحث",
@@ -308,6 +329,14 @@ fun ProductListScreen(
                         null
                     },
                     singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(
+                        onSearch = {
+                            onSubmitSearch(searchQuery)
+                            showSearchSuggestions = false
+                            focusManager.clearFocus()
+                        },
+                    ),
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedContainerColor = Color.White,
@@ -316,6 +345,50 @@ fun ProductListScreen(
                         unfocusedBorderColor = AppColors.Line,
                     ),
                 )
+
+                AnimatedVisibility(visible = showSearchSuggestions) {
+                    val productHints = remember(products) {
+                        products.map { it.name }.distinct()
+                    }
+                    SearchHistorySuggestionsPanel(
+                        query = searchQuery,
+                        searchHistory = uiState.searchHistory,
+                        selectedCategory = selectedCategory.takeIf { it != "الكل" },
+                        catalogHints = productHints,
+                        onSelectHistoryQuery = { query ->
+                            searchQuery = query
+                            selectedCategory = "الكل"
+                            onSubmitSearch(query)
+                            showSearchSuggestions = false
+                            focusManager.clearFocus()
+                        },
+                        onRemoveHistoryQuery = onRemoveSearchHistoryItem,
+                        onClearHistory = onClearSearchHistory,
+                        onSelectCategory = { category ->
+                            selectedCategory = if (categories.contains(category.arabicLabel)) {
+                                category.arabicLabel
+                            } else {
+                                "الكل"
+                            }
+                            searchQuery = ""
+                            onSubmitSearch(category.arabicLabel)
+                            showSearchSuggestions = false
+                            focusManager.clearFocus()
+                        },
+                        onSelectCatalogHint = { item ->
+                            searchQuery = item
+                            onSubmitSearch(item)
+                            showSearchSuggestions = false
+                            focusManager.clearFocus()
+                        },
+                        onDismiss = {
+                            showSearchSuggestions = false
+                            focusManager.clearFocus()
+                        },
+                        tagPrefix = "product_search",
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
+                    )
+                }
 
                 LazyRow(
                     contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
@@ -419,7 +492,12 @@ fun ProductListScreen(
                                 finalPriceEgp = finalPriceEgp,
                                 isFavorite = uiState.isProductFavorite(shop.id, product.id),
                                 onToggleFavorite = { onToggleFavoriteProduct(product) },
-                                onOpenDetails = { onOpenProduct(product) },
+                                onOpenDetails = {
+                                    if (searchQuery.isNotBlank()) {
+                                        onSubmitSearch(searchQuery)
+                                    }
+                                    onOpenProduct(product)
+                                },
                                 onAddToCart = {
                                     if (product.availablePieces > 0) {
                                         onAddToCart(product)

@@ -14,4 +14,11 @@
     <string name="widget_gold_price_header">King Gold · تتبع الذهب اللحظي</string>
     <string name="widget_refresh_cd">تحديث أسعار الذهب في الويدجت</string>
     <string name="widget_open_calculator">الحاسبة</string>
+    <string name="search_history_recent_title">عمليات البحث الأخيرة</string>
+    <string name="search_history_categories_title">فئات منتجات الذهب</string>
+    <string name="search_history_matches_title">اقتراحات مطابقة</string>
+    <string name="search_history_clear_all">مسح السجل</string>
+    <string name="search_history_remove_cd">حذف من سجل البحث</string>
+    <string name="search_history_hide_suggestions">إخفاء</string>
+    <string name="search_history_open_cd">سجل البحث والفئات</string>
 </resources>

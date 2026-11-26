@@ -1,5 +1,6 @@
 package com.example.ui.screens.home
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -27,6 +28,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.Favorite
@@ -88,10 +91,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.GoldProductImageLibrary
@@ -108,6 +114,7 @@ import com.example.ui.components.GoldShopsMapView
 import com.example.ui.components.MarketNewsSectionCard
 import com.example.ui.components.RealTimeGlobalGoldPriceBanner
 import com.example.ui.components.SealBadge
+import com.example.ui.components.SearchHistorySuggestionsPanel
 import com.example.ui.components.ShopGoldMedallion
 import com.example.ui.components.VerifiedStrip
 import com.example.ui.state.KingGoldUiState
@@ -151,10 +158,15 @@ fun DiscoverScreen(
     onUpdateNearbyRadius: (Double?) -> Unit = {},
     onClearSearchAnchor: () -> Unit = {},
     onUserLocationResolved: (Double, Double) -> Unit = { _, _ -> },
+    onSubmitSearch: (String) -> Unit = {},
+    onRemoveSearchHistoryItem: (String) -> Unit = {},
+    onClearSearchHistory: () -> Unit = {},
 ) {
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
     var showFilterSheet by remember { mutableStateOf(false) }
     var isMapView by rememberSaveable { mutableStateOf(false) }
+    var showSearchSuggestions by remember { mutableStateOf(false) }
 
     val featuredShowcase = remember(uiState.filteredShops, uiState.activeMerchantProducts) {
         val sourceShops = if (uiState.filteredShops.isNotEmpty()) uiState.filteredShops else uiState.shops
@@ -313,70 +325,128 @@ fun DiscoverScreen(
             }
 
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    OutlinedTextField(
-                        value = uiState.searchQuery,
-                        onValueChange = onSearchChange,
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("discover_search_input"),
-                        placeholder = {
-                            Text(
-                                text = "ابحث عن محل ذهب بالاسم أو المدينة...",
-                                style = AppText.body.copy(color = AppColors.Muted, fontSize = 13.sp),
-                            )
-                        },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Outlined.Search,
-                                contentDescription = "بحث",
-                                tint = AppColors.Muted,
-                            )
-                        },
-                        trailingIcon = if (uiState.searchQuery.isNotEmpty()) {
-                            {
-                                IconButton(
-                                    onClick = { onSearchChange("") },
-                                    modifier = Modifier.testTag("discover_search_clear"),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.Close,
-                                        contentDescription = "مسح البحث",
-                                        tint = AppColors.Muted,
-                                    )
-                                }
-                            }
-                        } else {
-                            null
-                        },
-                        singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = Color.White,
-                            unfocusedContainerColor = Color.White,
-                            focusedBorderColor = AppColors.Brass,
-                            unfocusedBorderColor = AppColors.Line,
-                        ),
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Box(
-                        modifier = Modifier
-                            .size(54.dp)
-                            .minimumInteractiveComponentSize()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(AppColors.Ink)
-                            .clickable { showFilterSheet = true }
-                            .testTag("discover_filter_button"),
-                        contentAlignment = Alignment.Center,
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Tune,
-                            contentDescription = "تصفية النتائج",
-                            tint = AppColors.BrassLight,
-                            modifier = Modifier.size(22.dp),
+                        OutlinedTextField(
+                            value = uiState.searchQuery,
+                            onValueChange = {
+                                onSearchChange(it)
+                                showSearchSuggestions = true
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .onFocusChanged { focusState ->
+                                    if (focusState.isFocused) {
+                                        showSearchSuggestions = true
+                                    } else {
+                                        showSearchSuggestions = false
+                                    }
+                                }
+                                .testTag("discover_search_input"),
+                            placeholder = {
+                                Text(
+                                    text = "ابحث عن محل ذهب بالاسم أو المدينة أو الفئة...",
+                                    style = AppText.body.copy(color = AppColors.Muted, fontSize = 13.sp),
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Outlined.Search,
+                                    contentDescription = "بحث",
+                                    tint = AppColors.Muted,
+                                )
+                            },
+                            trailingIcon = if (uiState.searchQuery.isNotEmpty()) {
+                                {
+                                    IconButton(
+                                        onClick = { onSearchChange("") },
+                                        modifier = Modifier.testTag("discover_search_clear"),
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Close,
+                                            contentDescription = "مسح البحث",
+                                            tint = AppColors.Muted,
+                                        )
+                                    }
+                                }
+                            } else {
+                                null
+                            },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                            keyboardActions = KeyboardActions(
+                                onSearch = {
+                                    onSubmitSearch(uiState.searchQuery)
+                                    showSearchSuggestions = false
+                                    focusManager.clearFocus()
+                                },
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedContainerColor = Color.White,
+                                unfocusedContainerColor = Color.White,
+                                focusedBorderColor = AppColors.Brass,
+                                unfocusedBorderColor = AppColors.Line,
+                            ),
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(54.dp)
+                                .minimumInteractiveComponentSize()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(AppColors.Ink)
+                                .clickable { showFilterSheet = true }
+                                .testTag("discover_filter_button"),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Tune,
+                                contentDescription = "تصفية النتائج",
+                                tint = AppColors.BrassLight,
+                                modifier = Modifier.size(22.dp),
+                            )
+                        }
+                    }
+
+                    AnimatedVisibility(visible = showSearchSuggestions) {
+                        val catalogHints = remember(uiState.shops, uiState.activeMerchantProducts) {
+                            uiState.allCatalogSearchHints
+                        }
+                        SearchHistorySuggestionsPanel(
+                            query = uiState.searchQuery,
+                            searchHistory = uiState.searchHistory,
+                            selectedCategory = uiState.selectedCategoryFilter,
+                            catalogHints = catalogHints,
+                            onSelectHistoryQuery = { query ->
+                                onSearchChange(query)
+                                onSubmitSearch(query)
+                                showSearchSuggestions = false
+                                focusManager.clearFocus()
+                            },
+                            onRemoveHistoryQuery = onRemoveSearchHistoryItem,
+                            onClearHistory = onClearSearchHistory,
+                            onSelectCategory = { category ->
+                                onSelectCategoryFilter(category.arabicLabel)
+                                onSearchChange("")
+                                onSubmitSearch(category.arabicLabel)
+                                showSearchSuggestions = false
+                                focusManager.clearFocus()
+                            },
+                            onSelectCatalogHint = { item ->
+                                onSearchChange(item)
+                                onSubmitSearch(item)
+                                showSearchSuggestions = false
+                                focusManager.clearFocus()
+                            },
+                            onDismiss = {
+                                showSearchSuggestions = false
+                                focusManager.clearFocus()
+                            },
+                            tagPrefix = "discover_search",
                         )
                     }
                 }
@@ -686,7 +756,12 @@ fun DiscoverScreen(
                                     finalPriceEgp = priceEgp,
                                     isFavorite = uiState.isProductFavorite(shop.id, product.id),
                                     onToggleFavorite = { onToggleFavoriteProduct(shop.id, product.id) },
-                                    onClick = { onOpenProduct(shop, product) },
+                                    onClick = {
+                                        if (uiState.searchQuery.isNotBlank()) {
+                                            onSubmitSearch(uiState.searchQuery)
+                                        }
+                                        onOpenProduct(shop, product)
+                                    },
                                 )
                             }
                         }
@@ -967,6 +1042,16 @@ fun DiscoverScreen(
                         onUserLocationResolved = onUserLocationResolved,
                         autoCenterOnUserLocation = true,
                         initialLocationDenied = uiState.locationPermissionDeniedOnStartup,
+                        searchHistory = uiState.searchHistory,
+                        catalogHints = uiState.allCatalogSearchHints,
+                        selectedCategory = uiState.selectedCategoryFilter,
+                        onSubmitSearch = onSubmitSearch,
+                        onRemoveSearchHistoryItem = onRemoveSearchHistoryItem,
+                        onClearSearchHistory = onClearSearchHistory,
+                        onSelectCategoryFilter = { category ->
+                            onSelectCategoryFilter(category)
+                            onSearchChange("")
+                        },
                     )
                 }
             } else if (uiState.filteredShops.isEmpty()) {
@@ -1037,7 +1122,12 @@ fun DiscoverScreen(
                                 label = shop.name,
                             ) {}
                         },
-                        onClick = { onOpenShop(shop) },
+                        onClick = {
+                            if (uiState.searchQuery.isNotBlank()) {
+                                onSubmitSearch(uiState.searchQuery)
+                            }
+                            onOpenShop(shop)
+                        },
                     )
                 }
             }

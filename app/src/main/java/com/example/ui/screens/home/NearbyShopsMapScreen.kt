@@ -80,6 +80,10 @@ fun NearbyShopsMapScreen(
     onUserLocationResolved: (Double, Double) -> Unit = { _, _ -> },
     onFocusShopOnMap: (String) -> Unit = {},
     onOpenSavedShopsScreen: () -> Unit = {},
+    onSubmitSearch: (String) -> Unit = {},
+    onRemoveSearchHistoryItem: (String) -> Unit = {},
+    onClearSearchHistory: () -> Unit = {},
+    onSelectCategoryFilter: (String?) -> Unit = {},
 ) {
     var findNearMyLocationSignal by remember { mutableIntStateOf(0) }
     var localFocusedShopId by remember { mutableStateOf<String?>(null) }
@@ -295,11 +299,24 @@ fun NearbyShopsMapScreen(
                     }
                 }
 
+                val mapCatalogHints = remember(uiState.shops, uiState.activeMerchantProducts) {
+                    uiState.allCatalogSearchHints
+                }
                 MapSearchBarHeader(
                     searchQuery = uiState.searchQuery,
                     onSearchQueryChange = onSearchChange,
                     onFindNearMyLocation = { findNearMyLocationSignal++ },
                     isMyLocationActive = uiState.searchAnchorLabel == "موقعي الحالي",
+                    searchHistory = uiState.searchHistory,
+                    catalogHints = mapCatalogHints,
+                    selectedCategory = uiState.selectedCategoryFilter,
+                    onSubmitSearch = onSubmitSearch,
+                    onRemoveSearchHistoryItem = onRemoveSearchHistoryItem,
+                    onClearSearchHistory = onClearSearchHistory,
+                    onSelectCategoryFilter = { category ->
+                        onSelectCategoryFilter(category)
+                        onSearchChange("")
+                    },
                 )
 
                 MapKaratFilterRow(

@@ -421,6 +421,9 @@ internal fun NavGraphBuilder.registerSecondaryDestinations(
                 onToggleFavoriteProduct = { product -> vm.toggleFavoriteProduct(shop.id, product.id) },
                 onAddToCart = { product -> vm.addToCart(shop, product) },
                 onOpenCart = { navController.navigateSingleTop(Routes.CART, isAuthorized) },
+                onSubmitSearch = vm::recordSearchHistory,
+                onRemoveSearchHistoryItem = vm::removeSearchHistoryItem,
+                onClearSearchHistory = vm::clearSearchHistory,
             )
         }
     }

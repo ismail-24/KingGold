@@ -129,6 +129,13 @@ fun GoldShopsMapView(
     initialLocationDenied: Boolean = false,
     focusedShopId: String? = null,
     focusShopSignal: Int = 0,
+    searchHistory: List<String> = emptyList(),
+    catalogHints: List<String> = emptyList(),
+    selectedCategory: String? = null,
+    onSubmitSearch: (String) -> Unit = {},
+    onRemoveSearchHistoryItem: (String) -> Unit = {},
+    onClearSearchHistory: () -> Unit = {},
+    onSelectCategoryFilter: ((String) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -471,6 +478,13 @@ fun GoldShopsMapView(
                 onSearchQueryChange = updateQuery,
                 onFindNearMyLocation = ::triggerFindNearMyLocation,
                 isMyLocationActive = effectiveAnchorLabel == "موقعي الحالي",
+                searchHistory = searchHistory,
+                catalogHints = catalogHints,
+                selectedCategory = selectedCategory,
+                onSubmitSearch = onSubmitSearch,
+                onRemoveSearchHistoryItem = onRemoveSearchHistoryItem,
+                onClearSearchHistory = onClearSearchHistory,
+                onSelectCategoryFilter = onSelectCategoryFilter,
             )
         }
 

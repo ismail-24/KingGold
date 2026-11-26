@@ -22,6 +22,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
+import com.example.data.DataStoreSearchHistoryStore
 import com.example.data.remote.FirestoreKingGoldRepository
 import com.example.data.remote.FirestoreMarketplaceRepository
 import com.example.data.remote.FirestoreVaultRepository
@@ -167,6 +168,7 @@ private fun rememberUserSessionViewModels(
                         onPricesSynced = { syncedPrices, feedStatus ->
                             GoldPriceAppWidgetProvider.syncFromPrices(app, syncedPrices, feedStatus)
                         },
+                        searchHistoryStore = DataStoreSearchHistoryStore(app),
                     )
                 }
             },

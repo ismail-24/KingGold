@@ -304,6 +304,9 @@ fun KingGoldNavHost(
                         onUpdateNearbyRadius = vm::updateNearbyRadiusKm,
                         onClearSearchAnchor = vm::clearSearchAnchor,
                         onUserLocationResolved = vm::updateUserLocation,
+                        onSubmitSearch = vm::recordSearchHistory,
+                        onRemoveSearchHistoryItem = vm::removeSearchHistoryItem,
+                        onClearSearchHistory = vm::clearSearchHistory,
                     )
                 }
             }
@@ -336,6 +339,10 @@ fun KingGoldNavHost(
                         onUserLocationResolved = vm::updateUserLocation,
                         onFocusShopOnMap = vm::focusShopOnMap,
                         onOpenSavedShopsScreen = { navController.navigateSingleTop(Routes.SAVED_SHOPS, isAuthorized) },
+                        onSubmitSearch = vm::recordSearchHistory,
+                        onRemoveSearchHistoryItem = vm::removeSearchHistoryItem,
+                        onClearSearchHistory = vm::clearSearchHistory,
+                        onSelectCategoryFilter = vm::updateCategoryFilter,
                     )
                 }
             }
