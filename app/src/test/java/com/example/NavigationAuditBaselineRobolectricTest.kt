@@ -49,7 +49,8 @@ class NavigationAuditBaselineRobolectricTest {
     val composeRule = createAndroidComposeRule<ComponentActivity>()
 
     private fun scrollLazyToTag(tag: String) {
-        composeRule.onNode(hasScrollToNodeAction())
+        composeRule.onAllNodes(hasScrollToNodeAction())
+            .onFirst()
             .performScrollToNode(hasTestTag(tag))
         composeRule.waitForIdle()
     }
@@ -167,7 +168,7 @@ class NavigationAuditBaselineRobolectricTest {
         composeRule.onNodeWithTag("browse_shop_gold_button").performClick()
         composeRule.waitForIdle()
 
-        composeRule.onNodeWithTag("quick_add_p1").performClick()
+        composeRule.onNodeWithTag("quick_add_p1").performScrollTo().performClick()
         composeRule.waitForIdle()
 
         composeRule.onNodeWithTag("view_cart_button").performClick()

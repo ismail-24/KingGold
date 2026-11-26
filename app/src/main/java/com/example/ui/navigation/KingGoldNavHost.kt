@@ -270,7 +270,11 @@ fun KingGoldNavHost(
                         onRefreshGlobalGoldPrices = vm::refreshGlobalGoldPrices,
                         onOpenCart = { navController.navigateSingleTop(Routes.CART, isAuthorized) },
                         onOpenShop = { shop -> navController.navigateSingleTop(Routes.shopDetail(shop.id), isAuthorized) },
+                        onOpenProduct = { shop, product ->
+                            navController.navigateSingleTop(Routes.productDetail(shop.id, product.id), isAuthorized)
+                        },
                         onToggleFavoriteShop = vm::toggleFavoriteShop,
+                        onToggleFavoriteProduct = vm::toggleFavoriteProduct,
                         onToggleFavoritesOnlyFilter = vm::toggleFavoritesOnlyFilter,
                         onSelectCityFilter = vm::updateCityFilter,
                         onSelectCategoryFilter = vm::updateCategoryFilter,

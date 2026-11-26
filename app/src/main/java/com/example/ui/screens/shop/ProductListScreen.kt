@@ -2,20 +2,15 @@ package com.example.ui.screens.shop
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -24,7 +19,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.ShoppingBag
@@ -37,7 +31,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -63,21 +56,24 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.GoldProductImageLibrary
 import com.example.model.MoneyUtils
 import com.example.model.Product
 import com.example.model.ProductCategory
 import com.example.model.Shop
-import com.example.ui.components.GoldMarketplaceImage
-import com.example.ui.components.ProductGoldArtwork
+import com.example.ui.components.GoldProductEditorialCard
 import com.example.ui.components.formatCurrency
 import com.example.ui.state.KingGoldUiState
 import com.example.ui.theme.AppColors
 import com.example.ui.theme.AppText
+import com.example.ui.util.GoldImageTier
+import com.example.ui.util.KingGoldImageLoader
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
@@ -91,9 +87,11 @@ fun ProductListScreen(
     uiState: KingGoldUiState,
     onBack: () -> Unit,
     onOpenProduct: (Product) -> Unit,
+    onToggleFavoriteProduct: (Product) -> Unit = {},
     onAddToCart: (Product) -> Unit,
     onOpenCart: () -> Unit,
 ) {
+    val context = LocalContext.current
     val products = remember(shop.id, uiState.activeMerchantProducts) {
         uiState.productsForShop(shop.id)
     }
@@ -148,6 +146,20 @@ fun ProductListScreen(
                 if (nearEnd && visibleCount < shown.size) {
                     visibleCount = (visibleCount + PRODUCT_PAGE_SIZE).coerceAtMost(shown.size)
                 }
+            }
+    }
+
+    // Intelligently prefetch upcoming product images while scrolling
+    LaunchedEffect(listState, pagedProducts) {
+        snapshotFlow { listState.firstVisibleItemIndex }
+            .distinctUntilChanged()
+            .collect { firstIdx ->
+                val upcoming = pagedProducts.drop(firstIdx).take(5)
+                val urls = GoldProductImageLibrary.buildProductPrefetchUrls(
+                    products = upcoming,
+                    tier = GoldImageTier.CARD_MEDIUM,
+                )
+                KingGoldImageLoader.prefetch(context, urls, GoldImageTier.CARD_MEDIUM)
             }
     }
 
@@ -366,7 +378,7 @@ fun ProductListScreen(
                         .fillMaxSize()
                         .testTag("product_list_lazy_column"),
                     contentPadding = PaddingValues(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     if (pagedProducts.isEmpty()) {
                         item {
@@ -401,129 +413,30 @@ fun ProductListScreen(
                     } else {
                         items(pagedProducts, key = { it.id }) { product ->
                             val finalPriceEgp = MoneyUtils.piastersToEgp(uiState.productFinalPricePiasters(product))
-                            val shape = RoundedCornerShape(14.dp)
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(shape)
-                                    .background(Color.White)
-                                    .border(1.dp, AppColors.Line, shape)
-                                    .clickable { onOpenProduct(product) }
-                                    .padding(12.dp)
-                                    .testTag("product_card_${product.id}"),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Box(modifier = Modifier.size(84.dp)) {
-                                    GoldMarketplaceImage(
-                                        imageUrl = product.thumbnailUrl,
-                                        base64Thumbnail = product.imageThumbnails.firstOrNull(),
-                                        contentDescription = product.name,
-                                        modifier = Modifier.fillMaxSize(),
-                                        cornerRadius = 12.dp,
-                                        isThumbnail = true,
-                                        fallback = {
-                                            ProductGoldArtwork(
-                                                category = product.category,
-                                                karat = product.karat,
-                                                modifier = Modifier.fillMaxSize(),
-                                                cornerRadius = 12.dp,
+                            GoldProductEditorialCard(
+                                product = product,
+                                shopName = shop.name,
+                                finalPriceEgp = finalPriceEgp,
+                                isFavorite = uiState.isProductFavorite(shop.id, product.id),
+                                onToggleFavorite = { onToggleFavoriteProduct(product) },
+                                onOpenDetails = { onOpenProduct(product) },
+                                onAddToCart = {
+                                    if (product.availablePieces > 0) {
+                                        onAddToCart(product)
+                                        scope.launch {
+                                            snackbarHostState.currentSnackbarData?.dismiss()
+                                            val result = snackbarHostState.showSnackbar(
+                                                message = "تمت إضافة ${product.name} للسلة",
+                                                actionLabel = "عرض السلة",
+                                                duration = SnackbarDuration.Short,
                                             )
-                                        },
-                                    )
-                                    Box(
-                                        modifier = Modifier
-                                            .align(Alignment.TopStart)
-                                            .padding(4.dp)
-                                            .clip(RoundedCornerShape(6.dp))
-                                            .background(AppColors.Ink.copy(alpha = 0.85f))
-                                            .padding(horizontal = 5.dp, vertical = 1.dp),
-                                    ) {
-                                        Text(
-                                            text = "${product.karat}K",
-                                            style = AppText.body.copy(
-                                                color = AppColors.BrassLight,
-                                                fontSize = 9.5.sp,
-                                                fontWeight = FontWeight.Bold,
-                                            ),
-                                        )
-                                    }
-                                }
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = product.name,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        style = AppText.body.copy(fontWeight = FontWeight.ExtraBold, fontSize = 14.5.sp),
-                                    )
-                                    Text(
-                                        text = "${product.category}${if (product.designStyle.isNotBlank()) " · ${product.designStyle}" else ""}",
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        style = AppText.body.copy(color = AppColors.Seal, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold),
-                                    )
-                                    Text(
-                                        text = "عيار ${product.karat} · ${product.weightGrams} جم · ${product.availablePieces} متاح",
-                                        style = AppText.body.copy(color = AppColors.Muted, fontSize = 11.5.sp),
-                                    )
-                                    Text(
-                                        text = if (product.isPhotoVerifiedInventory) {
-                                            "صورة موثّقة من التاجر"
-                                        } else {
-                                            "صورة توضيحية للتصميم"
-                                        },
-                                        style = AppText.body.copy(
-                                            color = if (product.isPhotoVerifiedInventory) AppColors.Trust else AppColors.Muted,
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.Bold,
-                                        ),
-                                    )
-                                }
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Column(horizontalAlignment = Alignment.End) {
-                                    Text(
-                                        text = "${formatCurrency(finalPriceEgp, decimals = 0)} ج.م",
-                                        style = AppText.body.copy(fontWeight = FontWeight.ExtraBold, fontSize = 14.sp),
-                                    )
-                                    Text(
-                                        text = "بدون مصنعية",
-                                        style = AppText.body.copy(color = AppColors.Trust, fontSize = 10.sp, fontWeight = FontWeight.Bold),
-                                    )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    IconButton(
-                                        onClick = {
-                                            if (product.availablePieces > 0) {
-                                                onAddToCart(product)
-                                                scope.launch {
-                                                    snackbarHostState.currentSnackbarData?.dismiss()
-                                                    val result = snackbarHostState.showSnackbar(
-                                                        message = "تمت إضافة ${product.name} للسلة",
-                                                        actionLabel = "عرض السلة",
-                                                        duration = SnackbarDuration.Short,
-                                                    )
-                                                    if (result == SnackbarResult.ActionPerformed) {
-                                                        onOpenCart()
-                                                    }
-                                                }
+                                            if (result == SnackbarResult.ActionPerformed) {
+                                                onOpenCart()
                                             }
-                                        },
-                                        enabled = product.availablePieces > 0,
-                                        modifier = Modifier
-                                            .size(48.dp)
-                                            .testTag("quick_add_${product.id}"),
-                                        colors = IconButtonDefaults.filledIconButtonColors(
-                                            containerColor = AppColors.Ink,
-                                            contentColor = AppColors.BrassLight,
-                                        ),
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Filled.Add,
-                                            contentDescription = "أضف ${product.name} للسلة",
-                                            modifier = Modifier.size(20.dp),
-                                        )
+                                        }
                                     }
-                                }
-                            }
+                                },
+                            )
                         }
 
                         if (hasMore) {

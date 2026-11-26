@@ -365,8 +365,10 @@ internal fun NavGraphBuilder.registerSecondaryDestinations(
                 products = uiState.productsForShop(shop.id),
                 prices = uiState.prices,
                 isFavorite = uiState.favoriteShopIds.contains(shop.id),
+                favoriteProductKeys = uiState.favoriteProductKeys,
                 cartItemCount = uiState.cartItemCount,
                 onToggleFavorite = { vm.toggleFavoriteShop(shop.id) },
+                onToggleFavoriteProduct = { productId -> vm.toggleFavoriteProduct(shop.id, productId) },
                 onOpenCart = { navController.navigateSingleTop(Routes.CART, isAuthorized) },
                 onBack = { navController.popBackSafely() },
                 onBrowseProducts = { category ->
@@ -416,6 +418,7 @@ internal fun NavGraphBuilder.registerSecondaryDestinations(
                 onOpenProduct = { product ->
                     navController.navigateSingleTop(Routes.productDetail(shop.id, product.id), isAuthorized)
                 },
+                onToggleFavoriteProduct = { product -> vm.toggleFavoriteProduct(shop.id, product.id) },
                 onAddToCart = { product -> vm.addToCart(shop, product) },
                 onOpenCart = { navController.navigateSingleTop(Routes.CART, isAuthorized) },
             )
@@ -439,9 +442,8 @@ internal fun NavGraphBuilder.registerSecondaryDestinations(
             val shopId = backStackEntry.arguments?.getString("shopId").orEmpty()
             val productId = backStackEntry.arguments?.getString("productId").orEmpty()
             val shop = vm.findShop(shopId)
-            val product = shop?.let { s ->
-                uiState.productsForShop(s.id).firstOrNull { it.id == productId }
-            }
+            val shopProducts = shop?.let { s -> uiState.productsForShop(s.id) }.orEmpty()
+            val product = shopProducts.firstOrNull { it.id == productId }
             if (shop == null || product == null) {
                 RouteNotFoundFallback(
                     message = "هذا المنتج غير متاح حالياً أو تم تحديث مخزونه",
@@ -450,12 +452,24 @@ internal fun NavGraphBuilder.registerSecondaryDestinations(
                 )
                 return@AuthenticatedRoute
             }
+            val relatedProducts = shopProducts
+                .filter { it.id != product.id }
+                .sortedByDescending { it.category == product.category }
+                .take(6)
             ProductDetailScreen(
                 shop = shop,
                 product = product,
+                relatedProducts = relatedProducts,
                 gramPrice = uiState.gramPrice(product.karat),
                 cartItemCount = uiState.cartItemCount,
+                isFavorite = uiState.isProductFavorite(shop.id, product.id),
+                favoriteProductKeys = uiState.favoriteProductKeys,
                 onBack = { navController.popBackSafely() },
+                onToggleFavorite = { vm.toggleFavoriteProduct(shop.id, product.id) },
+                onToggleRelatedFavorite = { related -> vm.toggleFavoriteProduct(shop.id, related.id) },
+                onOpenRelatedProduct = { related ->
+                    navController.navigateSingleTop(Routes.productDetail(shop.id, related.id), isAuthorized)
+                },
                 onAddToCart = { vm.addToCart(shop, product) },
                 onOpenCart = { navController.navigateSingleTop(Routes.CART, isAuthorized) },
                 onAskAiAboutProduct = {

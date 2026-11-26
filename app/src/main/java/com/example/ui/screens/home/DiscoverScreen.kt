@@ -22,8 +22,10 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
@@ -68,13 +70,16 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -89,13 +94,16 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.GoldProductImageLibrary
 import com.example.model.MarketNewsTopic
 import com.example.model.MoneyUtils
+import com.example.model.Product
 import com.example.model.ProductCategory
 import com.example.model.Shop
 import com.example.model.ShopSortOption
 import com.example.ui.components.DailyGoldPriceTrendChartCard
 import com.example.ui.components.GoldMarketplaceImage
+import com.example.ui.components.GoldProductCarouselCard
 import com.example.ui.components.GoldShopsMapView
 import com.example.ui.components.MarketNewsSectionCard
 import com.example.ui.components.RealTimeGlobalGoldPriceBanner
@@ -105,6 +113,8 @@ import com.example.ui.components.VerifiedStrip
 import com.example.ui.state.KingGoldUiState
 import com.example.ui.theme.AppColors
 import com.example.ui.theme.AppText
+import com.example.ui.util.GoldImageTier
+import com.example.ui.util.KingGoldImageLoader
 import com.example.ui.util.openDirections
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -118,7 +128,9 @@ fun DiscoverScreen(
     onRefreshGlobalGoldPrices: () -> Unit,
     onOpenCart: () -> Unit,
     onOpenShop: (Shop) -> Unit,
+    onOpenProduct: (Shop, Product) -> Unit = { shop, _ -> onOpenShop(shop) },
     onToggleFavoriteShop: (String) -> Unit,
+    onToggleFavoriteProduct: (String, String) -> Unit = { _, _ -> },
     onToggleFavoritesOnlyFilter: (Boolean) -> Unit,
     onSelectCityFilter: (String?) -> Unit = {},
     onSelectCategoryFilter: (String?) -> Unit = {},
@@ -143,6 +155,28 @@ fun DiscoverScreen(
     val context = LocalContext.current
     var showFilterSheet by remember { mutableStateOf(false) }
     var isMapView by rememberSaveable { mutableStateOf(false) }
+
+    val featuredShowcase = remember(uiState.filteredShops, uiState.activeMerchantProducts) {
+        val sourceShops = if (uiState.filteredShops.isNotEmpty()) uiState.filteredShops else uiState.shops
+        sourceShops.take(6).mapIndexedNotNull { index, shop ->
+            val shopProducts = uiState.productsForShop(shop.id)
+            val chosen = shopProducts.getOrNull(index % shopProducts.size.coerceAtLeast(1))
+                ?: shopProducts.firstOrNull()
+            chosen?.let { shop to it }
+        }
+    }
+
+    LaunchedEffect(uiState.filteredShops, featuredShowcase) {
+        val shopUrls = GoldProductImageLibrary.buildShopBannerPrefetchUrls(
+            shops = uiState.filteredShops.take(6),
+            tier = GoldImageTier.CARD_MEDIUM,
+        )
+        val productUrls = GoldProductImageLibrary.buildProductPrefetchUrls(
+            products = featuredShowcase.map { it.second },
+            tier = GoldImageTier.CARD_MEDIUM,
+        )
+        KingGoldImageLoader.prefetch(context, shopUrls + productUrls, GoldImageTier.CARD_MEDIUM)
+    }
 
     Box(
         modifier = Modifier
@@ -617,6 +651,47 @@ fun DiscoverScreen(
                     onOpenFullNews = onOpenMarketNews,
                     maxArticlesInPreview = 2,
                 )
+            }
+
+            if (featuredShowcase.isNotEmpty()) {
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column {
+                                Text(
+                                    text = "معرض الذهب والسبائك المختار",
+                                    style = AppText.display.copy(fontSize = 16.sp),
+                                )
+                                Text(
+                                    text = "تشكيلة متنوعة من السبائك والجنيهات والمشغولات عبر المحلات",
+                                    style = AppText.body.copy(color = AppColors.Muted, fontSize = 11.5.sp),
+                                )
+                            }
+                        }
+                        LazyRow(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("discover_featured_products_row"),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            items(featuredShowcase, key = { "${it.first.id}_${it.second.id}" }) { (shop, product) ->
+                                val priceEgp = MoneyUtils.piastersToEgp(uiState.productFinalPricePiasters(product))
+                                GoldProductCarouselCard(
+                                    product = product,
+                                    shopName = shop.name,
+                                    finalPriceEgp = priceEgp,
+                                    isFavorite = uiState.isProductFavorite(shop.id, product.id),
+                                    onToggleFavorite = { onToggleFavoriteProduct(shop.id, product.id) },
+                                    onClick = { onOpenProduct(shop, product) },
+                                )
+                            }
+                        }
+                    }
+                }
             }
 
             item {
@@ -1141,7 +1216,10 @@ private fun ShopTile(
     onOpenDirections: () -> Unit,
     onClick: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(16.dp)
+    val visualProfile = remember(shop.id, shop.coverImageUrl, shop.logoUrl) {
+        GoldProductImageLibrary.resolveShopVisual(shop)
+    }
+    val shape = RoundedCornerShape(18.dp)
     Card(
         onClick = onClick,
         modifier = Modifier
@@ -1149,118 +1227,193 @@ private fun ShopTile(
             .testTag("shop_card_${shop.id}"),
         shape = shape,
         colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         border = androidx.compose.foundation.BorderStroke(
             width = 1.dp,
-            color = if (isFavorite) AppColors.Brass.copy(alpha = 0.55f) else AppColors.Line,
+            color = if (isFavorite) AppColors.Brass.copy(alpha = 0.65f) else AppColors.Line,
         ),
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(126.dp),
             ) {
                 GoldMarketplaceImage(
-                    imageUrl = shop.logoUrl ?: shop.coverImageUrl,
+                    imageUrl = GoldProductImageLibrary.shopCoverUrl(shop, GoldImageTier.CARD_MEDIUM),
                     base64Thumbnail = null,
-                    contentDescription = shop.name,
-                    modifier = Modifier.size(56.dp),
-                    cornerRadius = 12.dp,
-                    isThumbnail = true,
-                    fallback = {
-                        ShopGoldMedallion(
-                            shopId = shop.id,
-                            modifier = Modifier.fillMaxSize(),
-                            cornerRadius = 12.dp,
-                        )
-                    },
+                    contentDescription = "${shop.name} — صورة معرض الذهب",
+                    modifier = Modifier.fillMaxSize(),
+                    cornerRadius = 0.dp,
+                    isThumbnail = false,
+                    imageTier = GoldImageTier.CARD_MEDIUM,
+                    placeholderRes = visualProfile.coverPlaceholderRes,
                 )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(64.dp)
+                        .align(Alignment.BottomCenter)
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(Color.Transparent, AppColors.Ink.copy(alpha = 0.72f)),
+                            ),
+                        ),
+                )
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(10.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    color = AppColors.Ink.copy(alpha = 0.86f),
+                ) {
+                    Text(
+                        text = shop.visualSpecialty.ifBlank { visualProfile.specialtyBadge },
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+                        style = AppText.body.copy(
+                            color = AppColors.BrassLight,
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.Bold,
+                        ),
+                    )
+                }
+                if (!shop.hasVerifiedCoverPhoto) {
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(10.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color.White.copy(alpha = 0.90f),
                     ) {
                         Text(
-                            text = shop.name,
-                            modifier = Modifier.weight(1f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+                            text = "معرض مرجعي للتخصص",
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
                             style = AppText.body.copy(
-                                fontWeight = FontWeight.ExtraBold,
-                                fontSize = 15.5.sp,
+                                color = AppColors.Seal,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
                             ),
                         )
-                        if (shop.verified) {
-                            Spacer(modifier = Modifier.width(6.dp))
-                            VerifiedStrip()
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(3.dp))
-                    Text(
-                        text = "${shop.city} · ${shop.area} · ${shop.verificationSourceLabel}",
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        style = AppText.body.copy(color = AppColors.Seal, fontSize = 11.sp, fontWeight = FontWeight.SemiBold),
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Outlined.Star,
-                                contentDescription = "التقييم",
-                                tint = if (shop.hasVerifiedRating) AppColors.Brass else AppColors.Muted,
-                                modifier = Modifier.size(14.dp),
-                            )
-                            Spacer(modifier = Modifier.width(3.dp))
-                            Text(
-                                text = if (shop.hasVerifiedRating) {
-                                    "${shop.rating} (${shop.reviews})"
-                                } else {
-                                    "التقييم غير متاح"
-                                },
-                                style = AppText.body.copy(
-                                    color = if (shop.hasVerifiedRating) AppColors.Ink else AppColors.Muted,
-                                    fontWeight = if (shop.hasVerifiedRating) FontWeight.Bold else FontWeight.Normal,
-                                    fontSize = 11.5.sp,
-                                ),
-                            )
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Outlined.Schedule,
-                                contentDescription = "مواعيد العمل",
-                                tint = AppColors.Muted,
-                                modifier = Modifier.size(13.dp),
-                            )
-                            Spacer(modifier = Modifier.width(3.dp))
-                            Text(
-                                text = if (shop.hasVerifiedHours) {
-                                    "مفتوح حتى ${shop.closesAt}"
-                                } else {
-                                    "ساعات العمل غير متوفرة"
-                                },
-                                style = AppText.body.copy(color = AppColors.Muted, fontSize = 11.sp),
-                            )
-                        }
                     }
                 }
-                IconButton(
+                Surface(
                     onClick = onToggleFavorite,
                     modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(8.dp)
                         .size(48.dp)
                         .testTag("favorite_shop_button_${shop.id}"),
+                    shape = CircleShape,
+                    color = Color.White.copy(alpha = 0.92f),
+                    shadowElevation = 2.dp,
                 ) {
-                    Icon(
-                        imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                        contentDescription = if (isFavorite) "إزالة من المفضلة" else "إضافة إلى المفضلة",
-                        tint = if (isFavorite) AppColors.Brass else AppColors.Muted,
-                    )
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                            contentDescription = if (isFavorite) "إزالة من المفضلة" else "إضافة إلى المفضلة",
+                            tint = if (isFavorite) AppColors.Alert else AppColors.Ink,
+                            modifier = Modifier.size(21.dp),
+                        )
+                    }
                 }
             }
+
+            Column(modifier = Modifier.padding(14.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    GoldMarketplaceImage(
+                        imageUrl = GoldProductImageLibrary.shopLogoUrl(shop, GoldImageTier.THUMBNAIL),
+                        base64Thumbnail = null,
+                        contentDescription = shop.name,
+                        modifier = Modifier.size(52.dp),
+                        cornerRadius = 12.dp,
+                        isThumbnail = true,
+                        imageTier = GoldImageTier.THUMBNAIL,
+                        placeholderRes = visualProfile.logoPlaceholderRes,
+                        fallback = {
+                            ShopGoldMedallion(
+                                shopId = shop.id,
+                                modifier = Modifier.fillMaxSize(),
+                                cornerRadius = 12.dp,
+                            )
+                        },
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = shop.name,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                style = AppText.body.copy(
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 15.5.sp,
+                                ),
+                            )
+                            if (shop.verified) {
+                                Spacer(modifier = Modifier.width(6.dp))
+                                VerifiedStrip()
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(3.dp))
+                        Text(
+                            text = "${shop.city} · ${shop.area} · ${shop.verificationSourceLabel}",
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = AppText.body.copy(color = AppColors.Seal, fontSize = 11.sp, fontWeight = FontWeight.SemiBold),
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Star,
+                                    contentDescription = "التقييم",
+                                    tint = if (shop.hasVerifiedRating) AppColors.Brass else AppColors.Muted,
+                                    modifier = Modifier.size(14.dp),
+                                )
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = if (shop.hasVerifiedRating) {
+                                        "${shop.rating} (${shop.reviews})"
+                                    } else {
+                                        "التقييم غير متاح"
+                                    },
+                                    style = AppText.body.copy(
+                                        color = if (shop.hasVerifiedRating) AppColors.Ink else AppColors.Muted,
+                                        fontWeight = if (shop.hasVerifiedRating) FontWeight.Bold else FontWeight.Normal,
+                                        fontSize = 11.5.sp,
+                                    ),
+                                )
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Schedule,
+                                    contentDescription = "مواعيد العمل",
+                                    tint = AppColors.Muted,
+                                    modifier = Modifier.size(13.dp),
+                                )
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = if (shop.hasVerifiedHours) {
+                                        "مفتوح حتى ${shop.closesAt}"
+                                    } else {
+                                        "ساعات العمل غير متوفرة"
+                                    },
+                                    style = AppText.body.copy(color = AppColors.Muted, fontSize = 11.sp),
+                                )
+                            }
+                        }
+                    }
+                }
 
             if (shop.description.isNotBlank()) {
                 Spacer(modifier = Modifier.height(8.dp))
@@ -1339,6 +1492,7 @@ private fun ShopTile(
                         modifier = Modifier.size(20.dp),
                     )
                 }
+            }
             }
         }
     }

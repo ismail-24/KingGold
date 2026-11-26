@@ -41,6 +41,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -52,11 +54,16 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -66,19 +73,21 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.GoldProductImageLibrary
 import com.example.data.KingGoldRepository
 import com.example.model.KaratPrice
 import com.example.model.MoneyUtils
 import com.example.model.Product
 import com.example.model.Shop
 import com.example.ui.components.GoldMarketplaceImage
+import com.example.ui.components.GoldProductCarouselCard
 import com.example.ui.components.LivePriceTicker
-import com.example.ui.components.ProductGoldArtwork
 import com.example.ui.components.ShopGoldMedallion
 import com.example.ui.components.VerifiedStrip
-import com.example.ui.components.formatCurrency
 import com.example.ui.theme.AppColors
 import com.example.ui.theme.AppText
+import com.example.ui.util.GoldImageTier
+import com.example.ui.util.KingGoldImageLoader
 import com.example.ui.util.dialPhone
 import com.example.ui.util.openDirections
 import com.example.ui.util.openExternalWebsite
@@ -90,8 +99,10 @@ fun ShopDetailScreen(
     products: List<Product> = KingGoldRepository.productsFor(shop.id),
     prices: List<KaratPrice>,
     isFavorite: Boolean = false,
+    favoriteProductKeys: Set<String> = emptySet(),
     cartItemCount: Int = 0,
     onToggleFavorite: () -> Unit = {},
+    onToggleFavoriteProduct: (String) -> Unit = {},
     onOpenCart: () -> Unit = {},
     onBack: () -> Unit,
     onBrowseProducts: (initialCategory: String?) -> Unit,
@@ -102,6 +113,25 @@ fun ShopDetailScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val categories = remember(products) { products.map { it.category }.distinct() }
+    var selectedGalleryCategory by remember(shop.id) { mutableStateOf<String?>(null) }
+    val displayedGalleryProducts = remember(products, selectedGalleryCategory) {
+        if (selectedGalleryCategory == null) {
+            products
+        } else {
+            products.filter { it.category == selectedGalleryCategory }
+        }
+    }
+    val visualProfile = remember(shop.id, shop.coverImageUrl, shop.logoUrl) {
+        GoldProductImageLibrary.resolveShopVisual(shop)
+    }
+
+    LaunchedEffect(shop.id, displayedGalleryProducts) {
+        val urls = GoldProductImageLibrary.buildProductPrefetchUrls(
+            products = displayedGalleryProducts.take(6),
+            tier = GoldImageTier.CARD_MEDIUM,
+        )
+        KingGoldImageLoader.prefetch(context, urls, GoldImageTier.CARD_MEDIUM)
+    }
 
     Scaffold(
         containerColor = AppColors.Parchment,
@@ -119,7 +149,7 @@ fun ShopDetailScreen(
                     contentAlignment = Alignment.Center,
                 ) {
                     Button(
-                        onClick = { onBrowseProducts(null) },
+                        onClick = { onBrowseProducts(selectedGalleryCategory) },
                         modifier = Modifier
                             .widthIn(max = 560.dp)
                             .fillMaxWidth()
@@ -161,15 +191,17 @@ fun ShopDetailScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(190.dp),
+                            .height(220.dp),
                     ) {
                         GoldMarketplaceImage(
-                            imageUrl = shop.coverImageUrl ?: shop.logoUrl,
+                            imageUrl = GoldProductImageLibrary.shopCoverUrl(shop, GoldImageTier.DETAIL_HIGH_RES),
                             base64Thumbnail = null,
                             contentDescription = shop.name,
                             modifier = Modifier.fillMaxSize(),
                             cornerRadius = 0.dp,
                             isThumbnail = false,
+                            imageTier = GoldImageTier.DETAIL_HIGH_RES,
+                            placeholderRes = visualProfile.coverPlaceholderRes,
                             fallback = {
                                 ShopGoldMedallion(
                                     shopId = shop.id,
@@ -178,18 +210,29 @@ fun ShopDetailScreen(
                                 )
                             },
                         )
-                        if (shop.coverImageUrl.isNullOrBlank()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(86.dp)
+                                .align(Alignment.BottomCenter)
+                                .background(
+                                    Brush.verticalGradient(
+                                        colors = listOf(Color.Transparent, AppColors.Ink.copy(alpha = 0.78f)),
+                                    ),
+                                ),
+                        )
+                        if (!shop.hasVerifiedCoverPhoto) {
                             Box(
                                 modifier = Modifier
                                     .align(Alignment.BottomStart)
                                     .padding(12.dp)
                                     .clip(RoundedCornerShape(8.dp))
-                                    .background(AppColors.Ink.copy(alpha = 0.78f))
+                                    .background(AppColors.Ink.copy(alpha = 0.82f))
                                     .padding(horizontal = 10.dp, vertical = 4.dp)
                                     .testTag("shop_hero_photo_disclaimer"),
                             ) {
                                 Text(
-                                    text = "لا تتوفر صورة واجهة موثّقة لهذا الفرع",
+                                    text = "صورة توضيحية لمعرض الذهب — وليست لقطة مباشرة للفرع",
                                     style = AppText.body.copy(
                                         color = AppColors.Parchment,
                                         fontSize = 10.5.sp,
@@ -197,6 +240,23 @@ fun ShopDetailScreen(
                                     ),
                                 )
                             }
+                        }
+                        Surface(
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(12.dp),
+                            shape = RoundedCornerShape(8.dp),
+                            color = AppColors.Brass.copy(alpha = 0.92f),
+                        ) {
+                            Text(
+                                text = shop.visualSpecialty.ifBlank { visualProfile.specialtyBadge },
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+                                style = AppText.body.copy(
+                                    color = Color.White,
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                ),
+                            )
                         }
                         IconButton(
                             onClick = onBack,
@@ -285,10 +345,21 @@ fun ShopDetailScreen(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
+                            GoldMarketplaceImage(
+                                imageUrl = GoldProductImageLibrary.shopLogoUrl(shop, GoldImageTier.THUMBNAIL),
+                                base64Thumbnail = null,
+                                contentDescription = shop.name,
+                                modifier = Modifier.size(46.dp),
+                                cornerRadius = 12.dp,
+                                isThumbnail = true,
+                                imageTier = GoldImageTier.THUMBNAIL,
+                                placeholderRes = visualProfile.logoPlaceholderRes,
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
                             Text(
                                 text = shop.name,
                                 modifier = Modifier.weight(1f),
-                                style = AppText.display.copy(fontSize = 23.sp),
+                                style = AppText.display.copy(fontSize = 21.sp),
                             )
                             if (shop.verified) VerifiedStrip()
                         }
@@ -325,7 +396,6 @@ fun ShopDetailScreen(
                             onTickerClick = onOpenPriceInsight,
                         )
 
-                        // Address, Working Hours, Contact Phone, and Official Website Card
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(14.dp),
@@ -333,7 +403,6 @@ fun ShopDetailScreen(
                             border = BorderStroke(1.dp, AppColors.Line),
                         ) {
                             Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-                                // Address Row
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically,
@@ -379,7 +448,6 @@ fun ShopDetailScreen(
 
                                 HorizontalDivider(thickness = 0.8.dp, color = AppColors.ParchmentDeep)
 
-                                // Working Hours Row
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -422,7 +490,6 @@ fun ShopDetailScreen(
 
                                 HorizontalDivider(thickness = 0.8.dp, color = AppColors.ParchmentDeep)
 
-                                // Contact Phone Row
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -543,7 +610,7 @@ fun ShopDetailScreen(
                             }
                         }
 
-                        // Gold Collection Gallery
+                        // Gold Collection Gallery organized by categories
                         Spacer(modifier = Modifier.height(4.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -554,15 +621,63 @@ fun ShopDetailScreen(
                                 text = "معرض تشكيلة الذهب",
                                 style = AppText.display.copy(fontSize = 18.sp),
                             )
-                            TextButton(onClick = { onBrowseProducts(null) }) {
+                            TextButton(onClick = { onBrowseProducts(selectedGalleryCategory) }) {
                                 Text(
-                                    text = "عرض الكل (${products.size})",
+                                    text = "عرض الكل (${displayedGalleryProducts.size})",
                                     style = AppText.body.copy(
                                         color = AppColors.Brass,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 12.5.sp,
                                     ),
                                 )
+                            }
+                        }
+
+                        if (categories.size > 1) {
+                            LazyRow(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("shop_gallery_category_row"),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                item(key = "gallery_all") {
+                                    FilterChip(
+                                        selected = selectedGalleryCategory == null,
+                                        onClick = { selectedGalleryCategory = null },
+                                        label = {
+                                            Text(
+                                                text = "الكل (${products.size})",
+                                                style = AppText.body.copy(fontSize = 11.5.sp, fontWeight = FontWeight.Bold),
+                                            )
+                                        },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = AppColors.Ink,
+                                            selectedLabelColor = AppColors.BrassLight,
+                                            containerColor = Color.White,
+                                            labelColor = AppColors.Ink,
+                                        ),
+                                    )
+                                }
+                                items(categories, key = { it }) { cat ->
+                                    val selected = selectedGalleryCategory == cat
+                                    FilterChip(
+                                        selected = selected,
+                                        onClick = { selectedGalleryCategory = if (selected) null else cat },
+                                        modifier = Modifier.testTag("shop_gallery_filter_$cat"),
+                                        label = {
+                                            Text(
+                                                text = cat,
+                                                style = AppText.body.copy(fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold),
+                                            )
+                                        },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = AppColors.Brass,
+                                            selectedLabelColor = Color.White,
+                                            containerColor = Color.White,
+                                            labelColor = AppColors.Ink,
+                                        ),
+                                    )
+                                }
                             }
                         }
 
@@ -588,7 +703,7 @@ fun ShopDetailScreen(
                             )
                         }
 
-                        if (products.isEmpty()) {
+                        if (displayedGalleryProducts.isEmpty()) {
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -609,7 +724,7 @@ fun ShopDetailScreen(
                                     .testTag("shop_collection_gallery"),
                                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                             ) {
-                                items(products, key = { it.id }) { product ->
+                                items(displayedGalleryProducts, key = { it.id }) { product ->
                                     val gramPrice = prices.firstOrNull { it.karat == product.karat }?.pricePerGram
                                         ?: KingGoldRepository.gramPrice(product.karat)
                                     val finalPrice = if (product.sellingPricePiasters > 0L) {
@@ -617,9 +732,12 @@ fun ShopDetailScreen(
                                     } else {
                                         gramPrice * product.weightGrams
                                     }
-                                    GoldGalleryCard(
+                                    GoldProductCarouselCard(
                                         product = product,
-                                        finalPrice = finalPrice,
+                                        shopName = shop.name,
+                                        finalPriceEgp = finalPrice,
+                                        isFavorite = favoriteProductKeys.contains("${shop.id}_${product.id}"),
+                                        onToggleFavorite = { onToggleFavoriteProduct(product.id) },
                                         onClick = { onOpenProduct(product) },
                                     )
                                 }
@@ -639,22 +757,42 @@ fun ShopDetailScreen(
                                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                                 ) {
                                     pair.forEach { category ->
-                                        Box(
+                                        val countInCat = products.count { it.category == category }
+                                        Row(
                                             modifier = Modifier
                                                 .weight(1f)
-                                                .height(58.dp)
+                                                .height(64.dp)
                                                 .clip(RoundedCornerShape(12.dp))
                                                 .background(Color.White)
                                                 .border(1.dp, AppColors.Line, RoundedCornerShape(12.dp))
                                                 .clickable { onBrowseProducts(category) }
-                                                .padding(horizontal = 14.dp)
+                                                .padding(horizontal = 10.dp)
                                                 .testTag("category_tile_$category"),
-                                            contentAlignment = Alignment.CenterStart,
+                                            verticalAlignment = Alignment.CenterVertically,
                                         ) {
-                                            Text(
-                                                text = category,
-                                                style = AppText.body.copy(fontWeight = FontWeight.Bold),
+                                            GoldMarketplaceImage(
+                                                imageUrl = products.firstOrNull { it.category == category }?.thumbnailUrl,
+                                                base64Thumbnail = null,
+                                                contentDescription = category,
+                                                modifier = Modifier.size(40.dp),
+                                                cornerRadius = 8.dp,
+                                                isThumbnail = true,
+                                                imageTier = GoldImageTier.THUMBNAIL,
+                                                placeholderRes = GoldProductImageLibrary.placeholderDrawableForCategory(category),
                                             )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = category,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    style = AppText.body.copy(fontWeight = FontWeight.Bold, fontSize = 12.5.sp),
+                                                )
+                                                Text(
+                                                    text = "$countInCat قطعة",
+                                                    style = AppText.body.copy(color = AppColors.Muted, fontSize = 10.5.sp),
+                                                )
+                                            }
                                         }
                                     }
                                     if (pair.size == 1) {
@@ -687,99 +825,6 @@ fun ShopDetailScreen(
                     }
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun GoldGalleryCard(
-    product: Product,
-    finalPrice: Double,
-    onClick: () -> Unit,
-) {
-    Card(
-        onClick = onClick,
-        modifier = Modifier
-            .width(164.dp)
-            .testTag("gallery_item_${product.id}"),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        border = BorderStroke(1.dp, AppColors.Line),
-    ) {
-        Column(modifier = Modifier.padding(10.dp)) {
-            Box {
-                GoldMarketplaceImage(
-                    imageUrl = product.thumbnailUrl,
-                    base64Thumbnail = product.imageThumbnails.firstOrNull(),
-                    contentDescription = product.name,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(108.dp),
-                    cornerRadius = 12.dp,
-                    isThumbnail = true,
-                    fallback = {
-                        ProductGoldArtwork(
-                            category = product.category,
-                            karat = product.karat,
-                            modifier = Modifier.fillMaxSize(),
-                            cornerRadius = 12.dp,
-                        )
-                    },
-                )
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(6.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(AppColors.Ink.copy(alpha = 0.85f))
-                        .padding(horizontal = 7.dp, vertical = 2.dp),
-                ) {
-                    Text(
-                        text = "عيار ${product.karat}",
-                        style = AppText.body.copy(
-                            color = AppColors.BrassLight,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                        ),
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = product.name,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = AppText.body.copy(
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 13.5.sp,
-                ),
-            )
-            Text(
-                text = "${product.weightGrams} جم · ${product.designStyle.ifBlank { product.category }}",
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = AppText.body.copy(color = AppColors.Muted, fontSize = 11.5.sp),
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "${formatCurrency(finalPrice, 0)} ج.م",
-                style = AppText.body.copy(
-                    color = AppColors.Brass,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 13.5.sp,
-                ),
-            )
-            Text(
-                text = if (product.isPhotoVerifiedInventory) "صورة موثّقة من التاجر" else "صورة مرجعية للتصميم",
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = AppText.body.copy(
-                    color = if (product.isPhotoVerifiedInventory) AppColors.Trust else AppColors.Seal,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 10.sp,
-                ),
-            )
         }
     }
 }

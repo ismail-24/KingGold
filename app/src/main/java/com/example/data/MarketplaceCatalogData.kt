@@ -3,16 +3,27 @@ package com.example.data
 import com.example.model.Product
 import com.example.model.ProductCategory
 import com.example.model.Shop
+import com.example.ui.util.GoldImageTier
 import com.example.ui.util.KingGoldImageLoader
 
 /**
  * Verified Egyptian gold brands/branches & real-photography 8-category catalog.
  * Note: Only verifiable public business details (brand name, official branch address, phone/hotline,
  * website, and district coordinates) are populated. Unverified fields such as crowd ratings or live
- * store hours are explicitly left unavailable rather than fabricated. Product photography uses unique
- * verified Wikimedia Commons photographs explicitly marked as design references (not live store stock).
+ * store hours are explicitly left unavailable rather than fabricated. Product and shop photography uses
+ * curated reference imagery explicitly marked as design/showroom references (not live store stock).
  */
 object MarketplaceCatalogData {
+
+    private fun Shop.withDistinctVisualIdentity(): Shop {
+        val profile = GoldProductImageLibrary.resolveShopVisual(this)
+        return copy(
+            logoUrl = profile.logoUrl(GoldImageTier.THUMBNAIL),
+            coverImageUrl = profile.coverUrl(GoldImageTier.CARD_MEDIUM),
+            visualSpecialty = profile.specialtyBadge,
+            hasVerifiedCoverPhoto = false,
+        )
+    }
 
     val verifiedDirectoryShops: List<Shop> = listOf(
         Shop(
@@ -199,7 +210,7 @@ object MarketplaceCatalogData {
             hasVerifiedHours = false,
             verificationSourceLabel = "بيانات رسمية من الموقع المعتمد",
         ),
-    )
+    ).map { it.withDistinctVisualIdentity() }
 
     private data class CatalogTemplate(
         val id: String,
@@ -398,11 +409,15 @@ object MarketplaceCatalogData {
         ),
     )
 
-    fun referenceProductsForShop(shopId: String): List<Product> =
-        baseCatalogTemplates.mapIndexed { idx, tpl ->
-            val gallery = buildList {
-                add(KingGoldImageLoader.wikimediaDetailUrl(tpl.wikimediaFile))
-                tpl.secondaryWikimediaFile?.let { add(KingGoldImageLoader.wikimediaDetailUrl(it)) }
+    fun referenceProductsForShop(shopId: String): List<Product> {
+        val mapped = baseCatalogTemplates.mapIndexed { idx, tpl ->
+            val supplemental = GoldProductImageLibrary.categoryGallerySupplementalFiles(tpl.category)
+            val galleryFiles = buildList {
+                add(tpl.wikimediaFile)
+                tpl.secondaryWikimediaFile?.let { add(it) }
+                supplemental.filter { it != tpl.wikimediaFile && it != tpl.secondaryWikimediaFile }
+                    .take(2)
+                    .forEach { add(it) }
             }
             Product(
                 id = tpl.id,
@@ -416,10 +431,13 @@ object MarketplaceCatalogData {
                 description = tpl.description,
                 designStyle = tpl.designStyle,
                 thumbnailUrl = KingGoldImageLoader.wikimediaThumbnailUrl(tpl.wikimediaFile),
+                cardImageUrl = KingGoldImageLoader.wikimediaCardUrl(tpl.wikimediaFile),
                 imageUrl = KingGoldImageLoader.wikimediaDetailUrl(tpl.wikimediaFile),
-                galleryImageUrls = gallery,
+                galleryImageUrls = galleryFiles.map { KingGoldImageLoader.wikimediaDetailUrl(it) },
                 isPhotoVerifiedInventory = false,
                 imageSourceAttribution = "Wikimedia Commons — صورة توضيحية للفئة والتصميم",
             )
         }
+        return GoldProductImageLibrary.orderProductsForShop(shopId, mapped)
+    }
 }

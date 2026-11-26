@@ -1,11 +1,13 @@
 package com.example.ui.components
 
+import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,17 +19,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
-import coil.request.CachePolicy
-import coil.request.ImageRequest
-import coil.size.Precision
 import com.example.ui.theme.AppColors
 import com.example.ui.util.Base64ThumbnailImage
+import com.example.ui.util.GoldImageTier
 import com.example.ui.util.KingGoldImageLoader
 
 @Composable
@@ -38,8 +40,21 @@ fun GoldMarketplaceImage(
     modifier: Modifier = Modifier,
     cornerRadius: Dp = 12.dp,
     isThumbnail: Boolean = true,
+    imageTier: GoldImageTier = if (isThumbnail) GoldImageTier.THUMBNAIL else GoldImageTier.DETAIL_HIGH_RES,
+    @DrawableRes placeholderRes: Int? = null,
     contentScale: ContentScale = ContentScale.Crop,
-    fallback: @Composable () -> Unit,
+    fallback: @Composable () -> Unit = {
+        if (placeholderRes != null) {
+            Image(
+                painter = painterResource(id = placeholderRes),
+                contentDescription = contentDescription,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = contentScale,
+            )
+        } else {
+            MarketplaceImageShimmer(modifier = Modifier.fillMaxSize())
+        }
+    },
 ) {
     val clippedModifier = modifier.clip(RoundedCornerShape(cornerRadius))
     if (!base64Thumbnail.isNullOrBlank()) {
@@ -54,31 +69,29 @@ fun GoldMarketplaceImage(
     val normalizedUrl = imageUrl?.trim().orEmpty()
     if (normalizedUrl.isBlank()) {
         Box(modifier = clippedModifier) {
-            fallback()
+            if (placeholderRes != null) {
+                Image(
+                    painter = painterResource(id = placeholderRes),
+                    contentDescription = contentDescription,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = contentScale,
+                )
+            } else {
+                fallback()
+            }
         }
         return
     }
 
     val context = LocalContext.current
     val imageLoader = remember(context) { KingGoldImageLoader.get(context) }
-    val targetPx = if (isThumbnail) {
-        KingGoldImageLoader.THUMBNAIL_WIDTH_PX
-    } else {
-        KingGoldImageLoader.DETAIL_WIDTH_PX
-    }
-    val request = remember(normalizedUrl, targetPx, context) {
-        ImageRequest.Builder(context)
-            .data(normalizedUrl)
-            .memoryCacheKey("${normalizedUrl}_$targetPx")
-            .diskCacheKey(normalizedUrl)
-            .memoryCachePolicy(CachePolicy.ENABLED)
-            .diskCachePolicy(CachePolicy.ENABLED)
-            .networkCachePolicy(CachePolicy.ENABLED)
-            .size(targetPx, targetPx)
-            .precision(Precision.INEXACT)
-            .crossfade(true)
-            .allowHardware(true)
-            .build()
+    val request = remember(normalizedUrl, imageTier, context) {
+        KingGoldImageLoader.buildImageRequest(
+            context = context,
+            url = normalizedUrl,
+            tier = imageTier,
+            crossfadeEnabled = true,
+        )
     }
 
     SubcomposeAsyncImage(
@@ -88,10 +101,31 @@ fun GoldMarketplaceImage(
         modifier = clippedModifier,
         contentScale = contentScale,
         loading = {
-            MarketplaceImageShimmer(modifier = Modifier.fillMaxSize())
+            if (placeholderRes != null) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    Image(
+                        painter = painterResource(id = placeholderRes),
+                        contentDescription = contentDescription,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = contentScale,
+                    )
+                    MarketplaceShimmerVeil(modifier = Modifier.fillMaxSize())
+                }
+            } else {
+                MarketplaceImageShimmer(modifier = Modifier.fillMaxSize())
+            }
         },
         error = {
-            fallback()
+            if (placeholderRes != null) {
+                Image(
+                    painter = painterResource(id = placeholderRes),
+                    contentDescription = contentDescription,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = contentScale,
+                )
+            } else {
+                fallback()
+            }
         },
         success = {
             SubcomposeAsyncImageContent()
@@ -121,6 +155,32 @@ private fun MarketplaceImageShimmer(
         ),
         start = Offset(shift - 300f, 0f),
         end = Offset(shift, 300f),
+    )
+    Box(modifier = modifier.background(brush))
+}
+
+@Composable
+private fun MarketplaceShimmerVeil(
+    modifier: Modifier = Modifier,
+) {
+    val transition = rememberInfiniteTransition(label = "marketplace_veil")
+    val shift by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 500f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1250, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "veil_shift",
+    )
+    val brush = Brush.linearGradient(
+        colors = listOf(
+            Color.Transparent,
+            AppColors.BrassLight.copy(alpha = 0.16f),
+            Color.Transparent,
+        ),
+        start = Offset(shift - 220f, 0f),
+        end = Offset(shift, 220f),
     )
     Box(modifier = modifier.background(brush))
 }

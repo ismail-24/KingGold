@@ -58,18 +58,22 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.GoldProductImageLibrary
 import com.example.model.GoldOrder
 import com.example.model.KycStatus
 import com.example.model.OrderStatus
 import com.example.model.Shop
+import com.example.ui.components.GoldMarketplaceImage
 import com.example.ui.components.SealBadge
 import com.example.ui.components.VerifiedStrip
 import com.example.ui.components.formatCurrency
 import com.example.ui.state.KingGoldUiState
 import com.example.ui.theme.AppColors
 import com.example.ui.theme.AppText
+import com.example.ui.util.GoldImageTier
 
 @Composable
 fun UserProfileScreen(
@@ -454,6 +458,14 @@ private fun ProfileOrderHistoryItem(
         OrderStatus.DISPUTED -> AppColors.Alert
         else -> AppColors.Trust
     }
+    val leadProduct = order.items.firstOrNull()?.product
+    val leadImagery = leadProduct?.let {
+        GoldProductImageLibrary.resolveProductImagery(it, GoldImageTier.THUMBNAIL)
+    }
+    val thumbUrl = leadImagery?.primaryUrl
+        ?: GoldProductImageLibrary.shopLogoUrl(order.shop, GoldImageTier.THUMBNAIL)
+    val thumbPlaceholder = leadImagery?.placeholderRes
+        ?: GoldProductImageLibrary.placeholderDrawableForShopLogo(order.shop)
     val shape = RoundedCornerShape(14.dp)
     Row(
         modifier = Modifier
@@ -466,6 +478,17 @@ private fun ProfileOrderHistoryItem(
             .testTag("profile_order_${order.id}"),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        GoldMarketplaceImage(
+            imageUrl = thumbUrl,
+            base64Thumbnail = leadProduct?.imageThumbnails?.firstOrNull(),
+            contentDescription = leadProduct?.name ?: order.shop.name,
+            modifier = Modifier.size(48.dp),
+            cornerRadius = 10.dp,
+            isThumbnail = true,
+            imageTier = GoldImageTier.THUMBNAIL,
+            placeholderRes = thumbPlaceholder,
+        )
+        Spacer(modifier = Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -483,6 +506,8 @@ private fun ProfileOrderHistoryItem(
             Spacer(modifier = Modifier.height(3.dp))
             Text(
                 text = "${order.shop.name} · ${order.pickupWindow}",
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 style = AppText.body.copy(color = AppColors.Muted, fontSize = 12.sp),
             )
             Spacer(modifier = Modifier.height(6.dp))
@@ -529,25 +554,23 @@ private fun ProfileFavoriteShopItem(
             .testTag("profile_favorite_shop_${shop.id}"),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            modifier = Modifier
-                .size(44.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(AppColors.ParchmentDeep),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.Storefront,
-                contentDescription = shop.name,
-                tint = AppColors.Brass,
-                modifier = Modifier.size(22.dp),
-            )
-        }
+        GoldMarketplaceImage(
+            imageUrl = GoldProductImageLibrary.shopLogoUrl(shop, GoldImageTier.THUMBNAIL),
+            base64Thumbnail = null,
+            contentDescription = shop.name,
+            modifier = Modifier.size(48.dp),
+            cornerRadius = 12.dp,
+            isThumbnail = true,
+            imageTier = GoldImageTier.THUMBNAIL,
+            placeholderRes = GoldProductImageLibrary.placeholderDrawableForShopLogo(shop),
+        )
         Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = shop.name,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                     style = AppText.body.copy(fontWeight = FontWeight.ExtraBold, fontSize = 14.5.sp),
                 )
                 if (shop.verified) {
@@ -560,12 +583,20 @@ private fun ProfileFavoriteShopItem(
                 Icon(
                     imageVector = Icons.Outlined.Star,
                     contentDescription = null,
-                    tint = AppColors.Brass,
+                    tint = if (shop.hasVerifiedRating) AppColors.Brass else AppColors.Muted,
                     modifier = Modifier.size(13.dp),
                 )
                 Spacer(modifier = Modifier.width(3.dp))
+                val ratingText = if (shop.hasVerifiedRating) "${shop.rating}" else "التقييم غير متاح"
+                val feeSuffix = if (shop.makingFeePerGram > 0.0) {
+                    " · مصنعية ${shop.makingFeePerGram.toInt()} ج.م/جم"
+                } else {
+                    ""
+                }
                 Text(
-                    text = "${shop.rating} · ${shop.area}، ${shop.city} · مصنعية ${shop.makingFeePerGram.toInt()} ج.م/جم",
+                    text = "$ratingText · ${shop.area}، ${shop.city}$feeSuffix",
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                     style = AppText.body.copy(color = AppColors.Muted, fontSize = 11.5.sp),
                 )
             }

@@ -75,10 +75,10 @@ class MarketplaceAuditAndCatalogTest {
             "app/src/test/java/com/example/base/FirestoreEmulatorTestBase.kt",
         ).readText()
 
-        val canonicalProjectId = "gen-lang-client-0717075354"
-        val canonicalProjectNumber = "855620265252"
+        val canonicalProjectId = "gen-lang-client-0036904610"
+        val canonicalProjectNumber = "716165331056"
         val canonicalDbId = "ai-studio-android-kinggold-bc58cad2-94b8-4b97-b49c-a2df279a1209"
-        val canonicalAppId = "1:855620265252:android:dfe6335f4b9651c3bcbfb1"
+        val canonicalAppId = "1:716165331056:android:d84a22a958e5e7b8c4dcb5"
         val canonicalPkg = "com.aistudio.kinggold.k9m4vx"
         val canonicalRecaptchaKey = "6LcjlCIuAAAAAGvDtGC40Q3tqcB4UYCNDjdwinFO"
 

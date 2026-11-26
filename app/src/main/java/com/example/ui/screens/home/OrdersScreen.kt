@@ -38,14 +38,18 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.GoldProductImageLibrary
 import com.example.model.GoldOrder
 import com.example.model.OrderStatus
+import com.example.ui.components.GoldMarketplaceImage
 import com.example.ui.components.formatCurrency
 import com.example.ui.state.KingGoldUiState
 import com.example.ui.theme.AppColors
 import com.example.ui.theme.AppText
+import com.example.ui.util.GoldImageTier
 
 @Composable
 fun OrdersScreen(
@@ -203,8 +207,16 @@ private fun OrderTile(
         OrderStatus.DISPUTED -> AppColors.Alert
         else -> AppColors.Trust
     }
+    val leadProduct = order.items.firstOrNull()?.product
+    val leadImagery = leadProduct?.let {
+        GoldProductImageLibrary.resolveProductImagery(it, GoldImageTier.THUMBNAIL)
+    }
+    val thumbUrl = leadImagery?.primaryUrl
+        ?: GoldProductImageLibrary.shopLogoUrl(order.shop, GoldImageTier.THUMBNAIL)
+    val thumbPlaceholder = leadImagery?.placeholderRes
+        ?: GoldProductImageLibrary.placeholderDrawableForShopLogo(order.shop)
     val shape = RoundedCornerShape(16.dp)
-    Column(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(shape)
@@ -213,40 +225,68 @@ private fun OrderTile(
             .clickable(onClick = onClick)
             .padding(14.dp)
             .testTag("order_card_${order.id}"),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Text(
-                text = "طلب ${order.id}",
-                style = AppText.body.copy(fontWeight = FontWeight.ExtraBold),
-            )
-            Text(
-                text = "${formatCurrency(order.total)} ج.م",
-                style = AppText.body.copy(fontWeight = FontWeight.ExtraBold),
-            )
-        }
-        Spacer(modifier = Modifier.height(3.dp))
-        Text(
-            text = "${order.shop.name} · ${order.pickupWindow}",
-            style = AppText.body.copy(color = AppColors.Muted, fontSize = 12.sp),
+        GoldMarketplaceImage(
+            imageUrl = thumbUrl,
+            base64Thumbnail = leadProduct?.imageThumbnails?.firstOrNull(),
+            contentDescription = leadProduct?.name ?: order.shop.name,
+            modifier = Modifier.size(56.dp),
+            cornerRadius = 12.dp,
+            isThumbnail = true,
+            imageTier = GoldImageTier.THUMBNAIL,
+            placeholderRes = thumbPlaceholder,
         )
-        Spacer(modifier = Modifier.height(8.dp))
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(20.dp))
-                .background(statusColor.copy(alpha = 0.12f))
-                .padding(horizontal = 10.dp, vertical = 4.dp),
-        ) {
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    text = "طلب ${order.id}",
+                    style = AppText.body.copy(fontWeight = FontWeight.ExtraBold),
+                )
+                Text(
+                    text = "${formatCurrency(order.total)} ج.م",
+                    style = AppText.body.copy(fontWeight = FontWeight.ExtraBold),
+                )
+            }
+            Spacer(modifier = Modifier.height(3.dp))
             Text(
-                text = order.status.arabicLabel,
-                style = AppText.body.copy(
-                    color = statusColor,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                ),
+                text = "${order.shop.name} · ${order.pickupWindow}",
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = AppText.body.copy(color = AppColors.Muted, fontSize = 12.sp),
             )
+            if (leadProduct != null) {
+                Text(
+                    text = if (order.items.size > 1) {
+                        "${leadProduct.name} +${order.items.size - 1}"
+                    } else {
+                        leadProduct.name
+                    },
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = AppText.body.copy(color = AppColors.InkSoft, fontSize = 11.5.sp),
+                )
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(statusColor.copy(alpha = 0.12f))
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
+            ) {
+                Text(
+                    text = order.status.arabicLabel,
+                    style = AppText.body.copy(
+                        color = statusColor,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                    ),
+                )
+            }
         }
     }
 }

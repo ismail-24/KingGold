@@ -124,6 +124,7 @@ data class KingGoldUiState(
     val priceAlertTarget: String = "6000",
     val fcmToken: String? = null,
     val favoriteShopIds: Set<String> = emptySet(),
+    val favoriteProductKeys: Set<String> = emptySet(),
     val favoritesOnlyFilter: Boolean = false,
     val focusedMapShopId: String? = null,
     val focusMapShopCounter: Int = 0,
@@ -260,6 +261,9 @@ data class KingGoldUiState(
         } else {
             MoneyUtils.egpToPiasters(gramPrice(karat))
         }
+
+    fun isProductFavorite(shopId: String, productId: String): Boolean =
+        favoriteProductKeys.contains("${shopId}_$productId")
 
     fun productFinalPricePiasters(product: Product): Long =
         if (product.sellingPricePiasters > 0L) {
@@ -788,6 +792,18 @@ class KingGoldViewModel(
             state.copy(favoriteShopIds = updatedFavorites)
         }
         syncPreferencesToFirestore(_uiState.value)
+    }
+
+    fun toggleFavoriteProduct(shopId: String, productId: String) {
+        val key = "${shopId}_$productId"
+        _uiState.update { state ->
+            val updated = if (state.favoriteProductKeys.contains(key)) {
+                state.favoriteProductKeys - key
+            } else {
+                state.favoriteProductKeys + key
+            }
+            state.copy(favoriteProductKeys = updated)
+        }
     }
 
     fun focusShopOnMap(shopId: String) {

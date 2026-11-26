@@ -62,6 +62,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.GoldProductImageLibrary
 import com.example.model.Shop
 import com.example.ui.components.GoldMarketplaceImage
 import com.example.ui.components.ShopGoldMedallion
@@ -72,6 +73,7 @@ import com.example.ui.components.isValidMapCoordinatePair
 import com.example.ui.state.KingGoldUiState
 import com.example.ui.theme.AppColors
 import com.example.ui.theme.AppText
+import com.example.ui.util.GoldImageTier
 import com.example.ui.util.openDirections
 
 internal fun savedGoldShopsForState(uiState: KingGoldUiState): List<Shop> {
@@ -460,19 +462,14 @@ private fun SavedShopCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 GoldMarketplaceImage(
-                    imageUrl = shop.logoUrl ?: shop.coverImageUrl,
+                    imageUrl = GoldProductImageLibrary.shopLogoUrl(shop, GoldImageTier.THUMBNAIL),
                     base64Thumbnail = null,
                     contentDescription = shop.name,
                     modifier = Modifier.size(48.dp),
                     cornerRadius = 10.dp,
                     isThumbnail = true,
-                    fallback = {
-                        ShopGoldMedallion(
-                            shopId = shop.id,
-                            modifier = Modifier.fillMaxSize(),
-                            cornerRadius = 10.dp,
-                        )
-                    },
+                    imageTier = GoldImageTier.THUMBNAIL,
+                    placeholderRes = GoldProductImageLibrary.placeholderDrawableForShopLogo(shop),
                 )
                 Spacer(modifier = Modifier.width(10.dp))
                 Column(modifier = Modifier.weight(1f)) {

@@ -82,9 +82,11 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.example.data.GoldProductImageLibrary
 import com.example.model.Shop
 import com.example.ui.theme.AppColors
 import com.example.ui.theme.AppText
+import com.example.ui.util.GoldImageTier
 import com.example.ui.util.openDirections
 import org.osmdroid.events.MapEventsReceiver
 import org.osmdroid.tileprovider.MapTileProviderBasic
@@ -1146,19 +1148,14 @@ fun GoldShopsMapView(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         GoldMarketplaceImage(
-                            imageUrl = selectedShop.logoUrl ?: selectedShop.coverImageUrl,
+                            imageUrl = GoldProductImageLibrary.shopLogoUrl(selectedShop, GoldImageTier.THUMBNAIL),
                             base64Thumbnail = null,
                             contentDescription = selectedShop.name,
                             modifier = Modifier.size(48.dp),
                             cornerRadius = 10.dp,
                             isThumbnail = true,
-                            fallback = {
-                                ShopGoldMedallion(
-                                    shopId = selectedShop.id,
-                                    modifier = Modifier.fillMaxSize(),
-                                    cornerRadius = 10.dp,
-                                )
-                            },
+                            imageTier = GoldImageTier.THUMBNAIL,
+                            placeholderRes = GoldProductImageLibrary.placeholderDrawableForShopLogo(selectedShop),
                         )
                         Spacer(modifier = Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {

@@ -46,15 +46,20 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.GoldProductImageLibrary
+import com.example.model.MoneyUtils
 import com.example.ui.components.EscrowTimeline
+import com.example.ui.components.GoldMarketplaceImage
 import com.example.ui.components.LedgerCard
 import com.example.ui.components.LedgerLine
 import com.example.ui.components.formatCurrency
 import com.example.ui.state.KingGoldUiState
 import com.example.ui.theme.AppColors
 import com.example.ui.theme.AppText
+import com.example.ui.util.GoldImageTier
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -196,6 +201,70 @@ fun CheckoutScreen(
                                     text = uiState.actionErrorMessage,
                                     style = AppText.body.copy(color = AppColors.Alert, fontSize = 13.sp, fontWeight = FontWeight.Bold),
                                 )
+                            }
+                        }
+                    }
+
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(Color.White)
+                                .border(1.dp, AppColors.Line, RoundedCornerShape(16.dp))
+                                .padding(14.dp)
+                                .testTag("checkout_items_preview"),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Text(
+                                text = "ملخص القطع المختارة (${uiState.cart.sumOf { it.quantity }})",
+                                style = AppText.body.copy(fontWeight = FontWeight.ExtraBold, fontSize = 13.5.sp),
+                            )
+                            uiState.cart.forEach { item ->
+                                val imagery = GoldProductImageLibrary.resolveProductImagery(
+                                    product = item.product,
+                                    tier = GoldImageTier.THUMBNAIL,
+                                )
+                                val lineSubtotalEgp = MoneyUtils.piastersToEgp(
+                                    uiState.productFinalPricePiasters(item.product) * item.quantity,
+                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    GoldMarketplaceImage(
+                                        imageUrl = imagery.primaryUrl,
+                                        base64Thumbnail = item.product.imageThumbnails.firstOrNull(),
+                                        contentDescription = item.product.name,
+                                        modifier = Modifier.size(48.dp),
+                                        cornerRadius = 10.dp,
+                                        isThumbnail = true,
+                                        imageTier = GoldImageTier.THUMBNAIL,
+                                        placeholderRes = imagery.placeholderRes,
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = item.product.name,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            style = AppText.body.copy(fontWeight = FontWeight.Bold, fontSize = 13.sp),
+                                        )
+                                        Text(
+                                            text = "الكمية ${item.quantity} · عيار ${item.product.karat} · ${item.product.weightGrams} جم",
+                                            style = AppText.body.copy(color = AppColors.Muted, fontSize = 11.5.sp),
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "${formatCurrency(lineSubtotalEgp)} ج.م",
+                                        style = AppText.body.copy(
+                                            color = AppColors.Brass,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.5.sp,
+                                        ),
+                                    )
+                                }
                             }
                         }
                     }

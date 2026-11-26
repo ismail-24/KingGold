@@ -48,15 +48,20 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.GoldProductImageLibrary
 import com.example.data.KingGoldRepository
+import com.example.model.MoneyUtils
+import com.example.ui.components.GoldMarketplaceImage
 import com.example.ui.components.LedgerCard
 import com.example.ui.components.LedgerLine
 import com.example.ui.components.formatCurrency
 import com.example.ui.state.KingGoldUiState
 import com.example.ui.theme.AppColors
 import com.example.ui.theme.AppText
+import com.example.ui.util.GoldImageTier
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -253,6 +258,10 @@ fun CartScreen(
                     }
 
                     items(uiState.cart, key = { "${it.product.shopId}:${it.product.id}" }) { item ->
+                        val imagery = GoldProductImageLibrary.resolveProductImagery(
+                            product = item.product,
+                            tier = GoldImageTier.THUMBNAIL,
+                        )
                         val shape = RoundedCornerShape(14.dp)
                         Row(
                             modifier = Modifier
@@ -260,24 +269,51 @@ fun CartScreen(
                                 .clip(shape)
                                 .background(Color.White)
                                 .border(1.dp, AppColors.Line, shape)
-                                .padding(12.dp),
+                                .padding(12.dp)
+                                .testTag("cart_item_row_${item.product.id}"),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            IconButton(onClick = { onRemove(item.product.id) }) {
-                                Icon(
-                                    imageVector = Icons.Outlined.DeleteOutline,
-                                    contentDescription = "حذف",
-                                    tint = AppColors.Alert,
-                                )
-                            }
+                            val lineSubtotalEgp = MoneyUtils.piastersToEgp(
+                                uiState.productFinalPricePiasters(item.product) * item.quantity,
+                            )
+                            GoldMarketplaceImage(
+                                imageUrl = imagery.primaryUrl,
+                                base64Thumbnail = item.product.imageThumbnails.firstOrNull(),
+                                contentDescription = item.product.name,
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .testTag("cart_item_image_${item.product.id}"),
+                                cornerRadius = 10.dp,
+                                isThumbnail = true,
+                                imageTier = GoldImageTier.THUMBNAIL,
+                                placeholderRes = imagery.placeholderRes,
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = item.product.name,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
                                     style = AppText.body.copy(fontWeight = FontWeight.ExtraBold),
                                 )
                                 Text(
                                     text = "عيار ${item.product.karat} · ${item.product.weightGrams} جم",
                                     style = AppText.body.copy(color = AppColors.Muted, fontSize = 12.sp),
+                                )
+                                Text(
+                                    text = "${formatCurrency(lineSubtotalEgp)} ج.م",
+                                    style = AppText.body.copy(
+                                        color = AppColors.Brass,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.5.sp,
+                                    ),
+                                )
+                            }
+                            IconButton(onClick = { onRemove(item.product.id) }) {
+                                Icon(
+                                    imageVector = Icons.Outlined.DeleteOutline,
+                                    contentDescription = "حذف",
+                                    tint = AppColors.Alert,
                                 )
                             }
                             Row(verticalAlignment = Alignment.CenterVertically) {
